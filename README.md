@@ -1152,3 +1152,13 @@ models descend from one dataset. Showing them as a table in the Library
 panel, rather than four rows that happen to share a parent, is the last
 piece of making the comparison something you come back to rather than
 something you run.
+
+---
+
+## Further reading
+
+[**Training, serving, and what happens at 20,000 records**](docs/training-and-scale.md)
+— what a training run does stage by stage and what each stage costs, what it
+would take to serve a model against a real production form, and measured
+behaviour at 20,000 records including the one classification limit that
+silently drops high-cardinality fields.
