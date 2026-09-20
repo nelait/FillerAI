@@ -555,8 +555,8 @@ A local web app on the same engine, so nothing here can drift from the CLI —
 every button is one call into the same functions. It binds to `127.0.0.1` by
 default and asks for a login; the first time it starts it makes an
 administrator and prints the password once. `--no-auth` turns all of that off
-and gives back the single-user tool, which is the right thing on your own
-machine and the wrong thing anywhere else.
+and gives back the single-user tool — and only works on localhost, because
+that is the only place it is the right thing.
 
 Five stages across the top, and a library beside them:
 
@@ -883,7 +883,10 @@ field, and `-o` for the full report as JSON.
 `--open` to launch a browser, `-v` to log each request, `--library PATH` for
 where the UI keeps what it produces, `--database URL` for where the shared
 data lives, and `--no-auth` for no login and no accounts — one library, for
-one person on one machine.
+one person on one machine. `--no-auth` is refused anywhere but localhost:
+without accounts everyone who can reach the port is signed in, and a printed
+warning is the wrong answer to that, because the person who needs to read it
+is already not reading the console.
 
 Read-only and disabled controls are skipped — those are the form's to fill,
 not ours.
@@ -1024,7 +1027,7 @@ tests/
 python -m unittest discover -s tests -v
 ```
 
-471 tests, no dependencies. They cover malformed markup, each inference rule,
+475 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real

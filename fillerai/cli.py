@@ -882,8 +882,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help=f"sqlite://<path> (default: the library directory's "
                             f"{DB_FILENAME}), or ${DB_VARIABLE}")
     serve.add_argument("--no-auth", action="store_true",
-                       help="no login and no accounts: one library, "
-                            "for one person on one machine")
+                       help="no login and no accounts: one library, for one "
+                            "person on one machine. Localhost only, since "
+                            "anyone who can reach the port is then signed in")
     serve.set_defaults(func=cmd_serve)
 
     trainer = subparsers.add_parser(

@@ -20,9 +20,11 @@ request through at all.
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import mimetypes
 import random
+import sys
 import threading
 import traceback
 import uuid
@@ -1549,12 +1551,40 @@ def _offer_import() -> None:
               f" into {admins[0].username}'s library")
 
 
+def _is_loopback(host: str) -> bool:
+    """Is this address reachable only from this machine?
+
+    Used to decide where running without accounts is allowed at all. An
+    unparseable host, or the empty one, is not loopback: an empty bind
+    address means every interface, which is the case this is guarding.
+    """
+    name = (host or "").strip().lower()
+    if name in ("localhost", "[::1]"):
+        return True
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False
+
+
 def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
           verbose: bool = False, library_path: str | None = None,
           database: str | None = None, accounts: bool = True) -> int:
     global LIBRARY
 
     Handler.quiet = not verbose
+
+    # Without accounts, everyone who can reach the port is signed in, so the
+    # port had better only be reachable from this machine. A printed warning
+    # was the old answer and it is the wrong one: the person who needs to
+    # read it is already not reading the console.
+    if not accounts and not _is_loopback(host):
+        print(f"--no-auth means anyone who can reach the port is signed in, so "
+              f"it is only allowed on localhost, and --host {host} is not.\n"
+              f"Either drop --no-auth and sign in, or keep --host 127.0.0.1.",
+              file=sys.stderr)
+        return 1
+
     if library_path:
         LIBRARY = Store(library_path)
 
@@ -1575,8 +1605,6 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
         print(f"  library: {LIBRARY.root}")
     if AUTH is None:
         print("  accounts: off - anyone who can reach this port is signed in")
-        if host not in ("127.0.0.1", "localhost"):
-            print("  note: this is bound beyond localhost and has no authentication.")
     else:
         print(f"  accounts: on, {AUTH.count()} user(s)")
     print("  press Ctrl-C to stop")

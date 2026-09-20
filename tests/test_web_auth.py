@@ -10,12 +10,14 @@ person's library and another's.
 from __future__ import annotations
 
 import http.cookiejar
+import io
 import json
 import sys
 import threading
 import unittest
 import urllib.error
 import urllib.request
+from contextlib import redirect_stderr
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -410,6 +412,41 @@ class TestSeparateLibraries(AuthServerCase):
             self.auth.delete_user(user_id)
         except Exception:  # noqa: BLE001 - already gone is fine
             pass
+
+
+class TestRunningWithoutAccounts(unittest.TestCase):
+    """``--no-auth`` is the single-user tool, so it stays on this machine."""
+
+    def test_loopback_is_recognised_in_every_spelling(self):
+        for host in ("127.0.0.1", "localhost", "LocalHost", "::1", "[::1]",
+                     "127.0.0.5"):
+            with self.subTest(host):
+                self.assertTrue(server_module._is_loopback(host))
+
+    def test_anything_reachable_from_elsewhere_is_not(self):
+        for host in ("0.0.0.0", "", "::", "192.168.1.5", "example.com",
+                     "not an address"):
+            with self.subTest(host):
+                self.assertFalse(server_module._is_loopback(host))
+
+    def test_no_auth_beyond_localhost_is_refused_before_anything_is_bound(self):
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code = server_module.serve(host="0.0.0.0", port=0, accounts=False)
+        self.assertEqual(code, 1)
+        self.assertIn("--no-auth", stderr.getvalue())
+        self.assertIn("localhost", stderr.getvalue())
+        # Nothing was opened on the way to refusing.
+        self.assertIsNone(server_module.DATABASE)
+        self.assertIsNone(server_module.AUTH)
+
+    def test_the_cli_refuses_it_too(self):
+        from fillerai.cli import main
+
+        with redirect_stderr(io.StringIO()) as stderr:
+            code = main(["serve", "--no-auth", "--host", "0.0.0.0"])
+        self.assertEqual(code, 1)
+        self.assertIn("--no-auth", stderr.getvalue())
 
 
 class TestTheDatabasePanel(AuthServerCase):
