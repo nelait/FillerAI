@@ -14,19 +14,24 @@ the provenance of any model in the library; follow it down from a source and
 you have every model that descends from it. That is the going back and forth:
 the same links read in either direction.
 
-**It is files, not a database.** One directory per kind, two files per entry:
-a small one with the metadata, a large one with the payload. Listing the
-library reads only the small ones, so opening it stays instant with a
-thousand entries. There is no index to rebuild, no lock to take, no schema to
-migrate, and a person can go and look at any of it with ``cat``. A directory
-of JSON is also the only storage that keeps the promise the rest of this
-project makes - nothing to install, nothing that leaves the machine.
+**This one is files.** One directory per kind, two files per entry: a small
+one with the metadata, a large one with the payload. Listing the library
+reads only the small ones, so opening it stays instant with a thousand
+entries. There is no index to rebuild, no lock to take, no schema to migrate,
+and a person can go and look at any of it with ``cat``.
 
-**What it deliberately does not do.** No search, no tags, no concurrent
-writers, no garbage collection beyond :meth:`Store.prune`. This is one
-person's working set on one machine. Every one of those would be a good idea
-in a shared service and is a liability in a local tool that has to keep
-working while unattended.
+**There is a second implementation**, :class:`fillerai.dbstore.DatabaseStore`,
+which is this same library inside the database, with an owner on every entry.
+It exists because the moment there are accounts, a library has to belong to
+somebody. This one stays because it is still the right answer for one person
+on one machine, it is what the CLI uses by default, and it is what an
+existing ``.fillerai`` directory already is - ``fillerai db import`` copies
+one into the other, ids and lineage intact.
+
+**What this one deliberately does not do.** No owners, no search, no tags, no
+concurrent writers, no garbage collection beyond :meth:`Store.prune`. Every
+one of those would be a good idea in a shared service, which is what the
+database is for.
 """
 
 from __future__ import annotations
@@ -46,9 +51,13 @@ from .schema import FormSchema
 from .train.model import AutofillModel
 
 #: The kinds of thing the library holds, in the order the stages produce them.
-KINDS = ("source", "schema", "dataset", "model")
+#: A script hangs off the model it would produce rather than off the dataset,
+#: because the question a person arrives with is "what did that run do", and
+#: the run is the model.
+KINDS = ("source", "schema", "dataset", "model", "script")
 
-_PREFIX = {"source": "src", "schema": "sch", "dataset": "dat", "model": "mdl"}
+_PREFIX = {"source": "src", "schema": "sch", "dataset": "dat", "model": "mdl",
+           "script": "scr"}
 _FOLDER = {kind: kind + "s" for kind in KINDS}
 
 # An id becomes a filename, and ids arrive from HTTP requests, so what counts
@@ -59,7 +68,7 @@ _FOLDER = {kind: kind + "s" for kind in KINDS}
 # case that matters - two models trained back to back on the same dataset is,
 # and to the second those two sort by their random tail, which is to say not
 # in any order at all.
-_ID = re.compile(r"^(src|sch|dat|mdl)-\d{8}-\d{9}-[0-9a-f]{4}$")
+_ID = re.compile(r"^(src|sch|dat|mdl|scr)-\d{8}-\d{9}-[0-9a-f]{4}$")
 
 #: Where the time sits inside an id, so a listing can sort by it. Sorting by
 #: the whole id would sort by the kind prefix first, which puts every source
@@ -312,16 +321,24 @@ class Store:
         Without ``cascade`` an entry with children is refused rather than
         orphaning them: a model whose dataset has vanished can no longer say
         what it learned from, which is the one thing the library is for.
+
+        A script is the exception, and goes with its parent. It describes the
+        run that produced that model rather than being something made from
+        it, nothing descends from it, and a script for a model that is gone
+        is not provenance anybody can use.
         """
         entry = self.get(entry_id)
         children = self.children(entry_id)
-        if children and not cascade:
+        blocking = [child for child in children if child.kind != "script"]
+        if blocking and not cascade:
             raise StoreError(
-                f"{entry.name!r} has {len(children)} thing(s) made from it; "
+                f"{entry.name!r} has {len(blocking)} thing(s) made from it; "
                 f"delete those first, or ask for a cascade"
             )
+        going = (self.descendants(entry_id) if cascade
+                 else [c for c in children if c.kind == "script"])
         removed = []
-        for victim in (self.descendants(entry_id) if cascade else []) + [entry]:
+        for victim in going + [entry]:
             meta_path, payload_path = self._paths(victim.id)
             meta_path.unlink(missing_ok=True)
             payload_path.unlink(missing_ok=True)
@@ -372,6 +389,26 @@ class Store:
         info.update(meta or {})
         return self.put("dataset", name or f"{len(records)} records", records,
                         parent=parent, meta=info)
+
+    def save_script(self, text: str, parent: str, name: str | None = None,
+                    meta: dict[str, Any] | None = None) -> Entry:
+        """The Python a training run is, kept beside what it produced.
+
+        The script is generated from the options anyway, so storing it looks
+        redundant until somebody changes a default: then the script in the
+        library is what that model was actually trained by, and the one the
+        code would generate today is not.
+        """
+        info = {"lines": text.count("\n") + 1}
+        info.update(meta or {})
+        return self.put("script", name or "training script", {"text": text},
+                        parent=parent, meta=info)
+
+    def load_script(self, entry_id: str) -> str:
+        body = self.payload(entry_id)
+        if isinstance(body, dict):
+            return str(body.get("text") or "")
+        return str(body)
 
     def save_model(self, model: AutofillModel, parent: str,
                    name: str | None = None,

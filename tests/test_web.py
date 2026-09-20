@@ -814,9 +814,15 @@ class TestLibraryApi(ServerCase):
 
         status, body = self.post("/api/library/delete", {"id": model_id})
         self.assertEqual(status, 200)
-        self.assertEqual(body["removed"], [model_id])
+        # The script the run wrote goes with the model it trained: it is not
+        # something made from the model, it is a description of the run.
+        self.assertIn(model_id, body["removed"])
+        self.assertIn(trained["script_entry_id"], body["removed"])
 
         status, _body = self.post("/api/library/open", {"id": model_id})
+        self.assertEqual(status, 404)
+        status, _body = self.post("/api/library/open",
+                                  {"id": trained["script_entry_id"]})
         self.assertEqual(status, 404)
 
     def test_two_algorithms_on_one_dataset_both_hang_off_it(self):

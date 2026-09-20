@@ -8,3 +8,8 @@ build/
 .coverage
 .DS_Store
 .fillerai/
+
+# A database made outside the library directory.
+*.db
+*.db-wal
+*.db-shm

@@ -25,6 +25,10 @@ const state = {
   // Library ids for what is on screen, so each stage records what it came
   // from instead of a pile of unrelated entries.
   ids: { source: null, schema: null, dataset: null, model: null },
+  // Who is signed in, when the server is running with accounts. Null means
+  // it is not, which is the single-user tool: no login, one library.
+  user: null,
+  csrf: '',
 };
 
 const PREVIEW_ROWS = 100;
@@ -36,10 +40,14 @@ const $ = (id) => document.getElementById(id);
 
 async function api(path, body) {
   let response;
+  const headers = { 'Content-Type': 'application/json' };
+  // The session is in a cookie the browser attaches by itself; this header
+  // is the part another origin cannot forge, so it goes on every call.
+  if (state.csrf) headers['X-FillerAI-Token'] = state.csrf;
   try {
     response = await fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body || {}),
     });
   } catch (error) {
@@ -51,7 +59,15 @@ async function api(path, body) {
   } catch (error) {
     throw new Error(`the server replied with ${response.status}`);
   }
-  if (!response.ok) throw new Error(payload.error || `request failed (${response.status})`);
+  if (!response.ok) {
+    // A session that ran out mid-afternoon is not an error to show in a
+    // toast behind a page full of stale buttons: it is a trip to the door.
+    if (payload.sign_in || payload.must_change) {
+      window.location.href = '/login';
+      throw new Error('your session ended - signing in again');
+    }
+    throw new Error(payload.error || `request failed (${response.status})`);
+  }
   return payload;
 }
 
@@ -1319,6 +1335,7 @@ const libState = { kind: '', entries: [] };
 
 const KIND_WORDS = {
   source: 'source', schema: 'schema', dataset: 'data', model: 'model',
+  script: 'script',
 };
 
 document.querySelectorAll('[data-lib]').forEach((button) => {
@@ -1480,6 +1497,16 @@ async function openFromLibrary(id) {
   }
 
   const kind = result.entry.kind;
+  if (kind === 'script') {
+    // A script is read, not resumed. It goes where the live one goes - the
+    // log pane on the Train panel - so there is one place a script is ever
+    // shown, whether it was written a moment ago or last week.
+    $('runStage').textContent = `${result.entry.name}: the script as it ran`;
+    $('runLog').textContent = result.script || '';
+    showPanel('train');
+    toast(`opened ${result.entry.name}`);
+    return;
+  }
   if (kind === 'model') {
     // The reopened model has no evaluation with it - that was measured
     // against records held back during a run that is over. Saying so is
@@ -1500,11 +1527,211 @@ async function openFromLibrary(id) {
   toast(`opened ${result.entry.name}`);
 }
 
+
+// --------------------------------------------------------------- account
+//
+// Two audiences in one panel. Everybody can change their own password;
+// an administrator also gets the list of accounts and the database. The
+// server enforces the difference - this only decides what to draw, so
+// nobody is shown a button that is going to refuse them.
+
+function renderAccount() {
+  const user = state.user;
+  $('account').hidden = !user;
+  if (!user) return;
+  const initials = (user.display_name || user.username).trim()
+    .split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase();
+  $('whoami').innerHTML =
+    `<span class="initials">${escapeHtml(initials || '?')}</span>`
+    + `<span>${escapeHtml(user.display_name || user.username)}</span>`
+    + (user.role === 'admin' ? '<span class="role">admin</span>' : '');
+  const admin = user.role === 'admin';
+  $('adminUsers').hidden = !admin;
+  $('adminNew').hidden = !admin;
+  $('adminSide').hidden = !admin;
+}
+
+$('whoami').addEventListener('click', () => {
+  showPanel('account');
+  if (state.user && state.user.role === 'admin') {
+    loadUsers();
+    loadDatabase();
+  }
+});
+
+$('signOut').addEventListener('click', async () => {
+  try {
+    await api('/api/auth/logout');
+  } catch (error) {
+    // Signing out locally is the point; a failed call should not trap
+    // somebody in a session they have asked to leave.
+  }
+  window.location.href = '/login';
+});
+
+$('ownSave').addEventListener('click', () => withBusy($('ownSave'), 'Changing...', async () => {
+  const status = $('ownStatus');
+  status.hidden = true;
+  if ($('ownNew').value !== $('ownAgain').value) {
+    status.hidden = false;
+    status.className = 'status bad';
+    status.textContent = 'those two do not match';
+    return;
+  }
+  const result = await api('/api/auth/password',
+                           { current: $('ownCurrent').value, new: $('ownNew').value });
+  state.csrf = result.csrf;
+  state.user = result.user;
+  ['ownCurrent', 'ownNew', 'ownAgain'].forEach((id) => { $(id).value = ''; });
+  status.hidden = false;
+  status.className = 'status ok';
+  status.textContent = 'changed, and every other session was signed out';
+}));
+
+// ----------------------------------------------------------------- users
+
+async function loadUsers() {
+  const status = $('userStatus');
+  try {
+    const result = await api('/api/admin/users');
+    status.hidden = true;
+    $('userRows').innerHTML = result.users.map((user) => {
+      const you = user.id === result.you;
+      const tags = [`<span class="tag ${user.role === 'admin' ? 'admin' : ''}">`
+                    + `${escapeHtml(user.role)}</span>`];
+      if (!user.active) tags.push('<span class="tag off">disabled</span>');
+      if (user.must_change) tags.push('<span class="tag new">new password</span>');
+      // The display name goes under the username rather than in a column of
+      // its own: six columns and four buttons do not fit side by side, and
+      // the two names are one fact about one person anyway.
+      return `<tr data-user="${escapeAttr(user.id)}">
+        <td>
+          <div class="name">${escapeHtml(user.username)}${you ? ' (you)' : ''}</div>
+          ${user.display_name && user.display_name !== user.username
+            ? `<div class="muted">${escapeHtml(user.display_name)}</div>` : ''}
+        </td>
+        <td>${tags.join(' ')}</td>
+        <td class="num">${user.entries}</td>
+        <td>${escapeHtml(user.last_login ? whenText(user.last_login) : 'never')}</td>
+        <td><div class="row-acts">
+          <button class="btn btn-ghost small" data-act="role">
+            ${user.role === 'admin' ? 'Make a user' : 'Make an admin'}</button>
+          <button class="btn btn-ghost small" data-act="active">
+            ${user.active ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-ghost small" data-act="reset">Reset password</button>
+          ${you ? '' : '<button class="btn btn-ghost small" data-act="delete">Delete</button>'}
+        </div></td>
+      </tr>`;
+    }).join('');
+  } catch (error) {
+    status.hidden = false;
+    status.className = 'status bad';
+    status.textContent = error.message;
+  }
+}
+
+$('userRows').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-act]');
+  if (!button) return;
+  const row = button.closest('[data-user]');
+  const id = row.dataset.user;
+  const username = row.querySelector('.name').textContent.replace(' (you)', '');
+  const admin = row.querySelector('.tag.admin');
+  const disabled = row.querySelector('.tag.off');
+  const status = $('userStatus');
+  status.hidden = true;
+
+  await withBusy(button, 'Working...', async () => {
+    if (button.dataset.act === 'role') {
+      await api('/api/admin/users/update', { id, role: admin ? 'user' : 'admin' });
+    } else if (button.dataset.act === 'active') {
+      await api('/api/admin/users/update', { id, active: Boolean(disabled) });
+    } else if (button.dataset.act === 'reset') {
+      const result = await api('/api/admin/users/password', { id });
+      status.hidden = false;
+      status.className = 'status ok';
+      status.innerHTML = `<div class="handover">New password for `
+        + `<b>${escapeHtml(username)}</b>, shown once:<br>`
+        + `<code>${escapeHtml(result.password)}</code><br>`
+        + `They will be asked to change it when they sign in.</div>`;
+    } else if (button.dataset.act === 'delete') {
+      const entries = row.querySelector('td.num').textContent.trim();
+      const warning = entries === '0' ? '' :
+        ` Their ${entries} library entries go with them.`;
+      if (!window.confirm(`Delete ${username}?${warning} This cannot be undone.`)) return;
+      await api('/api/admin/users/delete', { id });
+    }
+    await loadUsers();
+  });
+});
+
+$('newGo').addEventListener('click', () => withBusy($('newGo'), 'Creating...', async () => {
+  const status = $('newStatus');
+  status.hidden = true;
+  const result = await api('/api/admin/users/create', {
+    username: $('newUsername').value.trim(),
+    display_name: $('newDisplay').value.trim(),
+    role: $('newRole').value,
+    password: $('newPass').value,
+  });
+  $('newUsername').value = '';
+  $('newDisplay').value = '';
+  $('newPass').value = '';
+  status.hidden = false;
+  status.className = 'status ok';
+  status.innerHTML = result.password
+    ? `<div class="handover">Created <b>${escapeHtml(result.user.username)}</b>. `
+      + `Their password, shown once:<br><code>${escapeHtml(result.password)}</code><br>`
+      + `They will be asked to change it when they sign in.</div>`
+    : `created ${escapeHtml(result.user.username)}`;
+  await loadUsers();
+}));
+
+// -------------------------------------------------------------- database
+
+async function loadDatabase() {
+  try {
+    const result = await api('/api/admin/database');
+    const facts = result.database;
+    $('dbFacts').innerHTML = [
+      ['where', facts.url],
+      ['kind', facts.backend],
+      ['schema version', String(facts.version)],
+      ['tables', facts.tables.join(', ')],
+      ['entries', `${result.entries} across every library`],
+      ['file library', result.file_library_exists
+        ? result.file_library : `${result.file_library} (none there)`],
+    ].map(([label, value]) =>
+      `<li><b>${escapeHtml(label)}</b> ${escapeHtml(value)}</li>`).join('');
+    $('dbImport').disabled = !result.file_library_exists;
+  } catch (error) {
+    $('dbFacts').innerHTML = `<li>${escapeHtml(error.message)}</li>`;
+  }
+}
+
+$('dbImport').addEventListener('click', () => withBusy($('dbImport'), 'Importing...', async () => {
+  const result = await api('/api/admin/import');
+  const status = $('dbStatus');
+  status.hidden = false;
+  status.className = 'status ok';
+  status.textContent = result.copied
+    ? `copied ${result.copied} entr(ies) from ${result.from}`
+    : `nothing new to copy from ${result.from}`;
+}));
+
 // ------------------------------------------------------------------ boot
+
 
 (async function start() {
   try {
     const meta = await (await fetch('/api/meta')).json();
+    if (meta.accounts && !meta.signed_in) {
+      window.location.href = '/login';
+      return;
+    }
+    state.user = meta.user || null;
+    state.csrf = meta.csrf || '';
+    renderAccount();
     state.semanticTypes = meta.semantic_types;
     $('version').textContent = `v${meta.version}`;
     setAlgorithms(meta.algorithms, meta.default_algorithm);

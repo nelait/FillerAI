@@ -35,6 +35,11 @@
       <span class="num">6</span> Library
     </button>
   </nav>
+  <!-- Only rendered when the server is running with accounts. -->
+  <div class="account" id="account" hidden>
+    <button class="whoami" id="whoami" title="Your account"></button>
+    <button class="btn btn-ghost small" id="signOut">Sign out</button>
+  </div>
 </header>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -358,6 +363,7 @@
         <button class="seg-btn" data-lib="schema">Schemas</button>
         <button class="seg-btn" data-lib="dataset">Datasets</button>
         <button class="seg-btn" data-lib="model">Models</button>
+        <button class="seg-btn" data-lib="script">Scripts</button>
       </div>
       <span class="spacer"></span>
       <span class="muted" id="libWhere"></span>
@@ -367,6 +373,89 @@
     <div id="libStatus" class="status" hidden></div>
     <div class="stats" id="libStats" hidden></div>
     <div class="library" id="libList"></div>
+  </section>
+
+  <!-- ============================ Account =========================== -->
+  <section class="panel" id="panel-account" role="tabpanel">
+    <div class="panel-head">
+      <h2>Your account</h2>
+      <p class="sub">Who you are signed in as, and - if you are an
+         administrator - everybody else.</p>
+    </div>
+
+    <div class="row">
+      <div class="col">
+        <div class="card">
+          <h3>Change your password</h3>
+          <p class="sub">Changing it signs out every other browser this account
+             is open in, which is usually the reason for changing it.</p>
+          <div class="controls">
+            <label class="field"><em>Current</em>
+              <input type="password" id="ownCurrent" autocomplete="current-password"></label>
+            <label class="field"><em>New</em>
+              <input type="password" id="ownNew" autocomplete="new-password"></label>
+            <label class="field"><em>New again</em>
+              <input type="password" id="ownAgain" autocomplete="new-password"></label>
+            <button class="btn btn-primary" id="ownSave">Change it</button>
+          </div>
+          <div id="ownStatus" class="status" hidden></div>
+        </div>
+
+        <!-- Everything below is an administrator's, and stays hidden for
+             everybody else. The server refuses these endpoints either way;
+             hiding them is so nobody is offered a button that will say no. -->
+        <div class="card" id="adminUsers" hidden>
+          <h3>Users</h3>
+          <p class="sub">Each person has their own library. Disabling an account
+             ends its sessions at once and keeps everything in it.</p>
+          <div class="table-wrap">
+            <table class="grid dense">
+              <thead><tr>
+                <th>Who</th><th>Role</th><th>Library</th>
+                <th>Last signed in</th><th></th>
+              </tr></thead>
+              <tbody id="userRows"></tbody>
+            </table>
+          </div>
+          <div id="userStatus" class="status" hidden></div>
+        </div>
+
+        <div class="card" id="adminNew" hidden>
+          <h3>Add somebody</h3>
+          <div class="controls">
+            <label class="field"><em>Username</em>
+              <input type="text" id="newUsername" spellcheck="false"
+                     placeholder="lowercase, no spaces"></label>
+            <label class="field"><em>Display name</em>
+              <input type="text" id="newDisplay" placeholder="optional"></label>
+            <label class="field"><em>Role</em>
+              <select id="newRole">
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select></label>
+            <label class="field"><em>Password</em>
+              <input type="text" id="newPass" spellcheck="false"
+                     placeholder="generated if left empty"></label>
+            <button class="btn btn-primary" id="newGo">Create</button>
+          </div>
+          <div id="newStatus" class="status" hidden></div>
+        </div>
+      </div>
+
+      <aside class="col col-side" id="adminSide" hidden>
+        <div class="card">
+          <h3>Where this is kept</h3>
+          <ul class="assumptions" id="dbFacts"></ul>
+          <div class="actions">
+            <button class="btn btn-ghost small" id="dbImport">Import the file library</button>
+          </div>
+          <p class="muted">Copies a <code>.fillerai</code> directory on this
+             machine into your library, keeping ids and lineage. Running it
+             twice copies nothing the second time.</p>
+          <div id="dbStatus" class="status" hidden></div>
+        </div>
+      </aside>
+    </div>
   </section>
 
 </main>

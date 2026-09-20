@@ -26,6 +26,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .auth import Auth, AuthError, User
+from .db import Database, DatabaseError, connect as connect_database
+from .dbstore import DatabaseStore, import_store
 from .extract import html_form, spec
 from .generate.dataset import Dataset, Options, coherence_report, generate as _generate, validate
 from .infer import infer, infer_field
@@ -37,13 +40,18 @@ from .train.evaluate import Report, evaluate, suggest_seed_fields
 from .train.model import AutofillModel, Prediction, TrainOptions, train as _train
 from .train.trace import Trace
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "SCHEMA_VERSION",
     "__version__",
+    "Auth",
+    "AuthError",
     "AutofillModel",
     "Constraints",
+    "Database",
+    "DatabaseError",
+    "DatabaseStore",
     "Dataset",
     "Entry",
     "Field",
@@ -58,14 +66,17 @@ __all__ = [
     "Screen",
     "Store",
     "Sweep",
+    "User",
     "Trace",
     "TrainOptions",
     "algos",
     "coherence_report",
+    "connect_database",
     "evaluate",
     "extract_html",
     "extract_spec",
     "generate",
+    "import_store",
     "infer",
     "infer_field",
     "simulate",
