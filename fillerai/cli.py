@@ -11,6 +11,14 @@ import time
 from pathlib import Path
 
 from . import __version__, extract_html, extract_spec
+from .auth import ADMIN, ROLES, USER, Auth, AuthError, suggest_password
+from .db import (
+    DEFAULT_FILENAME as DB_FILENAME,
+    URL_VARIABLE as DB_VARIABLE,
+    DatabaseError,
+    connect as connect_database,
+)
+from .dbstore import DatabaseStore, import_store
 from .generate.dataset import Options, coherence_report, generate, validate
 from .schema import FormSchema
 from .simulate.effort import DEFAULT_EFFORT, spell_out
@@ -192,7 +200,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from .web import serve
 
     return serve(host=args.host, port=args.port, open_browser=args.open,
-                 verbose=args.verbose, library=args.library)
+                 verbose=args.verbose, library_path=args.library,
+                 database=args.database, accounts=not args.no_auth)
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -439,6 +448,198 @@ _LIBRARY = {
 }
 
 
+
+
+# ----------------------------------------------------------------------
+# the database and the people in it
+# ----------------------------------------------------------------------
+#
+# The same operations the admin panel offers, for the case the panel cannot
+# help with: nobody can sign in. A tool whose only administrator is locked
+# out and whose only remedy is the tool itself is a tool somebody has to
+# reinstall, so every one of these works from a shell with the database file
+# and nothing else.
+
+
+def _database(args: argparse.Namespace):
+    root = Store(args.library).root if getattr(args, "library", None) \
+        else Store.default().root
+    return connect_database(getattr(args, "database", None), library_root=root)
+
+
+def cmd_db(args: argparse.Namespace) -> int:
+    try:
+        database = _database(args)
+    except DatabaseError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    try:
+        return _DB[args.action](database, args)
+    except (DatabaseError, StoreError, AuthError) as error:
+        print(getattr(error, "message", str(error)), file=sys.stderr)
+        return 1
+
+
+def _db_status(database, args: argparse.Namespace) -> int:
+    facts = database.describe()
+    auth = Auth(database)
+    shared = DatabaseStore(database)
+    counts = shared.owners()
+    print(f"  {facts['backend']} at {facts['url']}")
+    print(f"  schema version {facts['version']}, "
+          f"{len(facts['tables'])} table(s)")
+    print(f"  {auth.count()} user(s), {auth.admins()} administrator(s)")
+    print(f"  {sum(counts.values())} library entr(ies) across "
+          f"{len(counts)} owner(s)")
+    return 0
+
+
+def _db_import(database, args: argparse.Namespace) -> int:
+    """Copy a directory library into somebody's library in the database."""
+    auth = Auth(database)
+    source = Store(args.from_path) if args.from_path else _library(args)
+    owner = ""
+    if args.user:
+        found = auth.find(args.user)
+        if found is None:
+            print(f"there is no user called {args.user!r}", file=sys.stderr)
+            return 1
+        owner = found.id
+    result = import_store(source, DatabaseStore(database, owner))
+    print(f"  copied {len(result['copied'])}, "
+          f"already there {len(result['skipped'])}, "
+          f"unreadable {len(result['failed'])}")
+    print(f"  from {result['from']}")
+    print(f"  into {result['into']}" + (f" as {args.user}" if args.user else ""))
+    return 0
+
+
+_DB = {"status": _db_status, "import": _db_import}
+
+
+def cmd_users(args: argparse.Namespace) -> int:
+    try:
+        database = _database(args)
+    except DatabaseError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    auth = Auth(database)
+    try:
+        return _USERS[args.action](auth, args)
+    except AuthError as error:
+        print(error.message, file=sys.stderr)
+        return 1
+
+
+def _users_list(auth: Auth, args: argparse.Namespace) -> int:
+    users = auth.users()
+    if not users:
+        print("no accounts yet; 'fillerai users add <name> --admin' makes the first",
+              file=sys.stderr)
+        return 0
+    width = max(len(u.username) for u in users)
+    for user in users:
+        state = "" if user.active else "  (disabled)"
+        change = "  (must change password)" if user.must_change else ""
+        seen = user.last_login or "never signed in"
+        print(f"  {user.username:<{width}}  {user.role:<5}  {seen}{state}{change}")
+    print(f"\n  {len(users)} account(s), {auth.admins()} administrator(s)",
+          file=sys.stderr)
+    return 0
+
+
+def _users_add(auth: Auth, args: argparse.Namespace) -> int:
+    password = args.password or ""
+    generated = None
+    if not password:
+        password = generated = suggest_password()
+    user = auth.create_user(
+        args.username, password,
+        role=ADMIN if args.admin else USER,
+        display_name=args.name or "",
+        must_change=bool(generated) or args.must_change,
+    )
+    print(f"  created {user.username} ({user.role})")
+    if generated:
+        print(f"  password: {generated}")
+        print("  shown once; they will be asked to change it when they sign in")
+    return 0
+
+
+def _users_passwd(auth: Auth, args: argparse.Namespace) -> int:
+    user = auth.find(args.username)
+    if user is None:
+        print(f"there is no user called {args.username!r}", file=sys.stderr)
+        return 1
+    password = args.password or ""
+    generated = None
+    if not password:
+        password = generated = suggest_password()
+    auth.set_password(user.id, password, must_change=bool(generated))
+    print(f"  {user.username}'s password was changed, and every session they "
+          f"had was ended")
+    if generated:
+        print(f"  password: {generated}")
+    return 0
+
+
+def _users_role(auth: Auth, args: argparse.Namespace) -> int:
+    user = auth.find(args.username)
+    if user is None:
+        print(f"there is no user called {args.username!r}", file=sys.stderr)
+        return 1
+    auth.set_role(user.id, args.role)
+    print(f"  {user.username} is now {args.role}")
+    return 0
+
+
+def _users_disable(auth: Auth, args: argparse.Namespace) -> int:
+    return _users_active(auth, args.username, False)
+
+
+def _users_enable(auth: Auth, args: argparse.Namespace) -> int:
+    return _users_active(auth, args.username, True)
+
+
+def _users_active(auth: Auth, username: str, active: bool) -> int:
+    user = auth.find(username)
+    if user is None:
+        print(f"there is no user called {username!r}", file=sys.stderr)
+        return 1
+    auth.set_active(user.id, active)
+    print(f"  {user.username} is {'enabled' if active else 'disabled'}")
+    return 0
+
+
+def _users_delete(auth: Auth, args: argparse.Namespace) -> int:
+    user = auth.find(args.username)
+    if user is None:
+        print(f"there is no user called {args.username!r}", file=sys.stderr)
+        return 1
+    entries = DatabaseStore(auth.db, user.id).totals()
+    total = sum(entries.values())
+    if total and not args.yes:
+        print(f"{user.username} has {total} entr(ies) in their library, which "
+              f"would go too; pass --yes if that is what you want",
+              file=sys.stderr)
+        return 1
+    auth.delete_user(user.id)
+    print(f"  removed {user.username}" + (f" and {total} library entr(ies)"
+                                          if total else ""))
+    return 0
+
+
+_USERS = {
+    "list": _users_list,
+    "add": _users_add,
+    "passwd": _users_passwd,
+    "role": _users_role,
+    "disable": _users_disable,
+    "enable": _users_enable,
+    "delete": _users_delete,
+}
+
+
 _HOW_WORDS = {
     "rule": "a rule",
     "learned": "other fields",
@@ -604,6 +805,16 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
 # ----------------------------------------------------------------------
 
 
+def _add_database_flags(parser: argparse.ArgumentParser) -> None:
+    """Where the database is, for the commands that go straight at it."""
+    parser.add_argument("--database", metavar="URL",
+                        help=f"sqlite://<path> (default: the library "
+                             f"directory's {DB_FILENAME}), or ${DB_VARIABLE}")
+    parser.add_argument("--library", metavar="PATH",
+                        help=f"the library directory the default database "
+                             f"sits in (default: ./{DEFAULT_DIRNAME})")
+
+
 def _add_library_flags(parser: argparse.ArgumentParser, help_text: str) -> None:
     parser.add_argument("--save", action="store_true", help=help_text)
     parser.add_argument("--library", metavar="PATH",
@@ -667,6 +878,13 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--library", metavar="PATH",
                        help=f"where the UI keeps what it produces "
                             f"(default: ./{DEFAULT_DIRNAME}, or ${HOME_VARIABLE})")
+    serve.add_argument("--database", metavar="URL",
+                       help=f"sqlite://<path> (default: the library directory's "
+                            f"{DB_FILENAME}), or ${DB_VARIABLE}")
+    serve.add_argument("--no-auth", action="store_true",
+                       help="no login and no accounts: one library, for one "
+                            "person on one machine. Localhost only, since "
+                            "anyone who can reach the port is then signed in")
     serve.set_defaults(func=cmd_serve)
 
     trainer = subparsers.add_parser(
@@ -792,6 +1010,68 @@ def build_parser() -> argparse.ArgumentParser:
                        help="how many of each kind to keep")
 
     library.set_defaults(func=cmd_library)
+
+    # -- accounts -------------------------------------------------------
+
+    users = subparsers.add_parser(
+        "users", help="the accounts that can sign in to the UI")
+    _add_database_flags(users)
+    people = users.add_subparsers(dest="action", required=True)
+
+    listing = people.add_parser("list", help="every account")
+
+    adding = people.add_parser("add", help="create an account")
+    adding.add_argument("username")
+    adding.add_argument("--admin", action="store_true",
+                        help="can create and disable other users")
+    adding.add_argument("--name", help="what to call them in the UI")
+    adding.add_argument("--password",
+                        help="theirs to keep; one is generated and shown once "
+                             "if you do not give one")
+    adding.add_argument("--must-change", action="store_true",
+                        help="ask them for a new password at first sign-in")
+
+    passwd = people.add_parser("passwd", help="set somebody's password")
+    passwd.add_argument("username")
+    passwd.add_argument("--password",
+                        help="one is generated and shown once if omitted")
+
+    role = people.add_parser("role", help="make somebody an administrator, or not")
+    role.add_argument("username")
+    role.add_argument("role", choices=list(ROLES))
+
+    off = people.add_parser("disable", help="turn an account off without losing it")
+    off.add_argument("username")
+    on = people.add_parser("enable", help="turn it back on")
+    on.add_argument("username")
+
+    dropping = people.add_parser(
+        "delete", help="remove an account and everything in its library")
+    dropping.add_argument("username")
+    dropping.add_argument("--yes", action="store_true",
+                          help="confirm that their library goes too")
+
+    users.set_defaults(func=cmd_users)
+
+    # -- the database itself ---------------------------------------------
+
+    database = subparsers.add_parser(
+        "db", help="where the shared data lives, and what is in it")
+    _add_database_flags(database)
+    inside = database.add_subparsers(dest="action", required=True)
+
+    inside.add_parser("status", help="what is in the database, and where it is")
+
+    bringing = inside.add_parser(
+        "import", help="copy a directory library into the database")
+    bringing.add_argument("--from", dest="from_path", metavar="PATH",
+                          help=f"the directory library to read "
+                               f"(default: ./{DEFAULT_DIRNAME})")
+    bringing.add_argument("--user", metavar="USERNAME",
+                          help="whose library to put it in; omit for the "
+                               "unowned one a --no-auth server uses")
+
+    database.set_defaults(func=cmd_db)
 
     return parser
 

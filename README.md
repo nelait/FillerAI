@@ -40,6 +40,10 @@ python -m fillerai simulate model.json -n 50 --seed 7
 
 # What did all of that leave behind, and what came from what?
 python -m fillerai library list
+
+# Who can sign in to the UI, and who can hand out accounts?
+python -m fillerai users add krishna --admin
+python -m fillerai db status
 ```
 
 ## Why the records hang together
@@ -549,8 +553,10 @@ python -m fillerai serve --open
 
 A local web app on the same engine, so nothing here can drift from the CLI —
 every button is one call into the same functions. It binds to `127.0.0.1` by
-default; `--host` will widen that, and says so, but there is no
-authentication, so keep it on the machine you are sitting at.
+default and asks for a login; the first time it starts it makes an
+administrator and prints the password once. `--no-auth` turns all of that off
+and gives back the single-user tool — and only works on localhost, because
+that is the only place it is the right thing.
 
 Five stages across the top, and a library beside them:
 
@@ -582,6 +588,10 @@ Five stages across the top, and a library beside them:
    underneath. Open one and the whole chain behind it is restored. Download
    or delete any of it; deleting takes what was made from it too, and says
    so first.
+
+Beside them sits whoever is signed in. That opens **Your account**: change
+your own password, and, if you are an administrator, everybody else's
+accounts and the database they are kept in.
 
 The server holds the trained model and answers as you type, rather than
 shipping a few hundred kilobytes to the browser and taking it back on every
@@ -697,6 +707,120 @@ says so in as many words when the saving comes out small, rather than leaving
 a bare 3% on screen to be misread as a verdict on the idea. Point phase 3 at
 real past submissions and this is the number that moves.
 
+## Accounts, and where everything is kept
+
+Until now FillerAI was one person on one machine: no login, and a directory
+of JSON called `.fillerai` holding every source, schema, dataset and model.
+That is still exactly what `--no-auth` gives you. But the moment a second
+person opens the same URL, two questions have to be answered — whose library
+is this, and who is allowed to hand out accounts — and a directory of files
+cannot answer either.
+
+```bash
+# The first start makes an administrator and prints the password once.
+python -m fillerai serve --open
+
+# Or set it up from a shell first, which is also the way back in if
+# nobody can sign in any more.
+python -m fillerai users add krishna --admin
+python -m fillerai users add dana                  # password generated, shown once
+python -m fillerai users list
+python -m fillerai users disable dana              # keeps everything they made
+python -m fillerai db status
+```
+
+### The database
+
+SQLite, through `sqlite3` in the standard library, so the promise the rest of
+this project makes survives the change: nothing to install, nothing that
+leaves the machine. One file next to the library it replaces
+(`.fillerai/fillerai.db`), which `sqlite3` will open and read.
+
+Postgres is the stated next step, and the shape for it is already here.
+Everything goes through `fillerai.db.Database`, and what is actually specific
+to a backend is small enough to name:
+
+- **The parameter style.** Callers write `?`; a backend that wants `%s`
+  rewrites the statement on its way through, so no query above `fillerai.db`
+  changes.
+- **Connecting.** A URL in, a DB-API connection out.
+- **Nothing else.** The schema is written in the SQL both accept — `TEXT`,
+  `INTEGER`, `CREATE TABLE IF NOT EXISTS` — and times are stored as ISO 8601
+  strings rather than as a timestamp type, because the two disagree about
+  timezones in a way that is not worth a translation layer.
+
+So `postgresql://...` is one subclass, not a rewrite. Asking for one today
+says that in as many words rather than failing with a missing driver.
+
+Migrations run on every start and do nothing when there is nothing to do, so
+a database made by an older build catches up by itself.
+
+### Your library is yours
+
+Every entry carries an owner. Alice's fifty models are noise in Bob's list,
+and a model trained on a form Bob was never shown is not Bob's to open — so
+the whole library API is scoped to whoever is asking, and an id from somebody
+else's library reads as "there is nothing called that", because as far as
+that person is concerned there is not.
+
+An entry is named by its owner and its id together, not by its id alone.
+That is what lets two people import the same directory library and both keep
+the ids their lineage and their notes refer to.
+
+**Nothing you already have is orphaned.** The first start with a database
+copies an existing `.fillerai` directory into the first administrator's
+library, ids and lineage intact, and says so. Running it again copies
+nothing, because every id is already there. The same thing by hand:
+
+```bash
+python -m fillerai db import --from ./.fillerai --user krishna
+```
+
+The directory is only read, never changed, so the CLI's `library` commands go
+on working against it exactly as before.
+
+### Scripts are kept too
+
+The Python a training run is, generated from the options that ran it, is now
+stored beside the model it produced. That looks redundant right up until a
+default changes: then the script in the library is what that model was
+actually trained by, and what today's code would write is not. It is a fifth
+kind in the library, it downloads as `.py` rather than as JSON with the
+Python inside a string, and it goes when its model goes.
+
+### How the login works
+
+- **Passwords** are hashed with `hashlib.scrypt` at the parameters usually
+  called interactive — about 45ms and 16MB per attempt, which is nothing to a
+  person signing in and a great deal to somebody working through a stolen
+  table. PBKDF2 is the fallback for a Python built without scrypt, and both
+  are recognised on the way back in.
+- **Sessions live in the database**, not in the cookie. The cookie carries a
+  random session id and a signature over it; the signature is not what makes
+  the session safe, it is what lets a forged cookie be thrown out without
+  touching the database. Signing out deletes the row, so it takes effect
+  everywhere at once — which a self-contained token cannot promise.
+- **The cookie is HttpOnly and SameSite=Strict**, and every call carries a
+  token in a header that another origin cannot read. A cookie alone would let
+  any page on the machine POST here with your credentials attached.
+- **A wrong password and an unknown username read identically**, and take
+  about the same time, because the pair of messages people usually write here
+  is a way of asking the server which usernames exist.
+- **Six wrong guesses earn a fifteen-minute pause**, which clears itself.
+- **A password handed to you by somebody else has to be changed** before
+  anything else works, so nobody is working in an account another person
+  knows the password to.
+- **The last administrator cannot be removed** — not disabled, not demoted,
+  not deleted. A shared tool that can be locked out of itself by one careless
+  click is a support call, and the check costs one query.
+
+Two roles, and deliberately two: every third role anybody proposes turns out
+to be a permission, and permissions belong to whatever they guard. An
+administrator creates accounts, changes roles, resets passwords and turns
+accounts off; everybody else does the work. Deleting an account takes its
+library with it, which the panel says — with the number of entries — before
+it asks.
+
 ## Options
 
 | Flag | Default | What it does |
@@ -735,6 +859,14 @@ steps in order. `library` has `list`, `show`, `export`, `delete` and
 `prune`; `extract`, `generate` and `train` take `--save` to put what they
 produced into it, and every command that touches it takes `--library PATH`.
 
+`users` has `list`, `add`, `passwd`, `role`, `disable`, `enable` and
+`delete`; `db` has `status` and `import`. Both take `--database URL`
+(`sqlite://<path>`, or `$FILLERAI_DATABASE_URL`) and `--library PATH` for
+the directory the default database sits in. `add` and `passwd` generate a
+password and show it once when none is given, and that password has to be
+changed at first sign-in. `delete` refuses an account with a library behind
+it until `--yes` says that the library goes too.
+
 `predict` takes repeated `--set field=value` and `-f text|json|record`;
 `record` gives the filled form on its own, ready to post back. Both it and
 `evaluate` take `--threshold`, the confidence at which a prediction is
@@ -748,8 +880,13 @@ generated forms reproducible, `--show` to print the first form field by
 field, and `-o` for the full report as JSON.
 
 `serve` takes `--port` (default 8000), `--host` (default `127.0.0.1`),
-`--open` to launch a browser, `-v` to log each request, and `--library PATH`
-for where the UI keeps what it produces.
+`--open` to launch a browser, `-v` to log each request, `--library PATH` for
+where the UI keeps what it produces, `--database URL` for where the shared
+data lives, and `--no-auth` for no login and no accounts — one library, for
+one person on one machine. `--no-auth` is refused anywhere but localhost:
+without accounts everyone who can reach the port is signed in, and a printed
+warning is the wrong answer to that, because the person who needs to read it
+is already not reading the console.
 
 Read-only and disabled controls are skipped — those are the form's to fill,
 not ours.
@@ -828,8 +965,11 @@ fillerai/
   schema.py            the versioned field-schema contract
   infer.py             semantic type from ranked evidence
   cli.py               extract / generate / train / predict / simulate / serve
-                       / algorithms / library
-  store.py             the library: what each run produced, and what from
+                       / algorithms / library / users / db
+  store.py             the library in a directory: what each run produced
+  db.py                the database, and the interface a backend meets
+  dbstore.py           the same library in the database, with an owner
+  auth.py              users, passwords, roles and sessions
   extract/
     dom.py             a minimal DOM over html.parser
     html_form.py       HTML -> schema
@@ -861,6 +1001,7 @@ fillerai/
   web/
     server.py          the local HTTP API, one function per endpoint
     static/            index.html, app.js, styles.css - no build step
+                       login.html, login.js - the one page served signed out
 examples/
   claims_intake.html                  45 fields, 4 screens
   patient_registration.fields.json    21 fields, written as a spec
@@ -871,9 +1012,13 @@ tests/
   test_train.py        features, associations, rules, the model, calibration
   test_algos.py        the algorithms: the shared contract, and what each is for
   test_store.py        the library, mostly lineage and being asked nonsense
+  test_db.py           migrations, transactions, and the backend interface
+  test_dbstore.py      the same library in SQL, plus owners and importing
+  test_auth.py         passwords, sessions, roles, and the account commands
   test_trace.py        the log, mostly the cursor under concurrent writes
   test_simulate.py     the form, the effort model, the run loop
   test_web.py          every endpoint, over a real socket
+  test_web_auth.py     the same server with accounts on: the door, not the stages
 ```
 
 ## Tests
@@ -882,12 +1027,19 @@ tests/
 python -m unittest discover -s tests -v
 ```
 
-358 tests, no dependencies. They cover malformed markup, each inference rule,
+475 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real
 socket - routing, path traversal, body limits and every error message the UI
 can show.
+
+The account tests are weighted towards the refusals rather than the happy
+path, because the happy path is one call and the refusals are the point: a
+wrong password and an unknown username reading the same, a cookie somebody
+edited, a session that outlived its welcome, a request without its token, one
+person reaching for another person's library, and every way of leaving the
+tool with no administrator.
 
 The algorithm tests come in two kinds. One is the contract, run over the
 registry rather than written out per algorithm, so a new engine has to fit,
@@ -955,10 +1107,10 @@ keeping for what they say about the sharp edges:
 
 ## What comes next
 
-Five phases in, the machinery is complete: a form is read, data is invented
+Six phases in, the machinery is complete: a form is read, data is invented
 for it, a model is fitted by whichever of five algorithms suits it, the run
-is watched and kept, and the whole thing is played back with a number on
-what it saved. What the simulate stage says about that number is still the
+is watched and kept, the whole thing is played back with a number on what it
+saved, and all of it now belongs to somebody who had to sign in. What the simulate stage says about that number is still the
 honest place to pick up.
 
 **Real history is the missing input, and it is now the binding one.** With
@@ -987,8 +1139,26 @@ assumptions in `fillerai/simulate/effort.py`: every number in the saving is
 only as good as those five constants, and a stopwatch on ten real forms
 would replace all of them.
 
+**Postgres is one subclass away.** The database interface exists for that
+one reason, and the two things a driver changes - connecting, and the
+parameter style - are the two things it is allowed to change. What is not
+there is the driver, and it will not be until FillerAI is allowed a
+dependency, which today it is not. Alongside it, the obvious next thing
+accounts want is a record of who did what: the schema has room for it and
+nothing needs it yet.
+
 **One thing the library is one step from.** It already knows that four
 models descend from one dataset. Showing them as a table in the Library
 panel, rather than four rows that happen to share a parent, is the last
 piece of making the comparison something you come back to rather than
 something you run.
+
+---
+
+## Further reading
+
+[**Training, serving, and what happens at 20,000 records**](docs/training-and-scale.md)
+— what a training run does stage by stage and what each stage costs, what it
+would take to serve a model against a real production form, and measured
+behaviour at 20,000 records including the one classification limit that
+silently drops high-cardinality fields.

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in &middot; FillerAI</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%274%27 fill=%27%232d6cdf%27/%3E%3Crect x=%273%27 y=%274.5%27 width=%2710%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27/%3E%3Crect x=%273%27 y=%277.2%27 width=%2710%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27/%3E%3Crect x=%273%27 y=%279.9%27 width=%276%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27 opacity=%270.55%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="signin">
+
+<main class="signin-wrap">
+  <div class="signin-card">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <h1>FillerAI</h1>
+      <span class="version" id="version"></span>
+    </div>
+
+    <!-- The usual case. -->
+    <form id="signIn" autocomplete="on">
+      <p class="sub">Sign in to read a form, generate records and train a model.
+         Your library is your own.</p>
+      <label class="stack">
+        <span>Username</span>
+        <input type="text" id="username" name="username" autocomplete="username"
+               autocapitalize="none" spellcheck="false" required autofocus>
+      </label>
+      <label class="stack">
+        <span>Password</span>
+        <input type="password" id="password" name="password"
+               autocomplete="current-password" required>
+      </label>
+      <div id="signInError" class="status bad" hidden></div>
+      <button class="btn btn-primary wide" id="signInGo" type="submit">Sign in</button>
+    </form>
+
+    <!-- Shown instead when the password was handed over by somebody else. -->
+    <form id="changePassword" hidden autocomplete="on">
+      <p class="sub">This password was set for you. Choose your own before
+         carrying on.</p>
+      <label class="stack">
+        <span>New password</span>
+        <input type="password" id="newPassword" autocomplete="new-password"
+               minlength="8" required>
+      </label>
+      <label class="stack">
+        <span>New password again</span>
+        <input type="password" id="newPasswordAgain" autocomplete="new-password"
+               minlength="8" required>
+      </label>
+      <div id="changeError" class="status bad" hidden></div>
+      <button class="btn btn-primary wide" id="changeGo" type="submit">
+        Save it and carry on</button>
+    </form>
+
+    <p class="muted signin-foot" id="foot"></p>
+  </div>
+</main>
+
+<script src="/static/login.js"></script>
+</body>
+</html>

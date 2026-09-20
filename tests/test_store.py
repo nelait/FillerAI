@@ -189,7 +189,8 @@ class TestListing(StoreCase):
     def test_totals_count_every_kind(self):
         self.chain()
         self.assertEqual(self.store.totals(),
-                         {"source": 1, "schema": 1, "dataset": 1, "model": 1})
+                         {"source": 1, "schema": 1, "dataset": 1, "model": 1,
+                          "script": 0})
 
     def test_an_empty_library_lists_nothing_rather_than_failing(self):
         self.assertEqual(self.store.list(), [])
