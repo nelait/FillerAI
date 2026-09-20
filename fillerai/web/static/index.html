@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FillerAI</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%274%27 fill=%27%232d6cdf%27/%3E%3Crect x=%273%27 y=%274.5%27 width=%2710%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27/%3E%3Crect x=%273%27 y=%277.2%27 width=%2710%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27/%3E%3Crect x=%273%27 y=%279.9%27 width=%276%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27 opacity=%270.55%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <h1>FillerAI</h1>
+    <span class="version" id="version"></span>
+  </div>
+  <nav class="steps" id="steps" role="tablist" aria-label="Stages">
+    <button class="step is-current" role="tab" data-panel="source" aria-selected="true">
+      <span class="num">1</span> Source
+    </button>
+    <button class="step" role="tab" data-panel="schema" aria-selected="false" disabled>
+      <span class="num">2</span> Schema
+    </button>
+    <button class="step" role="tab" data-panel="generate" aria-selected="false" disabled>
+      <span class="num">3</span> Generate
+    </button>
+    <button class="step" role="tab" data-panel="train" aria-selected="false">
+      <span class="num">4</span> Train
+    </button>
+    <button class="step" role="tab" data-panel="simulate" aria-selected="false">
+      <span class="num">5</span> Simulate
+    </button>
+    <button class="step step-aside" role="tab" data-panel="library" aria-selected="false">
+      <span class="num">6</span> Library
+    </button>
+  </nav>
+</header>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<main>
+
+  <!-- ============================ Source ============================ -->
+  <section class="panel is-current" id="panel-source" role="tabpanel">
+    <div class="panel-head">
+      <h2>Where does the form come from?</h2>
+      <p class="sub">Paste the markup, drop a file, or start from a bundled example.
+         A field spec works too, for forms whose markup cannot be shared.</p>
+    </div>
+
+    <div class="row">
+      <div class="col">
+        <div class="seg" role="group" aria-label="Source kind">
+          <button class="seg-btn is-on" data-kind="html">HTML form</button>
+          <button class="seg-btn" data-kind="spec">Field spec (JSON)</button>
+        </div>
+
+        <div class="drop" id="drop">
+          <textarea id="source" spellcheck="false"
+            placeholder="Paste an HTML form here, or drop a .html file onto this box."></textarea>
+          <div class="drop-hint" id="dropHint">Drop to load</div>
+        </div>
+
+        <div class="actions">
+          <label class="btn btn-ghost">
+            Choose file<input type="file" id="file" accept=".html,.htm,.json" hidden>
+          </label>
+          <button class="btn btn-ghost" id="clear">Clear</button>
+          <span class="spacer"></span>
+          <button class="btn btn-primary" id="extract">Read the form</button>
+        </div>
+      </div>
+
+      <aside class="col col-side">
+        <h3>Examples</h3>
+        <ul class="examples" id="examples"></ul>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============================ Schema ============================ -->
+  <section class="panel" id="panel-schema" role="tabpanel">
+    <div class="panel-head">
+      <h2>What the form is asking for</h2>
+      <p class="sub">Each field's meaning drives what gets generated. Anything the
+         reader was unsure about is flagged; correcting it here is taken as
+         final and will not be overruled.</p>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="toolbar">
+      <input type="search" id="filter" placeholder="Filter fields" aria-label="Filter fields">
+      <label class="check"><input type="checkbox" id="onlyReview"> Only ones to review</label>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" id="downloadSchema">Download schema</button>
+      <button class="btn btn-primary" id="toGenerate">Generate data</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid" id="schemaTable">
+        <thead>
+          <tr>
+            <th>Field</th><th>Label</th><th>Means</th>
+            <th>Group</th><th>Constraints</th><th>Confidence</th>
+          </tr>
+        </thead>
+        <tbody id="schemaBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- =========================== Generate =========================== -->
+  <section class="panel" id="panel-generate" role="tabpanel">
+    <div class="panel-head">
+      <h2>Generate sample records</h2>
+      <p class="sub">Every record is one coherent imaginary person. Values respect
+         the constraints the form declares, and are checked before you see them.</p>
+    </div>
+
+    <div class="controls">
+      <label class="field">
+        <span>Records</span>
+        <input type="number" id="count" value="20" min="1" max="5000">
+      </label>
+      <label class="field">
+        <span>Seed</span>
+        <input type="number" id="seed" value="42" placeholder="random">
+      </label>
+      <label class="field">
+        <span>Blank rate <em id="blankOut">0.12</em></span>
+        <input type="range" id="blankRate" min="0" max="0.6" step="0.01" value="0.12">
+      </label>
+      <label class="check" title="Use ranges that cannot belong to a real person">
+        <input type="checkbox" id="safeIds" checked> Non-issuable identifiers
+      </label>
+      <span class="spacer"></span>
+      <button class="btn btn-primary" id="run">Generate</button>
+    </div>
+
+    <div id="genStatus" class="status" hidden></div>
+
+    <div class="toolbar" id="exportBar" hidden>
+      <span class="muted" id="resultCount"></span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" data-export="csv">CSV</button>
+      <button class="btn btn-ghost" data-export="json">JSON</button>
+      <button class="btn btn-ghost" data-export="ndjson">NDJSON</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid dense" id="dataTable">
+        <thead id="dataHead"></thead>
+        <tbody id="dataBody"></tbody>
+      </table>
+    </div>
+    <p class="muted" id="truncated" hidden></p>
+  </section>
+
+  <!-- ============================= Train ============================ -->
+  <section class="panel" id="panel-train" role="tabpanel">
+    <div class="panel-head">
+      <h2>Train an autofill model</h2>
+      <p class="sub">Learn the form from the records on the last step, then finish
+         it from the first few fields an agent types. Nothing leaves this machine.</p>
+    </div>
+
+    <div class="chooser">
+      <div class="chooser-pick">
+        <label class="field wide">
+          <span>How it learns</span>
+          <select id="algorithm"></select>
+        </label>
+        <p class="sub" id="algoBlurb"></p>
+        <div class="controls tight" id="algoKnobs"></div>
+        <label class="check" title="Rules are arithmetic, not statistics, and apply whichever algorithm is chosen">
+          <input type="checkbox" id="useRules" checked> Use verified rules as well
+        </label>
+      </div>
+      <div class="chooser-recipe">
+        <h3>What it will do</h3>
+        <ol class="recipe" id="algoRecipe"></ol>
+        <button class="btn btn-ghost" id="showScript">Show the script</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <label class="field">
+        <span>Fields to ask for</span>
+        <input type="number" id="askCount" value="3" min="1" max="8">
+      </label>
+      <label class="field">
+        <span>Confidence to fill <em id="threshOut">0.70</em></span>
+        <input type="range" id="thresh" min="0.1" max="0.95" step="0.05" value="0.7">
+      </label>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" id="downloadModel" hidden>Save model</button>
+      <button class="btn btn-primary" id="trainRun">Train</button>
+    </div>
+
+    <div id="trainStatus" class="status" hidden></div>
+
+    <!-- The run: what it is doing, while it does it. -->
+    <div class="run" id="runPanel" hidden>
+      <div class="run-head">
+        <strong id="runStage">Starting</strong>
+        <span class="spacer"></span>
+        <span class="muted" id="runClock"></span>
+        <button class="btn btn-ghost small" id="runToggle">Hide log</button>
+      </div>
+      <div class="bar"><span id="runBar"></span></div>
+      <pre class="log" id="runLog" aria-live="polite"></pre>
+    </div>
+
+    <div class="stats" id="trainStats" hidden></div>
+
+    <div id="tryIt" hidden>
+      <div class="panel-head">
+        <h3>Type the first few</h3>
+        <p class="sub">These are the fields that unlock the most. The rest of the
+           form fills in underneath as you go.</p>
+      </div>
+      <div class="controls" id="seedInputs"></div>
+
+      <div class="table-wrap">
+        <table class="grid dense" id="fillTable">
+          <thead>
+            <tr><th>Field</th><th>Value</th><th>Confidence</th><th>Why</th></tr>
+          </thead>
+          <tbody id="fillBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="treePanel" hidden>
+      <div class="panel-head">
+        <h3>The tree it grew</h3>
+        <p class="sub">Each line is a question and what the records underneath it
+           said. A question the agent has not answered is averaged over its
+           branches rather than skipped.</p>
+      </div>
+      <div class="controls tight">
+        <label class="field wide">
+          <span>Field</span>
+          <select id="treeField"></select>
+        </label>
+      </div>
+      <pre class="log tree" id="treeDraw"></pre>
+    </div>
+
+    <div id="trainReport" hidden>
+      <div class="panel-head">
+        <h3>What the model learned</h3>
+        <p class="sub">A field is answered by a verified rule, by what other fields
+           imply, by its usual value, or not at all - and the last of those is an
+           answer too.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="grid" id="reportTable">
+          <thead>
+            <tr><th>Field</th><th>Answered by</th><th>From</th>
+                <th>Strength</th><th>Values</th></tr>
+          </thead>
+          <tbody id="reportBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-simulate" role="tabpanel">
+    <div class="panel-head">
+      <h2>Fill a real form with it</h2>
+      <p class="sub">A form the model has never seen, drawn from its own schema.
+         Type the first few boxes; the rest fill in underneath as you go, and the
+         panel on the right keeps count of what that saved.</p>
+    </div>
+
+    <div id="simStatus" class="status" hidden></div>
+
+    <div class="controls" id="simControls" hidden>
+      <button class="btn btn-primary" id="simNew">New form</button>
+      <button class="btn btn-ghost" id="simSeed">Type the first few for me</button>
+      <button class="btn btn-ghost" id="simClear">Clear</button>
+      <label class="field">
+        <span>Confidence to fill <em id="simThreshOut">0.70</em></span>
+        <input type="range" id="simThresh" min="0.1" max="0.95" step="0.05" value="0.7">
+      </label>
+      <span class="spacer"></span>
+      <label class="check">
+        <input type="checkbox" id="simMarks" checked>
+        <span>Mark against the real form</span>
+      </label>
+    </div>
+
+    <div class="sim" id="simBody" hidden>
+      <div class="sim-form">
+        <p class="asks" id="simAsks" hidden></p>
+        <nav class="pages" id="simPages" role="tablist" aria-label="Screens" hidden></nav>
+        <form id="simForm" autocomplete="off" onsubmit="return false"></form>
+      </div>
+
+      <aside class="sim-side">
+        <div class="card">
+          <h3>This form</h3>
+          <div class="stats tight" id="simStats"></div>
+          <p class="meter-label" id="simMeterLabel"></p>
+          <div class="meter" id="simMeter"></div>
+          <ul class="legend">
+            <li><span class="key typed"></span>you typed</li>
+            <li><span class="key filled"></span>the model filled</li>
+            <li><span class="key suggested"></span>suggested, below the bar</li>
+            <li><span class="key yours"></span>yours to type</li>
+          </ul>
+          <p class="muted" id="simScore"></p>
+          <p class="note" id="simWhy" hidden></p>
+        </div>
+
+        <div class="card">
+          <h3>Over many forms</h3>
+          <p class="sub">One form is an anecdote. This runs the same simulation
+             over fresh forms the model has not seen.</p>
+          <div class="controls tight">
+            <label class="field">
+              <span>Forms</span>
+              <input type="number" id="simCount" value="50" min="1" max="200">
+            </label>
+            <button class="btn btn-ghost" id="simSweep">Run</button>
+          </div>
+          <div id="simSweepOut" hidden>
+            <div class="stats tight" id="simSweepStats"></div>
+            <p class="muted" id="simSweepLine"></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>How the time is counted</h3>
+          <ul class="assumptions" id="simAssumptions"></ul>
+          <p class="muted">Modelled, not measured. Keystrokes are exact; the
+             seconds are these assumptions applied to this form.</p>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============================ Library =========================== -->
+  <section class="panel" id="panel-library" role="tabpanel">
+    <div class="panel-head">
+      <h2>Everything these runs have produced</h2>
+      <p class="sub">Each source, schema, dataset and model is kept, with a record
+         of what it was made from. Open any of them to pick up where it left off.</p>
+    </div>
+
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="Kind">
+        <button class="seg-btn is-on" data-lib="">Everything</button>
+        <button class="seg-btn" data-lib="source">Sources</button>
+        <button class="seg-btn" data-lib="schema">Schemas</button>
+        <button class="seg-btn" data-lib="dataset">Datasets</button>
+        <button class="seg-btn" data-lib="model">Models</button>
+      </div>
+      <span class="spacer"></span>
+      <span class="muted" id="libWhere"></span>
+      <button class="btn btn-ghost" id="libRefresh">Refresh</button>
+    </div>
+
+    <div id="libStatus" class="status" hidden></div>
+    <div class="stats" id="libStats" hidden></div>
+    <div class="library" id="libList"></div>
+  </section>
+
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

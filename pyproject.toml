@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fillerai"
+version = "0.4.0"
+description = "Synthetic sample data, autofill and simulation for dense web forms"
+readme = "README.md"
+requires-python = ">=3.10"
+# No runtime dependencies on purpose: this has to run inside locked-down
+# environments where the real form data lives.
+dependencies = []
+
+[project.scripts]
+fillerai = "fillerai.cli:main"
+
+[tool.setuptools]
+packages = [
+    "fillerai",
+    "fillerai.extract",
+    "fillerai.generate",
+    "fillerai.simulate",
+    "fillerai.train",
+    "fillerai.train.algos",
+    "fillerai.web",
+]
+
+[tool.setuptools.package-data]
+# The UI is served from disk, so its assets have to ship with the package.
+"fillerai.web" = ["static/*"]

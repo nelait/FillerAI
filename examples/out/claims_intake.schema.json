@@ -1,0 +1,896 @@
+{
+  "schema_version": "1.0",
+  "name": "claims_intake",
+  "source": {
+    "kind": "html",
+    "path": "examples/claims_intake.html"
+  },
+  "screens": [
+    {
+      "id": "claimant",
+      "title": "Claimant Details"
+    },
+    {
+      "id": "addresses",
+      "title": "Addresses"
+    },
+    {
+      "id": "policy",
+      "title": "Policy & Employment"
+    },
+    {
+      "id": "incident",
+      "title": "Incident"
+    }
+  ],
+  "fields": [
+    {
+      "name": "prefix",
+      "label": "Title",
+      "semantic_type": "prefix",
+      "data_type": "string",
+      "control": "select",
+      "screen": "claimant",
+      "options": [
+        {
+          "value": "Mr.",
+          "label": "Mr."
+        },
+        {
+          "value": "Ms.",
+          "label": "Ms."
+        },
+        {
+          "value": "Mrs.",
+          "label": "Mrs."
+        },
+        {
+          "value": "Dr.",
+          "label": "Dr."
+        },
+        {
+          "value": "Mx.",
+          "label": "Mx."
+        }
+      ],
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(prefix|salutation|title_?prefix)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "first_name",
+      "label": "First Name",
+      "semantic_type": "first_name",
+      "data_type": "string",
+      "control": "text",
+      "screen": "claimant",
+      "constraints": {
+        "required": true,
+        "max_length": 40
+      },
+      "confidence": 0.982,
+      "evidence": [
+        "autocomplete=given-name",
+        "name matches /(^|[._\\-])(f_?name|first_?name|given_?name|forename)([._\\-]|$)/"
+      ],
+      "extra": {
+        "autocomplete": "given-name"
+      }
+    },
+    {
+      "name": "middle_initial",
+      "label": "Middle Initial",
+      "semantic_type": "middle_name",
+      "data_type": "string",
+      "control": "text",
+      "screen": "claimant",
+      "constraints": {
+        "max_length": 1
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(m_?name|middle_?name|middle_?initial|mi)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "last_name",
+      "label": "Last Name",
+      "semantic_type": "last_name",
+      "data_type": "string",
+      "control": "text",
+      "screen": "claimant",
+      "constraints": {
+        "required": true,
+        "max_length": 40
+      },
+      "confidence": 0.982,
+      "evidence": [
+        "autocomplete=family-name",
+        "name matches /(^|[._\\-])(l_?name|last_?name|surname|family_?name)([._\\-]|$)/"
+      ],
+      "extra": {
+        "autocomplete": "family-name"
+      }
+    },
+    {
+      "name": "suffix",
+      "label": "Suffix",
+      "semantic_type": "suffix",
+      "data_type": "string",
+      "control": "text",
+      "screen": "claimant",
+      "constraints": {
+        "max_length": 6
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(suffix|name_?suffix)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "date_of_birth",
+      "label": "Date of Birth",
+      "semantic_type": "date_of_birth",
+      "data_type": "date",
+      "control": "date",
+      "screen": "claimant",
+      "constraints": {
+        "required": true
+      },
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(^|[._\\-])(dob|birth_?date|date_?of_?birth|bday|birthday)([._\\-]|$)/",
+        "refines date",
+        "input type=date"
+      ],
+      "extra": {
+        "date_min": "1920-01-01",
+        "date_max": "2008-12-31"
+      }
+    },
+    {
+      "name": "ssn",
+      "label": "Social Security Number",
+      "semantic_type": "ssn",
+      "data_type": "string",
+      "control": "text",
+      "screen": "claimant",
+      "constraints": {
+        "required": true,
+        "pattern": "\\d{3}-\\d{2}-\\d{4}"
+      },
+      "placeholder": "XXX-XX-XXXX",
+      "help_text": "We use this only to verify your policy.",
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(ssn|social_?security|tax_?id|tin)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "gender",
+      "label": "Gender",
+      "semantic_type": "gender",
+      "data_type": "string",
+      "control": "select",
+      "screen": "claimant",
+      "options": [
+        {
+          "value": "Female",
+          "label": "Female"
+        },
+        {
+          "value": "Male",
+          "label": "Male"
+        },
+        {
+          "value": "Non-binary",
+          "label": "Non-binary"
+        },
+        {
+          "value": "Prefer not to say",
+          "label": "Prefer not to say"
+        }
+      ],
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(gender|sex)(?!ual)/"
+      ]
+    },
+    {
+      "name": "email",
+      "label": "Email Address",
+      "semantic_type": "email",
+      "data_type": "string",
+      "control": "email",
+      "screen": "claimant",
+      "constraints": {
+        "required": true,
+        "max_length": 80
+      },
+      "confidence": 0.99,
+      "evidence": [
+        "autocomplete=email",
+        "input type=email",
+        "name matches /(e_?mail)/"
+      ],
+      "extra": {
+        "autocomplete": "email"
+      }
+    },
+    {
+      "name": "phone",
+      "label": "Primary Phone",
+      "semantic_type": "phone",
+      "data_type": "string",
+      "control": "tel",
+      "screen": "claimant",
+      "constraints": {
+        "required": true
+      },
+      "placeholder": "(555) 555-0100",
+      "confidence": 0.895,
+      "evidence": [
+        "name matches /(phone|tel|fax|contact_?number)/",
+        "input type=tel",
+        "placeholder '(555) 555-0100' looks like a phone number"
+      ]
+    },
+    {
+      "name": "mobile_phone",
+      "label": "Mobile Phone",
+      "semantic_type": "phone_mobile",
+      "data_type": "string",
+      "control": "tel",
+      "screen": "claimant",
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(mobile|cell)_?(phone|number|no)?/",
+        "refines phone",
+        "input type=tel"
+      ]
+    },
+    {
+      "name": "preferred_contact",
+      "label": "Contact",
+      "semantic_type": "enum",
+      "data_type": "string",
+      "control": "radio",
+      "screen": "claimant",
+      "options": [
+        {
+          "value": "email",
+          "label": "Email"
+        },
+        {
+          "value": "phone",
+          "label": "Phone"
+        },
+        {
+          "value": "mail",
+          "label": "Mail"
+        }
+      ],
+      "constraints": {
+        "required": true
+      },
+      "confidence": 0.72,
+      "evidence": [
+        "closed set of options, no other signal"
+      ]
+    },
+    {
+      "name": "home_street",
+      "label": "Street Address",
+      "semantic_type": "street_address",
+      "data_type": "string",
+      "control": "text",
+      "screen": "addresses",
+      "group": "home",
+      "constraints": {
+        "required": true,
+        "max_length": 60
+      },
+      "confidence": 0.982,
+      "evidence": [
+        "autocomplete=address-line1",
+        "name matches /(street|address_?(line_?)?1|addr1|address)/"
+      ],
+      "extra": {
+        "autocomplete": "address-line1"
+      }
+    },
+    {
+      "name": "home_address_line2",
+      "label": "Apt / Suite",
+      "semantic_type": "address_line2",
+      "data_type": "string",
+      "control": "text",
+      "screen": "addresses",
+      "group": "home",
+      "constraints": {
+        "max_length": 20
+      },
+      "confidence": 0.982,
+      "evidence": [
+        "autocomplete=address-line2",
+        "name matches /(address_?(line_?)?2|addr2|apt|suite|unit)/"
+      ],
+      "extra": {
+        "autocomplete": "address-line2"
+      }
+    },
+    {
+      "name": "home_city",
+      "label": "City",
+      "semantic_type": "city",
+      "data_type": "string",
+      "control": "text",
+      "screen": "addresses",
+      "group": "home",
+      "constraints": {
+        "required": true,
+        "max_length": 40
+      },
+      "confidence": 0.982,
+      "evidence": [
+        "autocomplete=address-level2",
+        "name matches /(^|[._\\-])(city|town|locality|municipality)([._\\-]|$)/"
+      ],
+      "extra": {
+        "autocomplete": "address-level2"
+      }
+    },
+    {
+      "name": "home_state",
+      "label": "State",
+      "semantic_type": "state",
+      "data_type": "string",
+      "control": "select",
+      "screen": "addresses",
+      "group": "home",
+      "options": [
+        {
+          "value": "AZ",
+          "label": "Arizona"
+        },
+        {
+          "value": "CA",
+          "label": "California"
+        },
+        {
+          "value": "CO",
+          "label": "Colorado"
+        },
+        {
+          "value": "FL",
+          "label": "Florida"
+        },
+        {
+          "value": "IL",
+          "label": "Illinois"
+        },
+        {
+          "value": "NY",
+          "label": "New York"
+        },
+        {
+          "value": "TX",
+          "label": "Texas"
+        },
+        {
+          "value": "WA",
+          "label": "Washington"
+        }
+      ],
+      "constraints": {
+        "required": true
+      },
+      "confidence": 0.988,
+      "evidence": [
+        "autocomplete=address-level1",
+        "name matches /(^|[._\\-])(state|province|region|st)([._\\-]|$)/",
+        "options are US state codes"
+      ],
+      "extra": {
+        "autocomplete": "address-level1"
+      }
+    },
+    {
+      "name": "home_postal_code",
+      "label": "ZIP Code",
+      "semantic_type": "postal_code",
+      "data_type": "string",
+      "control": "text",
+      "screen": "addresses",
+      "group": "home",
+      "constraints": {
+        "required": true,
+        "max_length": 10,
+        "pattern": "\\d{5}(-\\d{4})?"
+      },
+      "confidence": 0.982,
+      "evidence": [
+        "autocomplete=postal-code",
+        "name matches /(zip|postal|postcode|post_?code)/"
+      ],
+      "extra": {
+        "autocomplete": "postal-code"
+      }
+    },
+    {
+      "name": "mailing_street",
+      "label": "Street Address",
+      "semantic_type": "street_address",
+      "data_type": "string",
+      "control": "text",
+      "screen": "addresses",
+      "group": "mailing",
+      "constraints": {
+        "max_length": 60
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(street|address_?(line_?)?1|addr1|address)/"
+      ]
+    },
+    {
+      "name": "mailing_city",
+      "label": "City",
+      "semantic_type": "city",
+      "data_type": "string",
+      "control": "text",
+      "screen": "addresses",
+      "group": "mailing",
+      "constraints": {
+        "max_length": 40
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(city|town|locality|municipality)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "mailing_state",
+      "label": "State",
+      "semantic_type": "state",
+      "data_type": "string",
+      "control": "text",
+      "screen": "addresses",
+      "group": "mailing",
+      "constraints": {
+        "max_length": 2
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(state|province|region|st)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "mailing_postal_code",
+      "label": "ZIP Code",
+      "semantic_type": "postal_code",
+      "data_type": "string",
+      "control": "text",
+      "screen": "addresses",
+      "group": "mailing",
+      "constraints": {
+        "max_length": 5
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(zip|postal|postcode|post_?code)/"
+      ]
+    },
+    {
+      "name": "mailing_country",
+      "label": "Country",
+      "semantic_type": "country",
+      "data_type": "string",
+      "control": "select",
+      "screen": "addresses",
+      "group": "mailing",
+      "options": [
+        {
+          "value": "US",
+          "label": "United States"
+        },
+        {
+          "value": "CA",
+          "label": "Canada"
+        },
+        {
+          "value": "MX",
+          "label": "Mexico"
+        }
+      ],
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])country([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "policy_number",
+      "label": "Policy Number",
+      "semantic_type": "policy_number",
+      "data_type": "string",
+      "control": "text",
+      "screen": "policy",
+      "constraints": {
+        "required": true,
+        "max_length": 20
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(policy_?(number|no|id)?)/"
+      ]
+    },
+    {
+      "name": "group_number",
+      "label": "Group Number",
+      "semantic_type": "group_number",
+      "data_type": "string",
+      "control": "text",
+      "screen": "policy",
+      "constraints": {
+        "max_length": 12
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(group_?(number|no|id))/"
+      ]
+    },
+    {
+      "name": "member_id",
+      "label": "Member ID",
+      "semantic_type": "member_id",
+      "data_type": "string",
+      "control": "text",
+      "screen": "policy",
+      "constraints": {
+        "required": true,
+        "max_length": 16
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(member_?(id|number|no)|subscriber_?id)/"
+      ]
+    },
+    {
+      "name": "effective_date",
+      "label": "Policy Effective Date",
+      "semantic_type": "date",
+      "data_type": "date",
+      "control": "date",
+      "screen": "policy",
+      "constraints": {
+        "required": true
+      },
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(date|_on$|_at$)/",
+        "input type=date"
+      ]
+    },
+    {
+      "name": "renewal_date",
+      "label": "Renewal Date",
+      "semantic_type": "date",
+      "data_type": "date",
+      "control": "date",
+      "screen": "policy",
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(date|_on$|_at$)/",
+        "input type=date"
+      ]
+    },
+    {
+      "name": "deductible_amount",
+      "label": "Deductible",
+      "semantic_type": "currency_amount",
+      "data_type": "number",
+      "control": "number",
+      "screen": "policy",
+      "constraints": {
+        "required": true,
+        "minimum": 0.0,
+        "maximum": 5000.0,
+        "step": 50.0
+      },
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(amount|price|cost|salary|income|balance|premium|deductible|total|fee|(coverage|credit|policy|spending)_?limit)/",
+        "refines decimal",
+        "input type=number"
+      ]
+    },
+    {
+      "name": "coverage_limit",
+      "label": "Coverage Limit",
+      "semantic_type": "currency_amount",
+      "data_type": "number",
+      "control": "number",
+      "screen": "policy",
+      "constraints": {
+        "minimum": 10000.0,
+        "maximum": 1000000.0,
+        "step": 10000.0
+      },
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(amount|price|cost|salary|income|balance|premium|deductible|total|fee|(coverage|credit|policy|spending)_?limit)/",
+        "refines decimal",
+        "input type=number"
+      ]
+    },
+    {
+      "name": "employer_company",
+      "label": "Company Name",
+      "semantic_type": "company",
+      "data_type": "string",
+      "control": "text",
+      "screen": "policy",
+      "group": "employer",
+      "constraints": {
+        "max_length": 60
+      },
+      "confidence": 0.982,
+      "evidence": [
+        "autocomplete=organization",
+        "name matches /(company|employer|organi[sz]ation|business_?name|firm)/"
+      ],
+      "extra": {
+        "autocomplete": "organization"
+      }
+    },
+    {
+      "name": "employer_job_title",
+      "label": "Occupation",
+      "semantic_type": "job_title",
+      "data_type": "string",
+      "control": "text",
+      "screen": "policy",
+      "group": "employer",
+      "constraints": {
+        "max_length": 50
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(job_?title|occupation|position|role_?title)/"
+      ]
+    },
+    {
+      "name": "employer_city",
+      "label": "City",
+      "semantic_type": "city",
+      "data_type": "string",
+      "control": "text",
+      "screen": "policy",
+      "group": "employer",
+      "constraints": {
+        "max_length": 40
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(city|town|locality|municipality)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "employer_state",
+      "label": "State",
+      "semantic_type": "state",
+      "data_type": "string",
+      "control": "text",
+      "screen": "policy",
+      "group": "employer",
+      "constraints": {
+        "max_length": 2
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(state|province|region|st)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "employer_phone",
+      "label": "Work Phone",
+      "semantic_type": "phone",
+      "data_type": "string",
+      "control": "tel",
+      "screen": "policy",
+      "group": "employer",
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(phone|tel|fax|contact_?number)/",
+        "input type=tel"
+      ]
+    },
+    {
+      "name": "claim_number",
+      "label": "Claim Number",
+      "semantic_type": "claim_number",
+      "data_type": "string",
+      "control": "text",
+      "screen": "incident",
+      "constraints": {
+        "max_length": 16,
+        "read_only": true
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(claim_?(number|no|id)?)/"
+      ]
+    },
+    {
+      "name": "incident_date",
+      "label": "Date of Incident",
+      "semantic_type": "date",
+      "data_type": "date",
+      "control": "date",
+      "screen": "incident",
+      "constraints": {
+        "required": true
+      },
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(date|_on$|_at$)/",
+        "input type=date"
+      ]
+    },
+    {
+      "name": "incident_time",
+      "label": "Time of Incident",
+      "semantic_type": "time",
+      "data_type": "time",
+      "control": "time",
+      "screen": "incident",
+      "confidence": 0.9,
+      "evidence": [
+        "input type=time"
+      ]
+    },
+    {
+      "name": "loss_amount",
+      "label": "Estimated Loss Amount",
+      "semantic_type": "currency_amount",
+      "data_type": "number",
+      "control": "number",
+      "screen": "incident",
+      "constraints": {
+        "required": true,
+        "minimum": 100.0,
+        "maximum": 250000.0,
+        "step": 0.01
+      },
+      "confidence": 0.855,
+      "evidence": [
+        "name matches /(amount|price|cost|salary|income|balance|premium|deductible|total|fee|(coverage|credit|policy|spending)_?limit)/",
+        "refines decimal",
+        "input type=number"
+      ]
+    },
+    {
+      "name": "injury_reported",
+      "label": "Was anyone injured?",
+      "semantic_type": "boolean",
+      "data_type": "boolean",
+      "control": "radio",
+      "screen": "incident",
+      "options": [
+        {
+          "value": "Yes",
+          "label": "Yes"
+        },
+        {
+          "value": "No",
+          "label": "No"
+        }
+      ],
+      "constraints": {
+        "required": true
+      },
+      "confidence": 0.72,
+      "evidence": [
+        "options are yes/no"
+      ]
+    },
+    {
+      "name": "diagnosis_code",
+      "label": "Diagnosis Code",
+      "semantic_type": "diagnosis_code",
+      "data_type": "string",
+      "control": "text",
+      "screen": "incident",
+      "constraints": {
+        "max_length": 10
+      },
+      "placeholder": "ICD-10",
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(diagnosis|icd|dx_?code)/"
+      ]
+    },
+    {
+      "name": "police_report_filed",
+      "label": "Police report filed",
+      "semantic_type": "boolean",
+      "data_type": "boolean",
+      "control": "checkbox",
+      "screen": "incident",
+      "confidence": 0.9,
+      "evidence": [
+        "input type=checkbox"
+      ]
+    },
+    {
+      "name": "incident_description",
+      "label": "Describe what happened",
+      "semantic_type": "free_text",
+      "data_type": "string",
+      "control": "textarea",
+      "screen": "incident",
+      "constraints": {
+        "required": true,
+        "min_length": 20,
+        "max_length": 500
+      },
+      "confidence": 0.85,
+      "evidence": [
+        "textarea control takes free-form prose"
+      ]
+    },
+    {
+      "name": "payee_full_name",
+      "label": "Payee Name",
+      "semantic_type": "full_name",
+      "data_type": "string",
+      "control": "text",
+      "screen": "incident",
+      "group": "payee",
+      "constraints": {
+        "required": true,
+        "max_length": 80
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(^|[._\\-])(full_?name|name|contact_?name|applicant_?name)([._\\-]|$)/"
+      ]
+    },
+    {
+      "name": "payee_routing_number",
+      "label": "Routing Number",
+      "semantic_type": "routing_number",
+      "data_type": "string",
+      "control": "text",
+      "screen": "incident",
+      "group": "payee",
+      "constraints": {
+        "required": true,
+        "max_length": 9,
+        "pattern": "\\d{9}"
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(routing|aba|sort_?code)/"
+      ]
+    },
+    {
+      "name": "payee_account_number",
+      "label": "Account Number",
+      "semantic_type": "account_number",
+      "data_type": "string",
+      "control": "text",
+      "screen": "incident",
+      "group": "payee",
+      "constraints": {
+        "required": true,
+        "max_length": 17
+      },
+      "confidence": 0.8,
+      "evidence": [
+        "name matches /(account_?(number|no|num)|acct)/"
+      ]
+    }
+  ]
+}

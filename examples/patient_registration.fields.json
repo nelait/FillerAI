@@ -1,0 +1,36 @@
+{
+  "name": "patient_registration",
+  "screens": [
+    {"id": "patient", "title": "Patient"},
+    {"id": "insurance", "title": "Insurance"},
+    {"id": "visit", "title": "Visit"}
+  ],
+  "fields": [
+    {"name": "patient_first_name", "label": "First Name", "screen": "patient", "group": "patient", "required": true, "max_length": 40},
+    {"name": "patient_last_name", "label": "Last Name", "screen": "patient", "group": "patient", "required": true, "max_length": 40},
+    {"name": "patient_date_of_birth", "label": "Date of Birth", "screen": "patient", "group": "patient", "control": "date", "required": true},
+    {"name": "patient_email", "label": "Email", "screen": "patient", "group": "patient", "max_length": 80},
+    {"name": "patient_phone", "label": "Phone", "screen": "patient", "group": "patient", "required": true, "placeholder": "(555) 555-0100"},
+    {"name": "patient_street", "label": "Street Address", "screen": "patient", "group": "patient", "required": true, "max_length": 60},
+    {"name": "patient_city", "label": "City", "screen": "patient", "group": "patient", "required": true, "max_length": 40},
+    {"name": "patient_state", "label": "State", "screen": "patient", "group": "patient", "control": "select", "required": true,
+     "options": ["AZ", "CA", "CO", "FL", "IL", "NY", "TX", "WA"]},
+    {"name": "patient_postal_code", "label": "ZIP", "screen": "patient", "group": "patient", "required": true, "pattern": "\\d{5}"},
+
+    {"name": "insured_member_id", "label": "Member ID", "screen": "insurance", "group": "insured", "required": true, "max_length": 16},
+    {"name": "insured_group_number", "label": "Group Number", "screen": "insurance", "group": "insured", "max_length": 12},
+    {"name": "insured_policy_number", "label": "Policy Number", "screen": "insurance", "group": "insured", "required": true, "max_length": 20},
+    {"name": "insured_company", "label": "Employer", "screen": "insurance", "group": "insured", "max_length": 60},
+    {"name": "relationship_to_insured", "label": "Relationship to Insured", "screen": "insurance", "control": "select", "required": true,
+     "options": ["Self", "Spouse", "Child", "Other"]},
+    {"name": "copay_amount", "label": "Copay", "screen": "insurance", "control": "number", "minimum": 0, "maximum": 250, "step": 5},
+
+    {"name": "visit_date", "label": "Appointment Date", "screen": "visit", "control": "date", "required": true},
+    {"name": "visit_time", "label": "Appointment Time", "screen": "visit", "control": "time"},
+    {"name": "diagnosis_code", "label": "Diagnosis Code", "screen": "visit", "max_length": 10},
+    {"name": "reason_for_visit", "label": "Reason for Visit", "screen": "visit", "control": "textarea", "required": true,
+     "min_length": 20, "max_length": 300},
+    {"name": "referring_provider", "label": "Referring Provider", "screen": "visit", "semantic_type": "full_name", "max_length": 80},
+    {"name": "consent_to_treat", "label": "I consent to treatment", "screen": "visit", "control": "checkbox", "required": true}
+  ]
+}
