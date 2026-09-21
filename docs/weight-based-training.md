@@ -6,13 +6,105 @@ weight-based engine would mean: how training would run, how inference would
 run, what each candidate costs under this project's constraints, and which
 ones are worth building.
 
-It is an analysis, not a change. No training code was touched.
+**Both of its recommendations were then built**, so section 0 records what the
+engine and the vote weights actually do now, and where the estimates below
+turned out to be wrong. Everything from section 1 on is the analysis as it was
+written, which is the honest way round: it was the reasoning that chose the
+work, and its mistakes are worth keeping visible.
 
 Everything with a number attached was measured on `main` (475 tests passing)
 against the claims intake form and 20,000 generated records — the same setup
 as [**Training, serving, and what happens at 20,000
 records**](training-and-scale.md), so the costs here sit beside that
 document's rather than replacing them. The scripts are in section 9.
+
+---
+
+## 0. What was built, and where this document was wrong
+
+Two things, in the order section 8 recommended.
+
+**Learned vote weights** (`fillerai/train/algos/combine.py`), no new engine.
+Five features per vote - the weight the engine proposed, its strength, how many
+records back it, how decisive it is, and whether it is the marginal floor -
+and six parameters fitted to predict whether that voter was right. Fitted on a
+slice taken off the front of the holdout, never on the rows that calibrate, and
+kept only if it beats the hand-picked arithmetic on records neither of them
+saw. Otherwise the run says so and the old arithmetic stays.
+
+**A `linear` engine** (`fillerai/train/algos/linear.py`). Per-target softmax
+over `field=value` tokens, with the fields too wide to enumerate hashed into
+buckets - which is the whole point, per section 4.
+
+Four things this document got wrong, all of them worth reading before trusting
+the rest of it.
+
+**The weight that a weighted average needs is not a probability.** Section 3.1
+says to fit a logistic regression and use it; the first implementation did
+exactly that and changed nothing measurable. A logistic model on features this
+strong saturates: two voters that deserve to be three times apart both come out
+at 0.98, and the ballot normalises the difference away. Using the *odds* -
+`exp` of the same linear score - instead of the probability turned a 0.08%
+improvement in log loss into 3-5%.
+
+**Vote weights cannot touch a ballot with one voter at all,** because
+`Ballot.result` divides by the weight cast. On the generated claims form 95% of
+ballots have exactly one voter, so the learned weights are nearly inert there -
+a few tenths of a percent - and the honest gate is log loss rather than top-1
+accuracy, which is mostly blind to what better weights change. On a form where
+two predictors genuinely compete the same code cuts log loss by 3-5%. Same
+story as everywhere else in this project: invented records only carry the
+relationships the generator put in them.
+
+**A shortlist is not optional for a linear engine, it is load-bearing.** Given
+every field, the fit will happily learn confident weights for a column of pure
+noise, and because the confidence curve is shared across all fields, one
+overconfident field drags every field's confidence down. With the noise columns
+in, a perfectly determined answer came back at 0.54. The fix is the shortlist
+`bayes` and `nearest` already use (`relevance`), applied to the bucketed tokens
+so a wide field is judged as it will be used.
+
+**Hashing needs a ceiling, and section 3.3's size estimate missed it by 14x.**
+That estimate assumed only enumerable sources. Nine bucketed fields at 4,096
+buckets each, against a target with 194 candidate values, produced a **102 MB**
+model on the claims form. The fix is a ceiling on the *numbers* rather than the
+rows - 40,000 per field, keeping the largest - which brought it to 6.5 MB and
+doubles as feature selection, since a bucket that learned nothing is the first
+thing dropped. Counting numbers rather than rows is what protects the case the
+engine exists for: thousands of buckets against a five-answer field is cheap,
+and that is exactly city to state.
+
+### What it measures, on the same 20,000 records as everything below
+
+| | estimated in section 3.3 | measured |
+|---|---|---|
+| engine fit | 4.7 min (10 passes) | **144.5 s** |
+| engine JSON | 7.2 MB | **6.52 MB** |
+| engine load | 119 ms | 240 ms |
+| whole-form prediction | 0.17 ms | **0.96 ms** |
+| calibration | ~3 s | 14.3 s |
+
+The fit came in faster than estimated because the shortlist cut the fields
+offered to each target from 31 to at most 10. Prediction came in slower because
+0.17 ms was measured on a bare weight lookup; 0.96 ms is the real engine,
+through the ballot, the marginal floor and `predict_field`, over all 44 fields.
+It is still the second fastest engine in the project, behind `statistical`'s
+0.50 ms and ahead of `tree`'s 1.50 ms. A whole `linear` run at 20,000 records
+is about three minutes against `statistical`'s 51 seconds, and nearly all of
+the difference is the one stage a live log can narrate.
+
+On the claims form it bucketed nine fields and fitted `home_state` from
+`home_city` **and `home_postal_code`** at strength 1.00 - and
+`home_postal_code` has 4,458 distinct values, so the conditional tables cannot
+see it in either direction. That is the hole in the other five engines, closed,
+on a real form rather than a constructed one.
+
+### What was not built
+
+Boosting (section 6) and the three declined candidates (section 7) were not
+built, for the reasons given there. Section 6's reason got stronger, not
+weaker: `forest`'s cost really is its inference cost, and section 2 has the
+measurement.
 
 ---
 
@@ -546,6 +638,8 @@ merely taxes.
 ---
 
 ## 8. Recommendation
+
+*(This was the recommendation. Section 0 says what came of it.)*
 
 **Do candidate C first (learned combiner weights).** It is weight-based
 training in the honest sense, it improves all five existing engines rather

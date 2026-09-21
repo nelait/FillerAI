@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from . import algos, script
 from .algos import Algorithm, Engine, Guess
+from .algos.combine import Combiner
 from .evaluate import FieldScore, Report, evaluate, suggest_seed_fields
 from .features import Profile
 from .model import (
@@ -68,6 +69,7 @@ __all__ = [
     "Profile",
     "Report",
     "Trace",
+    "Combiner",
     "TrainOptions",
     "algos",
     "evaluate",

@@ -72,7 +72,7 @@ class BayesEngine(Engine):
         prior = self.priors.get(name)
         tables = self.tables.get(name)
         if not prior or not tables:
-            ballot = Ballot()
+            ballot = Ballot(self.combiner)
             ballot.floor(profile)
             return ballot.guess()
 
@@ -92,7 +92,7 @@ class BayesEngine(Engine):
                 )
             scores[candidate] = log_probability
 
-        ballot = Ballot()
+        ballot = Ballot(self.combiner)
         if scores:
             top = max(scores.values())
             weights = {k: math.exp(v - top) for k, v in scores.items()}
@@ -105,6 +105,8 @@ class BayesEngine(Engine):
                     distribution, self.strengths.get(name, 0.5),
                     reason=(f"{shown} -> {best}, at {distribution[best] * 100:.0f}% "
                             f"before calibration"),
+                    strength=self.strengths.get(name, 0.5),
+                    support=sum((self.totals.get(name) or {}).values()),
                 )
         ballot.floor(profile)
         return ballot.guess()

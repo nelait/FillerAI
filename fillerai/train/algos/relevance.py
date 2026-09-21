@@ -30,11 +30,23 @@ MIN_RELEVANCE = 0.01
 
 
 def table(columns: dict[str, list[str]], usable: list[str],
-          keep: int = 8) -> dict[str, dict[str, float]]:
-    """``{target: {source: relevance}}``, best sources only."""
+          keep: int = 8, sources: list[str] | None = None,
+          source_columns: dict[str, list[str]] | None = None
+          ) -> dict[str, dict[str, float]]:
+    """``{target: {source: relevance}}``, best sources only.
+
+    ``sources`` and ``source_columns`` let a caller offer evidence the targets
+    are not drawn from, and offer it in a different form. :mod:`.linear` uses
+    both: it can predict from a field with thousands of distinct values by
+    bucketing them, so it asks about more fields than it answers, and asks
+    about them as buckets rather than as values. The measure is the same one
+    either way.
+    """
     rows = len(next(iter(columns.values()), []))
     step = max(1, rows // SAMPLE_ROWS)
     sample = list(range(0, rows, step))
+    offered = usable if sources is None else sources
+    from_columns = columns if source_columns is None else source_columns
 
     out: dict[str, dict[str, float]] = {}
     for target in usable:
@@ -43,12 +55,12 @@ def table(columns: dict[str, list[str]], usable: list[str],
         if not filled:
             continue
         scores: dict[str, float] = {}
-        for source in usable:
+        for source in offered:
             if source == target:
                 continue
             groups: dict[str, list[int]] = {}
             for row in filled:
-                value = columns[source][row]
+                value = from_columns[source][row]
                 if value:
                     groups.setdefault(value, []).append(row)
             if len(groups) < 2:

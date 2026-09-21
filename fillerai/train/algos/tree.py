@@ -368,7 +368,7 @@ class TreeEngine(Engine):
     # -- prediction --------------------------------------------------------
 
     def guess(self, name: str, known: dict[str, str], profile: Profile) -> Guess:
-        ballot = Ballot()
+        ballot = Ballot(self.combiner)
         stand = self.trees.get(name) or []
         for index, tree in enumerate(stand):
             path: list[str] = []
@@ -380,7 +380,8 @@ class TreeEngine(Engine):
             weight = tree.strength if path else tree.strength * 0.25
             if weight <= 0:
                 continue
-            ballot.cast(distribution, weight, evidence=bool(path))
+            ballot.cast(distribution, weight, evidence=bool(path),
+                        strength=tree.strength, support=tree.tested)
             if path and len(ballot.because) < 3:
                 top = max(distribution, key=lambda c: distribution[c])
                 where = " then ".join(path)
