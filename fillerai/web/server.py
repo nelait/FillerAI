@@ -23,6 +23,7 @@ import hmac
 import ipaddress
 import json
 import mimetypes
+import os
 import random
 import sys
 import threading
@@ -54,6 +55,7 @@ from ..train import algos, script as script_writer
 from ..train.evaluate import evaluate, suggest_seed_fields
 from ..train.model import ACCEPT_ABOVE, AutofillModel, TrainOptions, split_records, train
 from ..train.trace import Trace
+from .keyring import SINGLE_USER, Keyring
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
@@ -78,6 +80,13 @@ MAX_KEPT_RUNS = 6
 # Log lines returned in one poll. A fit over a wide form emits thousands; the
 # UI wants them in order and does not want one reply holding all of them.
 MAX_LOG_LINES = 400
+#: Long enough for any key either service issues, short enough that a paste
+#: of the wrong thing is refused before it is stored.
+MAX_KEY_CHARS = 512
+MAX_MODEL_CHARS = 120
+#: What a proposal run may cost before the server refuses it. The UI shows
+#: the estimate first, so this is a backstop rather than a surprise.
+DEFAULT_MAX_SPEND = 1.0
 # How much of an over-long body to read and throw away so the client can
 # actually receive the error. Past this the connection is simply closed.
 DRAIN_LIMIT = 2 * MAX_BODY_BYTES
@@ -95,6 +104,10 @@ LIBRARY = Store.default()
 #: exactly what this was before there were accounts.
 DATABASE: Database | None = None
 AUTH: Auth | None = None
+
+#: API keys typed into the UI. In memory, for this run of the server, per
+#: user - see :mod:`.keyring` for why they go no further than that.
+KEYRING = Keyring()
 
 #: The header a browser must echo the session's token in. A cookie alone
 #: would let any page on the machine POST here with the user's credentials
@@ -1286,6 +1299,251 @@ def api_admin_import(_: dict[str, Any]) -> dict[str, Any]:
             "failed": result["failed"], "from": result["from"]}
 
 
+# ----------------------------------------------------------------------
+# the optional language-model features
+# ----------------------------------------------------------------------
+#
+# Every handler below imports ``..llm`` *inside* the function. That is the
+# fence described in ``fillerai/llm/__init__.py`` and enforced by
+# ``tests/test_llm_fence.py``: one module-scope import here would make a
+# network-capable package mandatory for every command that serves a page.
+
+
+def _who() -> str:
+    """The keyring row this request belongs to."""
+    user = current_user()
+    return user.id if user else SINGLE_USER
+
+
+def _llm_settings(task: str, *, provider: str | None = None,
+                  model: str | None = None):
+    """What this user's next call would be made with.
+
+    A key typed into the UI is laid over the environment as that provider's
+    own variable, so the inference in :func:`fillerai.llm.config.
+    choose_provider` decides exactly as it does at a terminal - one rule about
+    which service is meant, not two.
+    """
+    from ..llm import providers as llm_providers
+    from ..llm.config import Settings
+
+    who = _who()
+    chosen = KEYRING.preference(who)
+    environ = dict(os.environ)
+    for name, key in KEYRING.keys(who).items():
+        try:
+            environ[llm_providers.get(name).key_variable] = key
+        except ValueError:
+            continue
+    try:
+        return Settings.resolve(
+            task,
+            provider=provider or chosen.provider or None,
+            model=model or chosen.model or None,
+            environ=environ,
+        )
+    except ValueError as error:
+        raise ApiError(str(error)) from None
+
+
+def _llm_status() -> dict[str, Any]:
+    from ..llm import providers as llm_providers
+    from ..llm import transport as llm_transport
+    from ..llm.config import KEY_VARIABLE
+
+    who = _who()
+    typed = KEYRING.typed(who)
+    settings = _llm_settings("rules")
+    sdk = llm_transport.sdk_for(settings)
+
+    # The inference reports the environment variable it read, which is the
+    # right answer at a terminal and the wrong one here: a key typed into the
+    # box is laid over that variable, so the unedited reason would tell
+    # somebody their shell did something they did it themselves.
+    reason = settings.provider_reason
+    if settings.provider in typed:
+        if reason == f"${settings.api.key_variable} is set":
+            reason = "it is the only service you have saved a key for"
+        elif reason.startswith("the default;"):
+            reason = "you have saved more than one key and have not said which to use"
+
+    return {
+        "providers": [
+            {
+                "name": p.name,
+                "label": p.label,
+                "key_variable": p.key_variable,
+                "models": dict(p.task_models),
+                # Where this provider's key is coming from, if anywhere. The
+                # key itself is never in this payload in any form.
+                "source": ("typed here" if p.name in typed
+                           else "environment"
+                           if os.environ.get(p.key_variable) or os.environ.get(KEY_VARIABLE)
+                           else ""),
+                "typed": p.name in typed,
+            }
+            for p in llm_providers.PROVIDERS.values()
+        ],
+        "provider": settings.provider,
+        "label": settings.api.label,
+        "reason": reason,
+        "models": {task: _llm_settings(task).model for task in ("rules", "typing")},
+        "key": settings.redacted(),
+        "configured": settings.configured,
+        "transport": sdk.label if sdk else llm_transport.UrllibTransport.label,
+        "endpoint": settings.endpoint,
+        "custom_base_url": settings.custom_base_url,
+        "preference": KEYRING.preference(who).to_dict(),
+        "key_variable": KEY_VARIABLE,
+    }
+
+
+def api_llm_status(_: dict[str, Any]) -> dict[str, Any]:
+    """Which service the next call would go to, and what decided that."""
+    return _llm_status()
+
+
+def api_llm_key(payload: dict[str, Any]) -> dict[str, Any]:
+    """Remember an API key for this user, in memory, until the server stops.
+
+    An empty key forgets one. Nothing about the key comes back in the reply
+    beyond the four characters :meth:`Settings.redacted` shows.
+    """
+    from ..llm import providers as llm_providers
+
+    name = str(_require(payload, "provider")).strip().lower()
+    try:
+        provider = llm_providers.get(name)
+    except ValueError as error:
+        raise ApiError(str(error)) from None
+
+    key = str(payload.get("key") or "")
+    if len(key) > MAX_KEY_CHARS:
+        raise ApiError("that does not look like an API key - it is too long")
+    KEYRING.set_key(_who(), provider.name, key)
+    return _llm_status()
+
+
+def api_llm_preference(payload: dict[str, Any]) -> dict[str, Any]:
+    """Which service and model this user wants, when more than one would do."""
+    from ..llm import providers as llm_providers
+
+    provider = payload.get("provider")
+    if provider is not None:
+        provider = str(provider).strip().lower()
+        if provider and provider not in llm_providers.PROVIDERS:
+            raise ApiError(f"no language-model provider called {provider!r}")
+    model = payload.get("model")
+    if model is not None:
+        model = str(model).strip()
+        if len(model) > MAX_MODEL_CHARS:
+            raise ApiError("that is not a model name")
+    KEYRING.set_preference(_who(), provider=provider, model=model)
+    return _llm_status()
+
+
+def api_llm_forget(_: dict[str, Any]) -> dict[str, Any]:
+    """Drop every key this user typed, without touching the environment."""
+    KEYRING.forget(_who())
+    return _llm_status()
+
+
+def _proposal_payload(entry: dict[str, Any]):
+    from ..llm.rules import Proposal
+
+    try:
+        return Proposal.from_payload(entry)
+    except (ValueError, KeyError, TypeError) as error:
+        raise ApiError(f"that rule could not be read: {error}") from None
+
+
+def api_llm_rules_estimate(payload: dict[str, Any]) -> dict[str, Any]:
+    """What asking would cost, before anything is sent."""
+    from ..llm import rules as llm_rules
+
+    schema = _schema_from(payload)
+    settings = _llm_settings("rules")
+    estimate = llm_rules.estimate(schema, settings)
+    return {
+        "provider": settings.provider,
+        "label": settings.api.label,
+        "model": settings.model,
+        "configured": settings.configured,
+        "input_tokens": estimate.input_tokens,
+        "output_tokens": estimate.output_tokens,
+        "dollars": round(estimate.dollars, 4),
+        "priced": estimate.priced,
+        "lines": estimate.describe(),
+    }
+
+
+def api_llm_rules_propose(payload: dict[str, Any]) -> dict[str, Any]:
+    """Ask for this form's rules, and run the answer through the gate.
+
+    Synchronous on purpose. It is one call and a couple of generated samples,
+    and doing it on a worker thread would mean carrying the request's user
+    across to it - the bug that hid every trained model from its owner once
+    already.
+    """
+    from ..llm.client import ReplyError
+    from ..llm.config import ConfigError
+    from ..llm.cost import SpendRefused
+    from ..llm.transport import TransportError
+    from ..llm import rules as llm_rules
+
+    schema = _schema_from(payload)
+    settings = _llm_settings("rules")
+    if not settings.configured:
+        raise ApiError(
+            f"no API key for {settings.api.label} yet - add one under Your account"
+        )
+    sample = _bounded_int(payload, "sample", llm_rules.CHECK_SAMPLE, 20, MAX_RECORDS)
+    try:
+        spend = float(payload.get("max_spend", DEFAULT_MAX_SPEND))
+    except (TypeError, ValueError):
+        raise ApiError("max_spend must be a number") from None
+
+    try:
+        proposals = llm_rules.propose(schema, settings=settings,
+                                      sample=sample, max_spend=spend)
+    except (ConfigError, SpendRefused, TransportError, ReplyError, ValueError) as error:
+        raise ApiError(str(error)) from None
+
+    out = proposals.to_dict()
+    out["provider"] = settings.provider
+    out["label"] = settings.api.label
+    return out
+
+
+def api_llm_rules_apply(payload: dict[str, Any]) -> dict[str, Any]:
+    """Declare the chosen rules on the schema, and keep the result.
+
+    The rules are re-read through the same parser that checked them, so a
+    browser cannot smuggle one past the gate by editing the list on its way
+    back.
+    """
+    from ..llm import rules as llm_rules
+
+    schema = _schema_from(payload)
+    chosen = _require(payload, "rules")
+    if not isinstance(chosen, list) or not chosen:
+        raise ApiError("choose at least one rule to apply")
+
+    proposals = [_proposal_payload(entry) for entry in chosen]
+    verdicts = llm_rules.check(schema, proposals, sample=llm_rules.CHECK_SAMPLE)
+    refused = [f"{v.proposal.field}: {v.problem}" for v in verdicts if not v.kept]
+    if refused:
+        raise ApiError("those rules do not check out: " + "; ".join(refused))
+
+    ruled = llm_rules.with_rules(schema, proposals)
+    out = {"schema": ruled.to_dict(), "summary": _summarise(ruled),
+           "applied": [p.field for p in proposals]}
+    if payload.get("save", True):
+        entry = library().save_schema(ruled, parent=payload.get("parent") or None)
+        out["schema_id"] = entry.id
+    return out
+
+
 @dataclass(frozen=True)
 class Route:
     """An endpoint and who is allowed to reach it."""
@@ -1335,6 +1593,13 @@ ROUTES: dict[str, Route] = {
     "/api/simulate/case": Route(api_simulate_case),
     "/api/simulate/fill": Route(api_simulate_fill),
     "/api/simulate/sweep": Route(api_simulate_sweep),
+    "/api/llm/status": Route(api_llm_status),
+    "/api/llm/key": Route(api_llm_key),
+    "/api/llm/preference": Route(api_llm_preference),
+    "/api/llm/forget": Route(api_llm_forget),
+    "/api/llm/rules/estimate": Route(api_llm_rules_estimate),
+    "/api/llm/rules/propose": Route(api_llm_rules_propose),
+    "/api/llm/rules/apply": Route(api_llm_rules_apply),
 }
 
 

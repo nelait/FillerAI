@@ -1341,6 +1341,14 @@ reads a form's field list and proposes the business rules it declares about
 itself, because [writing those by hand](#learning-to-fill-the-form) is what
 27 rules on the quote form and 31 on onboarding cost somebody.
 
+**Or do it in the UI.** `Settings`, top right, takes a key for either service
+and says which one the next run will use; `Propose rules` on the Schema step
+asks, shows what survived the checks with its reasoning, and applies only the
+ones you tick. A key typed there is held in the server's memory and written
+nowhere - not to the database, not to the library, not to a log - so it is
+forgotten when the server stops. The environment variables below are for one
+that lasts.
+
 ```bash
 # Which service and model, and whether a key is set. Prints no key.
 python -m fillerai llm status

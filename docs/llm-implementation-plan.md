@@ -144,6 +144,27 @@ Three differences were worth handling rather than papering over:
   against `choices[0].message.refusal`. Both are checked before anything tries
   to parse the text.
 
+### 0.5 In the UI
+
+*Also added after the plan was written.* `Settings` holds a key per service,
+and the Schema step has a `Propose rules` card: the cost first, then what
+survived with its reasoning, a tick box each, and nothing applied until
+somebody ticks it. Three things about it are deliberate.
+
+- **A key typed into the UI lives in the process and nowhere else**
+  (`fillerai/web/keyring.py`), per user, forgotten on restart. The
+  alternative is a plaintext bearer credential in a SQLite file that the
+  admin page exports and that gets copied around with the library. The
+  environment variable is still the way to have one that lasts.
+- **The browser is not trusted with the gate.** `/api/llm/rules/apply`
+  re-reads every rule through the same parser and re-runs the full check
+  before declaring anything, so editing the list on its way back changes
+  nothing.
+- **The call is made on the request thread**, not a worker. It is one call
+  and a couple of sample generations, and a worker would have to carry the
+  request's user across to it - which is the bug that hid every trained
+  model from its owner once already.
+
 The provider is inferred rather than demanded — an explicit flag, then
 `FILLERAI_LLM_PROVIDER`, then a model name that gives itself away, then which
 key variable is set, then what the neutral key begins with — and `llm status`

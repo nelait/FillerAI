@@ -236,6 +236,11 @@ function constraintText(field) {
   if (c.step != null) parts.push(`step ${c.step}`);
   if (c.pattern) parts.push('pattern');
   if (field.options && field.options.length) parts.push(`${field.options.length} options`);
+  // A declared rule is the most consequential thing on a field - it decides
+  // what gets generated - so it goes first rather than last.
+  if (field.derived && field.derived.sources && field.derived.sources.length) {
+    parts.unshift(`follows ${field.derived.sources.join(', ')}`);
+  }
   return parts.join(' · ');
 }
 
@@ -1761,6 +1766,9 @@ async function openFromLibrary(id) {
 function renderAccount() {
   const user = state.user;
   $('account').hidden = !user;
+  // Without accounts there is no password to change and nobody to manage;
+  // the language-model card above stays, because it is not an account thing.
+  $('ownCard').hidden = !user;
   if (!user) return;
   const initials = (user.display_name || user.username).trim()
     .split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase();
@@ -1774,13 +1782,7 @@ function renderAccount() {
   $('adminSide').hidden = !admin;
 }
 
-$('whoami').addEventListener('click', () => {
-  showPanel('account');
-  if (state.user && state.user.role === 'admin') {
-    loadUsers();
-    loadDatabase();
-  }
-});
+$('whoami').addEventListener('click', openSettings);
 
 $('signOut').addEventListener('click', async () => {
   try {
@@ -1810,6 +1812,221 @@ $('ownSave').addEventListener('click', () => withBusy($('ownSave'), 'Changing...
   status.className = 'status ok';
   status.textContent = 'changed, and every other session was signed out';
 }));
+
+// ------------------------------------------------- the language model
+//
+// Two features in one place. The card on the Settings panel is where a key
+// goes; the card on the Schema panel is where the one thing that uses a key
+// actually happens.
+//
+// Nothing here ever receives a key back from the server. The status call
+// returns four characters of one and where it came from, which is enough to
+// answer "is this on, and which of my keys is it about to spend".
+
+const llm = {
+  status: null,    // the last /api/llm/status payload
+  proposals: null, // the last run, so Apply knows what was ticked
+};
+
+function llmSay(node, message, bad) {
+  node.hidden = !message;
+  node.className = `status ${bad ? 'bad' : 'ok'}`;
+  node.textContent = message || '';
+}
+
+function renderLlm() {
+  const status = llm.status;
+  if (!status) return;
+
+  const pill = $('llmPill');
+  pill.textContent = status.configured ? status.label : 'off';
+  pill.className = `pill ${status.configured ? 'good' : ''}`;
+
+  $('llmFacts').innerHTML = status.configured ? [
+    `Asking <b>${escapeHtml(status.label)}</b>, because ${escapeHtml(status.reason)}`,
+    `Rules use <code>${escapeHtml(status.models.rules)}</code>`,
+    `Key ${escapeHtml(status.key)}`,
+    status.custom_base_url
+      ? `Pointed at <code>${escapeHtml(status.endpoint)}</code>` : '',
+  ].filter(Boolean).map((line) => `<li>${line}</li>`).join('')
+    : '<li>No key yet, so nothing here will reach a network.</li>';
+
+  // One row per provider: what it is called, where its key is coming from,
+  // and a box to change that.
+  $('llmKeys').innerHTML = status.providers.map((provider) => {
+    const where = provider.typed ? 'typed here'
+      : provider.source === 'environment' ? 'from the environment' : 'no key';
+    const tag = provider.typed ? 'new' : provider.source ? 'admin' : 'off';
+    return `<label class="field" style="flex:1 1 260px">
+      <em>${escapeHtml(provider.label)}
+        <span class="tag ${tag}">${escapeHtml(where)}</span></em>
+      <input type="password" id="llmKey-${escapeAttr(provider.name)}"
+             data-provider="${escapeAttr(provider.name)}"
+             autocomplete="off" spellcheck="false"
+             placeholder="${provider.typed ? 'replace the key held for this run'
+                                           : `paste your key for ${escapeAttr(provider.label)}`}">
+    </label>
+    <button class="btn btn-ghost small" data-save-key="${escapeAttr(provider.name)}">Save</button>`;
+  }).join('');
+
+  const select = $('llmProvider');
+  select.innerHTML = '<option value="">Decide from my keys</option>'
+    + status.providers.map((provider) =>
+        `<option value="${escapeAttr(provider.name)}">${escapeHtml(provider.label)}`
+        + ` (${escapeHtml(provider.models.rules)})</option>`).join('');
+  select.value = status.preference.provider || '';
+  $('llmModel').value = status.preference.model || '';
+}
+
+async function loadLlm() {
+  try {
+    llm.status = await api('/api/llm/status');
+    renderLlm();
+  } catch (error) {
+    llmSay($('llmStatus'), error.message, true);
+  }
+}
+
+$('llmKeys').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-save-key]');
+  if (!button) return;
+  const provider = button.dataset.saveKey;
+  const box = $(`llmKey-${provider}`);
+  withBusy(button, 'Saving...', async () => {
+    llm.status = await api('/api/llm/key', { provider, key: box.value });
+    box.value = '';
+    renderLlm();
+    llmSay($('llmStatus'), llm.status.configured
+      ? `ready: ${llm.status.label}, ${llm.status.models.rules}`
+      : 'key cleared');
+  });
+});
+
+$('llmSave').addEventListener('click', () => withBusy($('llmSave'), 'Saving...', async () => {
+  llm.status = await api('/api/llm/preference', {
+    provider: $('llmProvider').value, model: $('llmModel').value,
+  });
+  renderLlm();
+  llmSay($('llmStatus'), `asking ${llm.status.label}, because ${llm.status.reason}`);
+}));
+
+$('llmForget').addEventListener('click', () => withBusy($('llmForget'), 'Forgetting...', async () => {
+  llm.status = await api('/api/llm/forget');
+  renderLlm();
+  llmSay($('llmStatus'), 'forgotten - anything still set came from the environment');
+}));
+
+function openSettings() {
+  showPanel('account');
+  loadLlm();
+  // An administrator opening this panel expects the user list in it, and an
+  // empty table reads as broken rather than as not-asked-for yet.
+  if (state.user && state.user.role === 'admin') {
+    loadUsers();
+    loadDatabase();
+  }
+}
+
+$('openSettings').addEventListener('click', openSettings);
+
+// ------------------------------------------------------ proposing rules
+
+function ruleLine(rule) {
+  const follows = Array.isArray(rule.follows) ? rule.follows.join(', ') : rule.follows;
+  const pairs = Object.entries(rule.when || {}).slice(0, 4).map(([key, value]) =>
+    `${escapeHtml(key)} → ${escapeHtml(Array.isArray(value) ? value.join(' / ') : value)}`);
+  const more = Object.keys(rule.when || {}).length - pairs.length;
+  if (more > 0) pairs.push(`and ${more} more`);
+  return `<div class="rule">
+    <label class="check">
+      <input type="checkbox" data-rule="${escapeAttr(rule.field)}" checked>
+      <b>${escapeHtml(rule.field)}</b> follows ${escapeHtml(follows)}
+    </label>
+    <span class="tag ${rule.confidence < 0.7 ? 'new' : ''}">${rule.confidence.toFixed(2)}</span>
+    <p class="muted">${escapeHtml(rule.why)}</p>
+    <p class="muted mono">${pairs.join(' · ')}</p>
+  </div>`;
+}
+
+function renderProposals() {
+  const result = llm.proposals;
+  const kept = result.kept || [];
+  $('rulesKept').innerHTML = kept.length
+    ? kept.map(ruleLine).join('')
+    : '<p class="muted">Nothing survived the checks. The form may already '
+      + 'declare its rules, or there may be none to find in the field list alone.</p>';
+
+  const dropped = result.dropped || [];
+  $('rulesDroppedWrap').hidden = !dropped.length;
+  $('rulesDroppedCount').textContent =
+    `${dropped.length} proposed rule${dropped.length === 1 ? '' : 's'} did not check out`;
+  $('rulesDropped').innerHTML = dropped.map((verdict) =>
+    `<p class="muted"><b>${escapeHtml(verdict.field)}</b> — ${escapeHtml(verdict.problem)}</p>`
+  ).join('');
+
+  $('rulesApply').disabled = !kept.length;
+  $('rulesCard').hidden = false;
+}
+
+function tickedRules() {
+  const wanted = new Set(
+    [...document.querySelectorAll('#rulesKept input[data-rule]')]
+      .filter((box) => box.checked).map((box) => box.dataset.rule));
+  return (llm.proposals.kept || []).filter((rule) => wanted.has(rule.field));
+}
+
+$('proposeRules').addEventListener('click', () => withBusy(
+  $('proposeRules'), 'Asking...', async () => {
+    if (!state.schema) return;
+    llmSay($('rulesStatus'), '');
+    $('rulesCard').hidden = false;
+
+    const estimate = await api('/api/llm/rules/estimate', { schema: state.schema });
+    $('rulesCost').textContent = estimate.lines.join(' · ');
+    if (!estimate.configured) {
+      llmSay($('rulesStatus'),
+             'No API key yet. Settings, at the top right, is where one goes.', true);
+      $('rulesApply').disabled = true;
+      $('rulesKept').innerHTML = '';
+      $('rulesDroppedWrap').hidden = true;
+      return;
+    }
+
+    llmSay($('rulesStatus'), 'Asking, and checking the answer. This takes a '
+           + 'few seconds: every proposed rule is tried against generated records.');
+    try {
+      llm.proposals = await api('/api/llm/rules/propose', { schema: state.schema });
+    } catch (error) {
+      // The card is already open with the cost in it, so a toast that fades
+      // would leave somebody looking at a panel that says nothing happened.
+      llmSay($('rulesStatus'), error.message, true);
+      $('rulesApply').disabled = true;
+      return;
+    }
+    renderProposals();
+    llmSay($('rulesStatus'), `${llm.proposals.label} answered`
+      + ` — ${llm.proposals.kept.length} rule(s) worth reading.`);
+  }));
+
+$('rulesApply').addEventListener('click', () => withBusy(
+  $('rulesApply'), 'Applying...', async () => {
+    const rules = tickedRules();
+    if (!rules.length) {
+      llmSay($('rulesStatus'), 'tick at least one rule first', true);
+      return;
+    }
+    const result = await api('/api/llm/rules/apply', {
+      schema: state.schema, rules, parent: state.ids.schema,
+    });
+    state.schema = result.schema;
+    state.summary = result.summary;
+    if (result.schema_id) state.ids.schema = result.schema_id;
+    renderSchema();
+    $('rulesCard').hidden = true;
+    toast(`${result.applied.length} rule(s) now declared on this form`);
+  }));
+
+$('rulesClose').addEventListener('click', () => { $('rulesCard').hidden = true; });
 
 // ----------------------------------------------------------------- users
 
