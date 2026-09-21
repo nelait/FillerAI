@@ -1416,22 +1416,35 @@ function renderSavings(result) {
 }
 
 // A low saving is the honest answer for a model trained on invented records,
-// and leaving it as a bare 3% invites the wrong conclusion. The reason is
-// always the same one, and the model's own report is where it shows.
+// and leaving it as a bare 3% invites the wrong conclusion. There are two
+// reasons it can be low, though, and they call for different answers: a form
+// that declares no rules has nothing but the persona's own coherence to
+// learn, while a form that declares plenty is already being followed and
+// what is left over is the part no rule covers. Telling a form of the second
+// kind that synthetic data cost it the saving would be simply untrue.
 function explainSaving(result) {
   const node = $('simWhy');
   const saving = result.savings;
   const yours = (state.model && state.model.counts) ? state.model.counts.yours : 0;
   if (saving.share_saved >= 0.25 || !saving.fields) { node.hidden = true; return; }
   node.hidden = false;
-  node.textContent =
+  const ruled = ((state.schema && state.schema.fields) || [])
+    .filter((field) => field.derived).length;
+  const opening =
     `Only ${saving.filled} of ${saving.fields} boxes filled, so the saving is small. `
     + `${yours} of this form's fields are different in every record - names, `
     + `identifiers, free text - and no amount of training data makes those `
-    + `predictable. The rest is what synthetic records cost you: values invented `
-    + `one person at a time carry none of the habits real history has, so the `
-    + `model has little to learn from. Train on real past submissions and this `
-    + `number is what moves.`;
+    + `predictable. `;
+  node.textContent = opening + (ruled
+    ? `The rest of the form is already following the ${ruled} rules it declares, `
+      + `so what is left is the part no rule covers: the habits only real `
+      + `submissions carry, like a mailing address usually copied from the home `
+      + `one. Train on real past submissions and this number is what moves.`
+    : `The rest is what synthetic records cost you: values invented `
+      + `one person at a time carry none of the habits real history has, so the `
+      + `model has little to learn from. Declaring the form's own rules is one `
+      + `way to give it more to find; training on real past submissions is the `
+      + `other, and it is what moves this number furthest.`);
 }
 
 // -- the case -----------------------------------------------------------

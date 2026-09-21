@@ -11,7 +11,7 @@ from dataclasses import dataclass, field as dc_field
 
 from ..schema import Field, FormSchema
 from .persona import Persona
-from .render import render
+from .render import choose_option, render
 
 
 @dataclass
@@ -161,6 +161,99 @@ def _should_blank(field: Field, options: Options, rng: random.Random,
     return rng.random() < rate
 
 
+# ----------------------------------------------------------------------
+# declared rules
+# ----------------------------------------------------------------------
+
+
+def _resolution_order(schema: FormSchema) -> list[Field]:
+    """Fields ordered so a rule's sources are rendered before it.
+
+    Declared rules form a dependency graph, and the schema's own order says
+    nothing about it - a form may well ask for the deductible above the plan
+    tier that decides it. A depth-first walk puts every source first.
+
+    A rule naming a field that is not on the form, or a cycle of fields that
+    follow each other, leaves the fields involved in their original places.
+    Neither can be resolved, and the generator's job is to produce a record
+    anyway: those fields fall back to being rendered normally, and
+    :func:`coherence_report` is what says the rule did not hold.
+    """
+    by_name = {f.name: f for f in schema.fields}
+    order: list[Field] = []
+    placed: set[str] = set()
+    walking: set[str] = set()
+
+    def visit(field: Field) -> None:
+        if field.name in placed or field.name in walking:
+            return  # already done, or a cycle - either way, stop here
+        walking.add(field.name)
+        if field.derived:
+            for source in field.derived.sources:
+                parent = by_name.get(source)
+                if parent is not None:
+                    visit(parent)
+        walking.discard(field.name)
+        placed.add(field.name)
+        order.append(field)
+
+    for field in schema.fields:
+        visit(field)
+    return order
+
+
+def _by_rule(field: Field, so_far: dict[str, object],
+             rng: random.Random) -> object | None:
+    """This field's value under its declared rule, or None if it does not apply.
+
+    A rule needs its sources answered. On a form where the source is blank -
+    an optional section nobody filled in - there is nothing to follow, and
+    the field is rendered the ordinary way instead.
+    """
+    rule = field.derived
+    if rule is None:
+        return None
+    values: list[str] = []
+    for source in rule.sources:
+        seen = so_far.get(source)
+        if seen is None or str(seen) == "":
+            return None
+        values.append(str(seen))
+
+    allowed = rule.lookup(values)
+    if not allowed:
+        return None
+    return _as_written(field, rng.choice(list(allowed)))
+
+
+def _as_written(field: Field, wanted: str) -> str:
+    """What a rule's value is called on this field.
+
+    A rule is written in the business's words and the field submits option
+    values, which are not always the same string. On a field with options
+    the rule's value is resolved to the option it names; where it names none
+    it is handed back untouched, so that :func:`validate` reports it as not
+    one of the field's options. Deliberately not ``choose_option``, whose
+    fallback is a *random* option: that would turn a rule the spec got wrong
+    into noise indistinguishable from the noise this whole feature exists to
+    remove.
+    """
+    if not field.options:
+        return wanted
+    target = _normalise_value(wanted)
+    for option in field.options:
+        if _normalise_value(option.value) == target:
+            return option.value
+    for option in field.options:
+        if target and target in _normalise_value(f"{option.value} {option.label or ''}"):
+            return option.value
+    return wanted
+
+
+def _normalise_value(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+
 def generate(schema: FormSchema, options: Options | None = None) -> Dataset:
     """Generate ``options.count`` coherent records for ``schema``."""
     options = options or Options()
@@ -177,14 +270,22 @@ def generate(schema: FormSchema, options: Options | None = None) -> Dataset:
 
         blanked_groups = _blank_address_groups(schema, options, rng)
 
-        record: dict[str, object] = {}
-        for field in schema.fields:
+        # Rendered in dependency order so a rule can read what it follows,
+        # then emitted in the form's own order: the record is the form, and
+        # the order the generator happened to need is nobody else's business.
+        filled: dict[str, object] = {}
+        for field in _resolution_order(schema):
             if field.constraints.read_only:
                 continue
             if _should_blank(field, options, rng, blanked_groups):
-                record[field.name] = ""
+                filled[field.name] = ""
                 continue
-            record[field.name] = render(field, persona, rng)
+            ruled = _by_rule(field, filled, rng)
+            filled[field.name] = (ruled if ruled is not None
+                                  else render(field, persona, rng))
+        record: dict[str, object] = {
+            f.name: filled[f.name] for f in schema.fields if f.name in filled
+        }
 
         if options.include_persona:
             record["_persona"] = {
@@ -354,4 +455,52 @@ def coherence_report(schema: FormSchema, records: list[dict[str, object]]) -> li
                     f"record {index} [{group or 'default'}]: ZIP {postal!r} "
                     f"does not belong to {city}, {state}"
                 )
+
+    problems.extend(_rule_problems(schema, records))
+    return problems
+
+
+def _rule_problems(schema: FormSchema, records: list[dict[str, object]]) -> list[str]:
+    """Check that every rule the form declared actually held.
+
+    A rule the generator quietly failed to apply is worse than no rule: the
+    dataset looks structured and is not, and the model trained on it finds
+    nothing while appearing to have had its chance. So the rules are checked
+    against the records the same way the addresses are.
+
+    Reported once per field rather than once per record. A rule that is wrong
+    is wrong in every record, and a thousand copies of that would bury the
+    address problems underneath it.
+    """
+    problems: list[str] = []
+    known = {f.name for f in schema.fields}
+    for field in schema.fields:
+        rule = field.derived
+        if rule is None:
+            continue
+        missing = [s for s in rule.sources if s not in known]
+        if missing:
+            problems.append(
+                f"{field.name!r} follows {', '.join(repr(m) for m in missing)}, "
+                f"which this form does not ask for"
+            )
+            continue
+        broken = 0
+        for record in records:
+            values = [str(record.get(s, "")) for s in rule.sources]
+            if any(v == "" for v in values):
+                continue  # nothing to follow; the field was rendered normally
+            allowed = rule.lookup(values)
+            if not allowed:
+                continue  # the table does not cover this combination
+            seen = str(record.get(field.name, ""))
+            if seen == "":
+                continue  # blanked, which the rule does not forbid
+            if seen not in {_as_written(field, a) for a in allowed}:
+                broken += 1
+        if broken:
+            problems.append(
+                f"{field.name!r} does not follow {'/'.join(rule.sources)} "
+                f"in {broken} of {len(records)} records"
+            )
     return problems

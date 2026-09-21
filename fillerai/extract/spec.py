@@ -17,6 +17,25 @@ The compact form keeps a spec short enough to write by hand::
       ]
     }
 
+A field may also declare what it follows, which is how a spec carries the
+form's own business rules::
+
+    {"name": "deductible", "control": "select",
+     "options": ["250", "500", "1000", "2500"],
+     "follows": "plan_tier",
+     "when": {"Platinum": "250", "Gold": "500",
+              "Silver": "1000", "Bronze": "2500"}}
+
+``follows`` names one field or several, and ``when`` maps their values to
+what this field may then hold - one value where the rule decides it, a list
+where the rule only narrows it. With several sources the key joins their
+values with ``|`` in the order ``follows`` gives, which is how a rule that
+depends on a combination is written::
+
+    {"name": "premium_band", "follows": ["coverage_tier", "vehicle_use"],
+     "when": {"Gold|Commute": "B", "Gold|Business": "C"},
+     "otherwise": "D"}
+
 Anything the spec states explicitly is taken as given; anything it leaves out
 is inferred exactly as it would be from HTML.
 """
@@ -27,13 +46,41 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..schema import Constraints, Field, FormSchema, Option, Screen
+from ..schema import Constraints, Derived, Field, FormSchema, Option, Screen
 
 # Keys that map straight onto Constraints, flattened for readability.
 _CONSTRAINT_KEYS = {
     "required", "min_length", "max_length", "pattern",
     "minimum", "maximum", "step", "multiple", "read_only",
 }
+
+
+def _as_values(value: Any) -> tuple[str, ...]:
+    """One value or a list of them, always read back as a tuple."""
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(str(v) for v in value)
+    return (str(value),)
+
+
+def _derived_from_spec(entry: dict[str, Any]) -> Derived | None:
+    """Read a field's declared rule, in either spelling.
+
+    ``follows``/``when`` is the readable form a person writes; ``derived``
+    is the structured form a schema round-trips through. Both land in the
+    same place, because a spec that was exported and re-imported has to mean
+    what it meant the first time.
+    """
+    if entry.get("derived"):
+        return Derived.from_dict(entry["derived"])
+    sources = _as_values(entry.get("follows"))
+    if not sources:
+        return None
+    table = {Derived.key(str(key).split("|")): _as_values(value)
+             for key, value in (entry.get("when") or {}).items()}
+    return Derived(sources=sources, table=table,
+                   otherwise=_as_values(entry.get("otherwise")))
 
 
 def _field_from_spec(entry: dict[str, Any]) -> Field:
@@ -61,6 +108,7 @@ def _field_from_spec(entry: dict[str, Any]) -> Field:
         confidence=1.0 if entry.get("semantic_type") else 0.0,
         evidence=["declared in field spec"] if entry.get("semantic_type") else [],
         extra=dict(entry.get("extra") or {}),
+        derived=_derived_from_spec(entry),
     )
 
 

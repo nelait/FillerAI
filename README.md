@@ -621,6 +621,71 @@ rules and the lambda search look for, and none of them exist in data
 invented one person at a time — which is why a model trained on synthetic
 records declines so much of the claims form, and is right to.
 
+### Telling the generator what the form already knows
+
+There is a third thing, between "invented one person at a time" and "real
+past submissions", and it is the part a company can hand over without
+handing over any data at all: **the form's own rules.** A plan tier fixes
+the deductible. A department narrows the job title to four. A make decides
+which models are on the menu. None of that is in anybody's submitted record
+— it is in the business manual — and a form spec can carry it:
+
+```json
+{"name": "collision_deductible", "control": "select",
+ "options": ["250", "500", "1000", "2000"],
+ "follows": "coverage_tier",
+ "when": {"Premier": "250", "Plus": "500",
+          "Standard": "1000", "Basic": "2000"}}
+```
+
+`follows` names the field this one depends on and `when` maps that field's
+values to what this one may then hold. A single value means the rule decides
+it; a list means the rule only narrows it, which is the weaker and more
+common kind — "Engineering means one of these four titles". Several sources
+key on their values together, which is how a rule that lives in a
+*combination* is written:
+
+```json
+{"name": "premium_band", "follows": ["coverage_tier", "vehicle_class"],
+ "when": {"Premier|Light truck": "E", "Premier|Passenger": "D"},
+ "otherwise": "A"}
+```
+
+The generator resolves these in dependency order, so a form may ask for the
+deductible above the tier that decides it. A rule whose source is blank is
+not applied — an optional section nobody filled in does not drag its
+dependents down with it. A rule naming a field the form does not have, or a
+value that is not one of the field's options, is **reported** by
+`coherence_report` and `validate` rather than quietly turned back into a
+random pick: a dataset that looks structured and is not would send somebody
+off to blame the model.
+
+Two bundled forms are built this way, and the difference is the whole point:
+
+| form | boxes filled | accuracy | time saved |
+|---|---|---|---|
+| `claims_intake.html` | 4.2 of 41.6 | 100% | 5.0% |
+| `member_enrollment.fields.json` | 3.6 of 28.8 | 100% | 7.6% |
+| `patient_registration.fields.json` | 3.0 of 18.2 | 100% | 7.3% |
+| `auto_insurance_quote.fields.json` | **16.8 of 51.1** | 97.8% | **23.3%** |
+| `employee_onboarding.fields.json` | **29.0 of 50.1** | 95.8% | **34.5%** |
+
+(800 generated records, `statistical`, three seed fields typed, measured over
+150 held-out forms.)
+
+This is not the model getting better — it is the same model with something
+real to find. It is also where the choice of algorithm starts to matter,
+because a rule that lives in a combination is exactly what conditional
+tables average away. On `premium_band`, which needs the tier *and* the
+rating class together, `statistical` reaches 0.42 strength and `tree`
+reaches 0.86.
+
+One caveat worth stating plainly: these rules are declared, so the model is
+recovering structure we put there. That is fair for a demonstration — real
+submission history carries these same rules, because the business enforced
+them — but it does not measure the habits only real history has, which is
+still the thing that moves the number furthest.
+
 ## The UI
 
 ```bash
@@ -806,6 +871,13 @@ how good the model is, and how much the training data was worth. The panel
 says so in as many words when the saving comes out small, rather than leaving
 a bare 3% on screen to be misread as a verdict on the idea. Point phase 3 at
 real past submissions and this is the number that moves.
+
+Run the same stage on `auto_insurance_quote.fields.json` or
+`employee_onboarding.fields.json` and it fills 17 and 29 boxes for savings of
+23% and 35%, because those forms
+[declare the rules they run on](#telling-the-generator-what-the-form-already-knows).
+Same model, same simulator; the difference is entirely in what the training
+data had to offer.
 
 ## Accounts, and where everything is kept
 
@@ -1109,10 +1181,13 @@ examples/
   claims_intake.html                  45 fields, 4 screens
   patient_registration.fields.json    21 fields, written as a spec
   member_enrollment.fields.json       31 fields, exercises the autofill rules
+  auto_insurance_quote.fields.json    54 fields, 27 of them declared rules
+  employee_onboarding.fields.json     53 fields, 31 of them declared rules
   out/                                schema and generated samples
 tests/
   test_fillerai.py     extraction, inference, generation, the CLI
   test_train.py        features, associations, rules, the model, calibration
+  test_rules.py        rules a form declares about itself, and the two forms built on them
   test_algos.py        the algorithms: the shared contract, and what each is for
   test_store.py        the library, mostly lineage and being asked nonsense
   test_db.py           migrations, transactions, and the backend interface
