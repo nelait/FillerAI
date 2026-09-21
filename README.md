@@ -1352,3 +1352,10 @@ the pipeline, what it would cost per form and per year, and why the ceiling on
 autofill turns out to be information rather than model quality — along with the
 two places, both of them offline and neither of them prediction, where it is
 worth the money.
+
+[**LLM implementation plan**](docs/llm-implementation-plan.md)
+— how the two worthwhile pieces would actually be built: the module layout that
+keeps the core free of any network call, the validation gate that treats a
+model's proposed rules as a proposal, how a non-deterministic component is
+tested inside a deterministic suite, and the measured condition each phase has
+to meet before the next one starts.
