@@ -1,0 +1,26 @@
+{
+  "_note": "HAND-AUTHORED, NOT RECORDED. There was no API key available when these features were written, so this file is a plausible response constructed by hand to exercise every branch of the validation gate in fillerai/llm/rules.py. Re-record it against the real API before trusting it as evidence of what a model actually says.",
+  "form": "member_enrollment",
+  "recordings": [
+    {
+      "digest": null,
+      "response": {
+        "id": "msg_fixture_member_enrollment",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"rules\": [{\"field\": \"member_prefix\", \"follows\": [\"member_gender\"], \"when\": {\"Female\": [\"Ms.\", \"Mrs.\"], \"Male\": [\"Mr.\"], \"Non-binary\": [\"Mx.\"]}, \"confidence\": 0.88, \"why\": \"An enrolment form offers the honorifics that match the gender given beside them.\"}, {\"field\": \"dependent_relationship\", \"follows\": [\"coverage_level\"], \"when\": {\"Employee + spouse\": [\"Spouse\", \"Domestic partner\"], \"Employee + children\": [\"Child\", \"Stepchild\"], \"Family\": [\"Spouse\", \"Domestic partner\", \"Child\", \"Stepchild\"]}, \"confidence\": 0.81, \"why\": \"Who a dependent can be is narrowed by which coverage level was chosen.\"}, {\"field\": \"home_country\", \"follows\": [\"home_state\"], \"when\": {\"AZ\": \"US\", \"CA\": \"US\", \"CO\": \"US\", \"NV\": \"US\", \"NM\": \"US\", \"OR\": \"US\", \"TX\": \"US\", \"UT\": \"US\", \"WA\": \"US\"}, \"confidence\": 0.95, \"why\": \"Every state on this list is a US state, so the country follows from it.\"}, {\"field\": \"plan_tier\", \"follows\": [\"coverage_level\"], \"when\": {\"Family\": \"Titanium\", \"Employee only\": \"Bronze\"}, \"confidence\": 0.44, \"why\": \"Richer coverage levels tend to sit on richer plan tiers.\"}, {\"field\": \"monthly_premium\", \"follows\": [\"annual_income\"], \"when\": {\"low\": \"120.00\"}, \"confidence\": 0.3, \"why\": \"Premiums are often income-adjusted.\"}, {\"field\": \"member_gender\", \"follows\": [\"member_prefix\"], \"when\": {\"Sir\": \"Male\"}, \"confidence\": 0.2, \"why\": \"A title implies a gender.\"}, {\"field\": \"group_number\", \"follows\": [\"group_number\"], \"when\": {\"A\": \"A\"}, \"confidence\": 0.1, \"why\": \"Circular by mistake.\"}, {\"field\": \"effective_date\", \"follows\": [], \"when\": {}, \"confidence\": 0.1, \"why\": \"Nothing to follow.\"}]}"
+          }
+        ],
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": 2411,
+          "output_tokens": 812
+        }
+      }
+    }
+  ]
+}

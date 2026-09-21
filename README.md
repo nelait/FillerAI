@@ -1333,6 +1333,73 @@ something you run.
 
 ---
 
+## Asking a model for the rules (optional, and off)
+
+Everything above runs with no network and no dependencies, and that does not
+change. There is now one optional extra that does talk out: a command that
+reads a form's field list and proposes the business rules it declares about
+itself, because [writing those by hand](#learning-to-fill-the-form) is what
+27 rules on the quote form and 31 on onboarding cost somebody.
+
+```bash
+# What is configured, and whether a key is set. Prints no key.
+python -m fillerai llm status
+
+# What it would cost, sending nothing.
+python -m fillerai propose-rules examples/claims_intake.html --dry-run
+
+# Ask, then check the answer against this project's own machinery.
+python -m fillerai propose-rules examples/claims_intake.html -o rules.json
+
+# Merge the ones you believe. A separate step on purpose.
+python -m fillerai apply-rules form.fields.json rules.json -o merged.json
+```
+
+It needs `FILLERAI_LLM_KEY` (or `ANTHROPIC_API_KEY`) and nothing else needs
+either. **No records are ever sent** — the input is field names, labels and
+option lists, which is the part of a form that lives in the business manual
+rather than in anybody's submitted record.
+
+**A proposed rule is a proposal.** Before it reaches the report it goes
+through the spec parser the rest of the project uses, a check that every name
+it follows is a real field, a check that every value it can produce is one the
+target field can actually hold, a cycle check, and two hundred generated
+records through `validate` and `coherence_report` compared against the same
+records generated without it. What survives is printed with the reason it was
+proposed; what did not says which check killed it:
+
+```
+  == proposed rules for member_enrollment: 3 kept, 5 dropped ==
+    home_country                 follows home_state                       0.95
+      Every state on this list is a US state, so the country follows from it.
+    member_prefix                follows member_gender                    0.88
+      An enrolment form offers the honorifics that match the gender given beside them.
+    -- dropped --
+    plan_tier                    would set it to 'Titanium', which is not one of its options
+    monthly_premium              follows 'annual_income', which is not on this form
+    group_number                 follows itself
+```
+
+A model proposing rules is **inventing plausible business logic, not observing
+a real one**. It gets "a Wrangler is a Jeep" right because that is a fact
+about the world; it will guess at a particular carrier's coverage ladder. So
+`apply-rules` is a separate command with a person in the middle, and the
+generated data is exactly as honest as the rules a person let through.
+
+**The fence.** Nothing under `fillerai/` imports `fillerai/llm/` at module
+scope, and `tests/test_llm_fence.py` fails if that ever stops being true. One
+import in the wrong place would turn an optional feature into a mandatory one
+for every command, and "nothing here talks to a network" is the promise that
+lets this run where the real form lives. The client itself is still
+`urllib.request` and `json`, so `dependencies` is still `[]`; the `anthropic`
+SDK is used if it happens to be installed and required by nothing.
+
+There is a plan for what else a model could be worth here, and a measured
+argument for what it is not worth, both under
+[Further reading](#further-reading).
+
+---
+
 ## Further reading
 
 [**Training, serving, and what happens at 20,000 records**](docs/training-and-scale.md)
@@ -1345,3 +1412,17 @@ silently drops high-cardinality fields.
 — an analysis, not a change: what a sixth engine that learns weights rather
 than counts would cost under the no-dependency rule, measured against the five
 that exist, and which of the candidates is worth building.
+
+[**LLM-based modelling: where it would earn its place**](docs/llm-modelling.md)
+— an analysis, not a change: what a language model would add at each stage of
+the pipeline, what it would cost per form and per year, and why the ceiling on
+autofill turns out to be information rather than model quality — along with the
+two places, both of them offline and neither of them prediction, where it is
+worth the money.
+
+[**LLM implementation plan**](docs/llm-implementation-plan.md)
+— how the two worthwhile pieces would actually be built: the module layout that
+keeps the core free of any network call, the validation gate that treats a
+model's proposed rules as a proposal, how a non-deterministic component is
+tested inside a deterministic suite, and the measured condition each phase has
+to meet before the next one starts.

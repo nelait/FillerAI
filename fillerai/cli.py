@@ -216,6 +216,105 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1 if problems else 0
 
 
+# -- the optional language-model commands ----------------------------------
+#
+# Every one of these imports ``..llm`` inside the function rather than at the
+# top of this module, and ``tests/test_llm_fence.py`` fails if that changes.
+# The README promises nothing here talks to a network; one import at module
+# scope would quietly make that untrue for every command, including the ones
+# that have no business needing a key.
+
+
+def cmd_llm_status(args: argparse.Namespace) -> int:
+    from .llm import transport as llm_transport
+    from .llm.config import KEY_VARIABLE, TASKS, Settings
+
+    print("language-model features (optional; nothing else needs them)")
+    configured = False
+    for task in TASKS:
+        settings = Settings.resolve(task)
+        configured = configured or settings.configured
+        print(f"  {task:<8} {settings.model:<20} key {settings.redacted()}")
+    installed = ("anthropic SDK installed"
+                 if llm_transport.SdkTransport.available()
+                 else "standard library only")
+    print(f"  transport  {installed}")
+    if not configured:
+        print(f"\n  no key set; export ${KEY_VARIABLE} to use propose-rules.")
+    return 0
+
+
+def _rules_client(args: argparse.Namespace):
+    """The client a rules command should use, recorded or real."""
+    from .llm.client import Client
+    from .llm.config import Settings
+    from .llm.transport import RecordedTransport
+
+    settings = Settings.resolve("rules", model=getattr(args, "model", None))
+    recorded = getattr(args, "replay", None)
+    if recorded:
+        return settings, Client(settings, RecordedTransport.from_path(recorded))
+    return settings, Client(settings)
+
+
+def cmd_propose_rules(args: argparse.Namespace) -> int:
+    from .llm import rules as llm_rules
+    from .llm.client import ReplyError
+    from .llm.config import ConfigError
+    from .llm.cost import SpendRefused
+    from .llm.transport import TransportError
+
+    schema = _load_schema(Path(args.source))
+    settings, client = _rules_client(args)
+
+    estimate = llm_rules.estimate(schema, settings)
+    for line in estimate.describe():
+        print(f"  {line}", file=sys.stderr)
+    if args.dry_run:
+        print("  --dry-run: nothing was sent", file=sys.stderr)
+        return 0
+
+    try:
+        proposals = llm_rules.propose(
+            schema, client=client, settings=settings,
+            sample=args.sample, max_spend=args.max_spend,
+        )
+    except (ConfigError, SpendRefused, TransportError, ReplyError, ValueError) as error:
+        print(f"could not propose rules: {error}", file=sys.stderr)
+        return 1
+
+    for line in proposals.report(review_below=args.review_below):
+        print(line)
+
+    if args.out:
+        _write(json.dumps(proposals.to_dict(), indent=2), args.out)
+        if args.out != "-":
+            print("  review them, then merge with: fillerai apply-rules "
+                  f"<spec> {args.out} -o merged.json", file=sys.stderr)
+    return 0
+
+
+def cmd_apply_rules(args: argparse.Namespace) -> int:
+    from .llm import rules as llm_rules
+
+    spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+    proposed = json.loads(Path(args.rules).read_text(encoding="utf-8"))
+
+    keep = [p for p in proposed.get("kept", [])
+            if float(p.get("confidence") or 0.0) >= args.above]
+    proposals = [llm_rules.Proposal.from_payload(entry) for entry in keep]
+
+    merged, skipped = llm_rules.apply(spec, proposals)
+    for problem in skipped:
+        print(f"  skipped {problem}", file=sys.stderr)
+
+    _write(json.dumps(merged, indent=2), args.out)
+    applied = len(proposals) - len(skipped)
+    print(f"  {applied} rule(s) merged into {len(merged['fields'])} field(s)",
+          file=sys.stderr)
+    return 0
+
+
 
 def _train_options(args: argparse.Namespace, trace: Trace | None = None) -> TrainOptions:
     return TrainOptions(
@@ -992,6 +1091,38 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("schema")
     check.add_argument("records", help="a .json dataset produced by generate")
     check.set_defaults(func=cmd_check)
+
+    llm = subparsers.add_parser(
+        "llm", help="what the optional language-model features are configured with")
+    llm_actions = llm.add_subparsers(dest="action", required=True)
+    llm_actions.add_parser("status", help="which model, and whether a key is set")
+    llm.set_defaults(func=cmd_llm_status)
+
+    proposer = subparsers.add_parser(
+        "propose-rules",
+        help="ask a model what business rules this form declares, and check them")
+    proposer.add_argument("source", help="an .html page or a .json field spec")
+    proposer.add_argument("-o", "--out", help="where to write them, '-' for stdout")
+    proposer.add_argument("--dry-run", action="store_true",
+                          help="print what it would cost and send nothing")
+    proposer.add_argument("--model", help="override the model for this run")
+    proposer.add_argument("--max-spend", type=float, default=1.0, metavar="USD",
+                          help="refuse the run above this estimate (default: 1.00)")
+    proposer.add_argument("--sample", type=int, default=200,
+                          help="records generated to test the rules against")
+    proposer.add_argument("--replay", metavar="PATH",
+                          help="replay a recorded exchange instead of calling out")
+    proposer.add_argument("--review-below", **common_review)
+    proposer.set_defaults(func=cmd_propose_rules)
+
+    applier = subparsers.add_parser(
+        "apply-rules", help="merge reviewed rules into a field spec")
+    applier.add_argument("spec", help="the .json field spec to merge into")
+    applier.add_argument("rules", help="what propose-rules wrote")
+    applier.add_argument("-o", "--out", help="output path, '-' for stdout")
+    applier.add_argument("--above", type=float, default=0.0, metavar="CONFIDENCE",
+                         help="only merge rules at least this confident")
+    applier.set_defaults(func=cmd_apply_rules)
 
     library = subparsers.add_parser(
         "library", help="browse what past runs produced, and what it came from")
