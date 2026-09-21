@@ -414,14 +414,32 @@ def _parent_schema(payload: dict[str, Any], schema: FormSchema) -> str:
 # ----------------------------------------------------------------------
 
 _MODELS: "OrderedDict[str, AutofillModel]" = OrderedDict()
+#: Which library entry each cached model came out of, where it has one. A
+#: model trained with saving turned off has none, and the stages that show
+#: where a model came from say so rather than inventing a chain.
+_MODEL_ENTRIES: dict[str, str] = {}
 
 
-def _remember(model: AutofillModel) -> str:
+def _remember(model: AutofillModel, entry_id: str | None = None) -> str:
     token = uuid.uuid4().hex[:16]
     _MODELS[token] = model
+    if entry_id:
+        _MODEL_ENTRIES[token] = entry_id
     while len(_MODELS) > MAX_CACHED_MODELS:
-        _MODELS.popitem(last=False)
+        evicted, _ = _MODELS.popitem(last=False)
+        _MODEL_ENTRIES.pop(evicted, None)
     return token
+
+
+def _saved_as(token: str, entry_id: str) -> None:
+    """Note the library entry a cached model was stored as.
+
+    A training run hands the model to the cache before it saves it - the
+    handle goes out with the result whether it is saved or not - so the link
+    back to the library is made here rather than at :func:`_remember`.
+    """
+    if token in _MODELS:
+        _MODEL_ENTRIES[token] = entry_id
 
 
 def _recall(token: str) -> AutofillModel:
@@ -557,6 +575,9 @@ def _train_result(model: AutofillModel, records: list[dict[str, Any]],
         )
         result["model_entry_id"] = model_entry.id
         result["dataset_id"] = str(parent)
+        # So a later stage can say which entry this model is, and walk back up
+        # to the records and the page behind it.
+        _saved_as(result["model_id"], model_entry.id)
         # The script this run is, kept under the model it produced. It is
         # generated from the options, so it looks redundant right up until a
         # default changes: then this is what that model was trained by, and
@@ -795,15 +816,55 @@ def _new_cases(model: AutofillModel, count: int, seed: int) -> list[dict[str, An
     return generate(model.schema, Options(count=count, seed=seed)).records
 
 
+def _provenance(token: str, model: AutofillModel) -> dict[str, Any]:
+    """Which model a stage is running, and the chain of work behind it.
+
+    The question somebody arrives at the Simulate stage with is *whose model
+    is this?*, and a handle like ``9f2c1a...`` is not an answer. What comes
+    back is what the model is in itself, plus - when it was saved - the
+    library entries it descends from, oldest first: the page it was read out
+    of, the schema, the records, the model. That is the same lineage the
+    library draws, shown where the model is being used rather than in another
+    panel.
+
+    A model that was never saved has no chain, and that is reported as the
+    absence it is: ``entry`` is None and ``lineage`` is empty, which is
+    honest about a model that exists only until this process stops.
+    """
+    out: dict[str, Any] = {"model_id": token, **model.provenance()}
+    try:
+        out["algorithm_label"] = algos.get(model.algorithm).label
+    except ValueError:
+        # A model fitted by an algorithm this build no longer registers. Its
+        # own name is still the truthful thing to show.
+        out["algorithm_label"] = model.algorithm
+
+    entry_id = _MODEL_ENTRIES.get(token)
+    chain = library().lineage(entry_id) if entry_id else []
+    # An entry deleted since the model was loaded leaves the model in hand and
+    # its record gone. The chain is then empty rather than partly right.
+    if not chain or chain[-1].id != entry_id:
+        out["entry"] = None
+        out["lineage"] = []
+        return out
+    out["entry"] = chain[-1].to_dict()
+    out["lineage"] = [e.to_dict() for e in chain]
+    return out
+
+
 def api_simulate_form(payload: dict[str, Any]) -> dict[str, Any]:
     """The form to draw, and what the model would like typed into it."""
-    model = _recall(str(_require(payload, "model_id")))
+    token = str(_require(payload, "model_id"))
+    model = _recall(token)
     return {
         "layout": form_layout(model.schema).to_dict(),
         "seeds": suggest_seed_fields(model, _bounded_int(payload, "ask", 3, 1, 8)),
         "threshold": ACCEPT_ABOVE,
         "effort": DEFAULT_EFFORT.to_dict(),
         "assumptions": DEFAULT_EFFORT.assumptions(),
+        # Which model is about to fill this form in, and what it was made
+        # from. A simulation nobody can attribute to a model is a demo.
+        "model": _provenance(token, model),
     }
 
 
@@ -940,7 +1001,7 @@ def api_library_open(payload: dict[str, Any]) -> dict[str, Any]:
             out["records"] = library().load_records(entry_id)
         elif entry.kind == "model":
             model = library().load_model(entry_id)
-            out["model_id"] = _remember(model)
+            out["model_id"] = _remember(model, entry_id)
             out["algorithm"] = model.algorithm
             out["seeds"] = entry.meta.get("seeds") or suggest_seed_fields(model, 3)
             out["fields"] = model.field_report()

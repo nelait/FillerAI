@@ -981,6 +981,7 @@ async function renderSimulate() {
     $('simThreshOut').textContent = Number(form.threshold).toFixed(2);
     $('simAssumptions').innerHTML =
       form.assumptions.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
+    renderSimModel(form.model);
     $('simControls').hidden = false;
     $('simBody').hidden = false;
     drawPages();
@@ -994,6 +995,82 @@ async function renderSimulate() {
     $('simBody').hidden = true;
   }
 }
+
+// -- which model is doing the filling ------------------------------------
+//
+// A simulation nobody can attribute to a model is a demo. The panel holds a
+// cache handle, which says nothing a person would want to read, so the server
+// sends what the model is along with the form to draw - and, when the model
+// was kept, the library entries it descends from: the page it was read out
+// of, the schema, the records. The same chain the library draws, at the point
+// where the model is actually being used.
+
+function renderSimModel(info) {
+  const note = $('simModelNote');
+  const lead = $('simChainLead');
+  if (!info) {
+    // An older server, or a call that did not carry it. Better an absent card
+    // than a card asserting something about a model it was not told.
+    $('simModelCard').hidden = true;
+    return;
+  }
+  $('simModelCard').hidden = false;
+
+  const saved = info.entry;
+  const title = saved ? saved.name : `${info.form}: ${info.algorithm}`;
+  $('simModelName').innerHTML =
+    `<b>${escapeHtml(title)}</b>`
+    + `<span class="muted">${escapeHtml(info.algorithm_label || info.algorithm)}</span>`
+    + (saved ? `<span class="muted">trained ${escapeHtml(whenText(saved.created))}</span>`
+             + `<button class="link" data-reveal="${escapeAttr(saved.id)}">`
+             + 'find it in the library</button>' : '');
+
+  // The engine's own numbers go on one line rather than into tiles of their
+  // own: this column is narrow, and the four that matter about the model
+  // should not be pushed off the screen by a forest's depth.
+  const engine = Object.entries(info.engine || {})
+    .map(([key, value]) => `${escapeHtml(String(value))} ${escapeHtml(key)}`)
+    .join(' · ');
+  $('simModelStats').innerHTML = `
+    <div class="stat"><b>${info.trained_on}</b><span>records learned from</span></div>
+    ${info.held_out ? `<div class="stat"><b>${info.held_out}</b>`
+                    + '<span>held back from it</span></div>' : ''}
+    <div class="stat"><b>${info.fields}</b><span>fields it answers for</span></div>
+    <div class="stat"><b>${info.rules}</b><span>rules found</span></div>`;
+  $('simEngine').textContent = engine;
+  $('simEngine').hidden = !engine;
+
+  // The chain without its last link: that is this model, and it is the
+  // heading above. What is left is what the model was made from.
+  const chain = (info.lineage || []).slice(0, -1);
+  lead.hidden = !chain.length;
+  $('simChain').innerHTML = chain.map((entry) => {
+    const detail = Object.entries(entry.meta || {})
+      .filter(([, value]) => value !== null && value !== '' && value !== undefined)
+      .map(([key, value]) => `${escapeHtml(key)} ${escapeHtml(formatMeta(value))}`)
+      .join(' · ');
+    return `<li class="chain-step">
+      <span class="lib-kind ${escapeAttr(entry.kind)}">${escapeHtml(KIND_WORDS[entry.kind] || entry.kind)}</span>
+      <div>
+        <button class="chain-name" data-reveal="${escapeAttr(entry.id)}"
+                title="Find it in the library">${escapeHtml(entry.name)}</button>
+        <span class="muted">${escapeHtml(whenText(entry.created))}${detail ? ' · ' + detail : ''}</span>
+      </div>
+    </li>`;
+  }).join('');
+
+  note.hidden = Boolean(saved);
+  if (!saved) {
+    note.textContent = 'This model is not in the library, so there is no chain '
+      + 'behind it to show - and it lasts only as long as the server is '
+      + 'running. Train it again with the library on to keep it.';
+  }
+}
+
+$('simModelCard').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-reveal]');
+  if (button) revealInLibrary(button.dataset.reveal);
+});
 
 // -- drawing the form ---------------------------------------------------
 
@@ -1435,6 +1512,21 @@ $('simSweep').addEventListener('click', () => withBusy($('simSweep'), 'Running..
 
 const libState = { kind: '', entries: [] };
 
+// An entry another panel has asked to be shown, held until the list it is in
+// has been drawn. The Simulate panel names the model it is running and the
+// work behind it; this is what makes those names lead somewhere.
+let toReveal = null;
+
+function revealInLibrary(entryId) {
+  toReveal = entryId;
+  // The filter comes off rather than hiding the very thing that was asked
+  // for: a schema is not in the list of models.
+  libState.kind = '';
+  document.querySelectorAll('[data-lib]').forEach(
+    (button) => button.classList.toggle('is-on', !button.dataset.lib));
+  showPanel('library');
+}
+
 const KIND_WORDS = {
   source: 'source', schema: 'schema', dataset: 'data', model: 'model',
   script: 'script',
@@ -1472,6 +1564,7 @@ async function loadLibrary() {
         + 'and train a model, and each of those will be kept here.';
     }
   } catch (error) {
+    toReveal = null;
     status.hidden = false;
     status.className = 'status bad';
     status.textContent = error.message;
@@ -1513,6 +1606,21 @@ function renderLibrary() {
       </div>
     </article>`;
   }).join('');
+
+  if (toReveal) {
+    const id = toReveal;
+    toReveal = null;
+    const row = $('libList').querySelector(`.lib-row[data-id="${CSS.escape(id)}"]`);
+    if (!row) {
+      toast('that is not in the library any more', true);
+    } else {
+      row.classList.add('is-found');
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      // Long enough to find the row it left you at, short enough not to stay
+      // highlighted while you read the rest of the list.
+      setTimeout(() => row.classList.remove('is-found'), 3000);
+    }
+  }
 }
 
 // The stored time is ISO 8601 with an offset; showing it raw is the sort of

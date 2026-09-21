@@ -405,6 +405,20 @@ class TestModel(unittest.TestCase):
         with self.assertRaises(ValueError):
             AutofillModel.from_dict(data)
 
+    def test_a_model_says_what_it_is(self):
+        # Whoever runs a model has to be able to say which one answered, and
+        # a model read back from a file is the case that matters: everything
+        # here comes off the model rather than out of the library.
+        facts = self.model.provenance()
+        self.assertEqual(facts["algorithm"], self.model.algorithm)
+        self.assertEqual(facts["trained_on"], self.model.trained_on)
+        self.assertEqual(facts["held_out"], self.model.held_out)
+        self.assertEqual(facts["fields"], len(self.model.targets()))
+        self.assertEqual(facts["rules"], len(self.model.derivations))
+        self.assertEqual(facts["engine"], self.model.engine.summary())
+        reloaded = AutofillModel.from_dict(json.loads(self.model.to_json()))
+        self.assertEqual(reloaded.provenance(), facts)
+
     def test_fitting_twice_on_the_same_data_gives_the_same_model(self):
         # A model you cannot diff is a model you cannot review.
         again = train(self.schema, self.records, TrainOptions(seed=1))

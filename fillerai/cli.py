@@ -746,7 +746,12 @@ def cmd_simulate(args: argparse.Namespace) -> int:
         return 1
 
     result = simulate_forms(model, cases, seeds, threshold=args.threshold)
+    facts = model.provenance()
     print(f"{model.schema.name}: {where}, typing {', '.join(seeds) or '(nothing)'}")
+    # Which model answered. Obvious here, where the path was typed on the
+    # command line, and the first thing anybody asks of the JSON below.
+    print(f"  played with {args.model}: {facts['algorithm']}, "
+          f"learned from {facts['trained_on']} records")
     print(f"  {result.headline()}")
     print(f"  {result.keystrokes_by_hand - result.keystrokes_now} fewer keystrokes "
           f"across {result.cases} form(s), {spell_out(result.seconds_saved)} in total")
@@ -755,7 +760,7 @@ def cmd_simulate(args: argparse.Namespace) -> int:
     if args.show:
         _show_one(model, cases[0], seeds, args.threshold)
     if args.out:
-        _write(json.dumps(result.to_dict(), indent=2), args.out)
+        _write(json.dumps({"model": facts, **result.to_dict()}, indent=2), args.out)
     return 0
 
 

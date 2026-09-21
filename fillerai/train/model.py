@@ -389,6 +389,29 @@ class AutofillModel:
             })
         return rows
 
+    # -- describing itself -------------------------------------------------
+
+    def provenance(self) -> dict[str, Any]:
+        """What this model is, for a stage that has to say which one it ran.
+
+        Everything here is intrinsic to the model, so it survives being
+        written to a file and read back somewhere else. Where it came from -
+        the page it was read out of, the schema, the records it learned from -
+        is the library's business rather than the model's, and is added on top
+        of this by whoever holds the library.
+        """
+        return {
+            "form": self.schema.name or "form",
+            "algorithm": self.algorithm,
+            "engine": self.engine.summary(),
+            "model_version": self.model_version,
+            "trained_on": self.trained_on,
+            "held_out": self.held_out,
+            "rules": len(self.derivations),
+            "fields": len(self.targets()),
+            "settings": dict(self.settings),
+        }
+
     # -- serialisation -----------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:

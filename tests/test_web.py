@@ -480,6 +480,64 @@ class TestSimulateApi(ServerCase):
         self.assertTrue(body["seeds"])
         self.assertTrue(body["assumptions"])
 
+    def test_the_form_says_which_model_is_filling_it_in(self):
+        status, body = self.post("/api/simulate/form", {"model_id": self.model_id()})
+        self.assertEqual(status, 200)
+        about = body["model"]
+        # What the model is, without having to ask another endpoint for it.
+        self.assertEqual(about["algorithm"], "statistical")
+        self.assertTrue(about["algorithm_label"])
+        self.assertEqual(about["form"], self.schema.name)
+        self.assertGreater(about["trained_on"], 0)
+        self.assertGreater(about["fields"], 0)
+        # And the chain it came out of, oldest first, ending in the model
+        # itself. The schema was posted rather than extracted here, so there
+        # is no page above it.
+        self.assertEqual([e["kind"] for e in about["lineage"]],
+                         ["schema", "dataset", "model"])
+        self.assertEqual(about["entry"]["id"], about["lineage"][-1]["id"])
+
+    def test_a_model_reopened_from_the_library_still_knows_its_chain(self):
+        status, trained = self.post("/api/train", {
+            "schema": self.schema.to_dict(), "records": self.records, "seed": 1,
+        })
+        self.assertEqual(status, 200)
+        entry_id = trained["model_entry_id"]
+        # A fresh handle from the library, as opening a model in the browser
+        # gives: it has to be as traceable as the one training just produced.
+        _, opened = self.post("/api/library/open", {"id": entry_id})
+        _, body = self.post("/api/simulate/form", {"model_id": opened["model_id"]})
+        self.assertEqual(body["model"]["entry"]["id"], entry_id)
+        self.assertEqual([e["kind"] for e in body["model"]["lineage"]],
+                         ["schema", "dataset", "model"])
+
+    def test_a_model_that_was_never_saved_says_so_rather_than_inventing_a_chain(self):
+        status, trained = self.post("/api/train", {
+            "schema": self.schema.to_dict(), "records": self.records,
+            "seed": 1, "save": False,
+        })
+        self.assertEqual(status, 200)
+        _, body = self.post("/api/simulate/form", {"model_id": trained["model_id"]})
+        self.assertIsNone(body["model"]["entry"])
+        self.assertEqual(body["model"]["lineage"], [])
+        # It is still a model, and can still say what it is.
+        self.assertEqual(body["model"]["algorithm"], "statistical")
+
+    def test_a_model_whose_entry_was_deleted_reports_no_chain(self):
+        status, trained = self.post("/api/train", {
+            "schema": self.schema.to_dict(), "records": self.records, "seed": 1,
+        })
+        self.assertEqual(status, 200)
+        status, _ = self.post("/api/library/delete",
+                              {"id": trained["model_entry_id"], "cascade": True})
+        self.assertEqual(status, 200)
+        # The model is still loaded and still fills forms; what is gone is the
+        # record of where it came from, and a half-drawn chain would be worse
+        # than none.
+        _, body = self.post("/api/simulate/form", {"model_id": trained["model_id"]})
+        self.assertIsNone(body["model"]["entry"])
+        self.assertEqual(body["model"]["lineage"], [])
+
     def test_a_case_is_a_record_the_model_was_not_trained_on(self):
         status, body = self.post("/api/simulate/case",
                                  {"model_id": self.model_id(), "seed": 4242})
