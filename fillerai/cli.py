@@ -226,21 +226,30 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_llm_status(args: argparse.Namespace) -> int:
+    from .llm import providers as llm_providers
     from .llm import transport as llm_transport
-    from .llm.config import KEY_VARIABLE, TASKS, Settings
+    from .llm.config import KEY_VARIABLE, PROVIDER_VARIABLE, TASKS, Settings
 
     print("language-model features (optional; nothing else needs them)")
+    provider = getattr(args, "provider", None)
+    first = Settings.resolve(TASKS[0], provider=provider)
+    print(f"  provider   {first.api.label} ({first.provider_reason})")
+
     configured = False
     for task in TASKS:
-        settings = Settings.resolve(task)
+        settings = Settings.resolve(task, provider=provider)
         configured = configured or settings.configured
         print(f"  {task:<8} {settings.model:<20} key {settings.redacted()}")
-    installed = ("anthropic SDK installed"
-                 if llm_transport.SdkTransport.available()
-                 else "standard library only")
-    print(f"  transport  {installed}")
+
+    sdk = llm_transport.sdk_for(first)
+    print(f"  transport  {sdk.label if sdk else llm_transport.UrllibTransport.label}")
+    if first.custom_base_url:
+        print(f"  endpoint   {first.endpoint}")
     if not configured:
-        print(f"\n  no key set; export ${KEY_VARIABLE} to use propose-rules.")
+        print(f"\n  no key set; export ${KEY_VARIABLE} "
+              f"(or ${first.api.key_variable}) to use propose-rules.")
+        print(f"  another service? ${PROVIDER_VARIABLE}="
+              + " or ".join(llm_providers.NAMES) + ".")
     return 0
 
 
@@ -250,7 +259,8 @@ def _rules_client(args: argparse.Namespace):
     from .llm.config import Settings
     from .llm.transport import RecordedTransport
 
-    settings = Settings.resolve("rules", model=getattr(args, "model", None))
+    settings = Settings.resolve("rules", model=getattr(args, "model", None),
+                                provider=getattr(args, "provider", None))
     recorded = getattr(args, "replay", None)
     if recorded:
         return settings, Client(settings, RecordedTransport.from_path(recorded))
@@ -1095,7 +1105,11 @@ def build_parser() -> argparse.ArgumentParser:
     llm = subparsers.add_parser(
         "llm", help="what the optional language-model features are configured with")
     llm_actions = llm.add_subparsers(dest="action", required=True)
-    llm_actions.add_parser("status", help="which model, and whether a key is set")
+    llm_status = llm_actions.add_parser(
+        "status", help="which service and model, and whether a key is set")
+    llm_status.add_argument("--provider", choices=("anthropic", "openai"),
+                            help="report on this service rather than the one "
+                                 "the environment points at")
     llm.set_defaults(func=cmd_llm_status)
 
     proposer = subparsers.add_parser(
@@ -1106,6 +1120,9 @@ def build_parser() -> argparse.ArgumentParser:
     proposer.add_argument("--dry-run", action="store_true",
                           help="print what it would cost and send nothing")
     proposer.add_argument("--model", help="override the model for this run")
+    proposer.add_argument("--provider", choices=("anthropic", "openai"),
+                          help="which service to ask (default: worked out from "
+                               "the model name and the keys that are set)")
     proposer.add_argument("--max-spend", type=float, default=1.0, metavar="USD",
                           help="refuse the run above this estimate (default: 1.00)")
     proposer.add_argument("--sample", type=int, default=200,

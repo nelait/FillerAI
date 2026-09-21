@@ -83,7 +83,7 @@ and three implementations:
 | | what it is | when |
 | --- | --- | --- |
 | `UrllibTransport` | `urllib.request` + `json`, ~40 lines with retry and backoff | the default; keeps `dependencies = []` true |
-| `SdkTransport` | the `anthropic` SDK, used automatically if it imports | when it is installed, and required for phase 3 |
+| `SdkTransport`, `OpenAiSdkTransport` | the `anthropic` or `openai` SDK, used automatically if it imports *and* matches the provider | when it is installed, and required for phase 3 |
 | `RecordedTransport` | replays a JSON fixture, raises on a request it has no recording for | every test |
 
 **On stdlib versus the SDK.** The Messages API is HTTPS and JSON, so
@@ -102,13 +102,53 @@ Following the existing convention (`FILLERAI_ADMIN_PASSWORD`,
 
 | variable | meaning |
 | --- | --- |
-| `FILLERAI_LLM_KEY` | the API key; falls back to `ANTHROPIC_API_KEY` |
+| `FILLERAI_LLM_KEY` | the API key, whichever provider is in use |
+| `FILLERAI_LLM_PROVIDER` | `anthropic` or `openai` |
 | `FILLERAI_LLM_MODEL` | overrides the per-task default |
-| `FILLERAI_LLM_BASE_URL` | for Bedrock, Vertex, Foundry or a gateway |
+| `FILLERAI_LLM_BASE_URL` | for Bedrock, Vertex, Foundry, Azure or a gateway |
+
+Failing all of those, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are read, and
+whichever one is set also says which provider was meant.
 
 Defaults per task, chosen for the job rather than uniformly: `claude-opus-5`
-for rule proposal, which is a reasoning task done once; `claude-sonnet-5` for
-semantic typing, which is 54 easy classifications.
+or `gpt-5` for rule proposal, which is a reasoning task done once;
+`claude-sonnet-5` or `gpt-5-mini` for semantic typing, which is 54 easy
+classifications.
+
+### 0.4 Two providers, one question
+
+*Added after the rest of this plan was written, and built the same day as
+phases 0 and 1.*
+
+The plan above assumed one service. Supporting a second turned out to cost a
+module rather than a rewrite, because the seam was already in the right place:
+`fillerai/llm/providers.py` holds the key variable, the path, the request
+shape and the reply shape, and nothing above it changed. The prompt, the
+validation gate and the three commands are the same code for both, and
+`tests/test_llm_providers.py` runs the same proposed rules through both
+readers and asserts the gate reaches identical verdicts.
+
+Three differences were worth handling rather than papering over:
+
+- **The token limit has two names.** `max_tokens` is refused outright by
+  OpenAI's reasoning models, so the OpenAI request sends
+  `max_completion_tokens`.
+- **Only one side enforces a schema for free.** OpenAI's strict mode
+  guarantees the shape, but only over a subset of JSON Schema that forbids the
+  open-ended map `RULES_OUTPUT_SCHEMA` needs for `when`. So `strict_ready`
+  decides per schema, the schema is sent either way, and nothing downstream
+  relies on the guarantee — a proposed rule goes through the gate whoever
+  wrote it.
+- **A refusal and a truncation still arrive as a successful call**, just in
+  different fields: `stop_reason` against `content`, or `finish_reason`
+  against `choices[0].message.refusal`. Both are checked before anything tries
+  to parse the text.
+
+The provider is inferred rather than demanded — an explicit flag, then
+`FILLERAI_LLM_PROVIDER`, then a model name that gives itself away, then which
+key variable is set, then what the neutral key begins with — and `llm status`
+prints *which* of those decided it, because a guess that cannot explain itself
+is worse than a prompt.
 
 The key is read from the environment, never written to the library, never
 into the SQLite store, never logged, and never echoed back by any command. A

@@ -25,6 +25,9 @@ CHARS_PER_TOKEN = 4
 #: US dollars per million tokens, (input, output). Published first-party
 #: rates; a deployment behind ``FILLERAI_LLM_BASE_URL`` may well charge
 #: something else, which is why :func:`estimate` says which model it priced.
+#: A model that is not here is not an error - :func:`estimate` says the cost
+#: is unknown and :func:`enforce` lets it through, because refusing to run on
+#: the strength of a price list nobody updated would be worse.
 PRICES = {
     "claude-fable-5-1": (10.0, 50.0),
     "claude-fable-5": (10.0, 50.0),
@@ -35,11 +38,21 @@ PRICES = {
     "claude-sonnet-5": (2.0, 10.0),
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-haiku-4-5": (1.0, 5.0),
+    "gpt-5": (1.25, 10.0),
+    "gpt-5-mini": (0.25, 2.0),
+    "gpt-5-nano": (0.05, 0.40),
+    "gpt-4.1": (2.0, 8.0),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4o": (2.50, 10.0),
+    "gpt-4o-mini": (0.15, 0.60),
+    "o3": (2.0, 8.0),
+    "o4-mini": (1.10, 4.40),
 }
 
 #: A cache read is a tenth of the input rate; writing the cache is a quarter
-#: more than paying for the tokens outright. Only the read matters here,
-#: because these features make one call at a time.
+#: more than paying for the tokens outright. Anthropic's figures, and neither
+#: is applied by :func:`estimate` - see its docstring - so the difference from
+#: OpenAI's automatic caching does not reach the number anybody sees.
 CACHE_READ_SHARE = 0.1
 CACHE_WRITE_SHARE = 1.25
 

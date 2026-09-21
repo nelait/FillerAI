@@ -5,20 +5,23 @@ dictionary and reads a response dictionary, which makes every part of these
 features testable without a network, and makes the one dangerous thing in the
 package a single method on a single object that a test can replace.
 
-Three implementations, for three situations:
+Three kinds of implementation, for three situations:
 
 :class:`UrllibTransport`
-    The default. ``urllib.request`` and ``json``, because the Messages API is
-    HTTPS and JSON and needs nothing else. This is what keeps
+    The default, and provider-neutral: both services are an HTTPS endpoint
+    that takes JSON and returns JSON, and they differ only in the headers and
+    the path, which :mod:`.providers` supplies. This is what keeps
     ``dependencies = []`` true in ``pyproject.toml``. It gives up streaming
     and typed errors, neither of which matters for a single call made by a
     person at a terminal.
 
-:class:`SdkTransport`
-    Used automatically when the ``anthropic`` package happens to be
-    installed. Worth having because retry, backoff and error classification
-    are somebody else's problem there, and worth *requiring* for anything that
-    makes thousands of calls rather than one.
+:class:`SdkTransport` and :class:`OpenAiSdkTransport`
+    Used automatically when the matching first-party package happens to be
+    installed - and only when it matches, because having ``anthropic`` on the
+    path is no reason to send an OpenAI request through it. Worth having
+    because retry, backoff and error classification are somebody else's
+    problem there, and worth *requiring* for anything that makes thousands of
+    calls rather than one.
 
 :class:`RecordedTransport`
     Replays a recorded exchange and raises on a request it has never seen.
@@ -38,7 +41,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from .config import API_VERSION, Settings
+from .config import Settings
 
 #: Status codes worth trying again. 429 is rate limiting; 5xx is the far end
 #: having a bad moment. Everything else is a request that will fail the same
@@ -96,11 +99,7 @@ class UrllibTransport(Transport):
             self.settings.endpoint,
             data=body,
             method="POST",
-            headers={
-                "content-type": "application/json",
-                "anthropic-version": API_VERSION,
-                "x-api-key": self.settings.require_key(),
-            },
+            headers=self.settings.api.headers(self.settings.require_key()),
         )
 
     def send(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -130,7 +129,11 @@ class UrllibTransport(Transport):
 
 
 def _detail(error: urllib.error.HTTPError) -> str:
-    """The message the far end sent, if it sent one we can read."""
+    """The message the far end sent, if it sent one we can read.
+
+    Both providers wrap a failure the same way - ``{"error": {"message": …}}``
+    - so one reader does for both.
+    """
     try:
         payload = json.loads(error.read().decode("utf-8"))
     except Exception:
@@ -143,23 +146,21 @@ class SdkTransport(Transport):
     """The ``anthropic`` package, when it is there."""
 
     label = "anthropic SDK"
+    provider = "anthropic"
+    module = "anthropic"
 
     def __init__(self, settings: Settings) -> None:
-        import anthropic  # deliberately local: this class is only built when available
+        import anthropic  # deliberately local: only built when available
 
         self.settings = settings
         self._client = anthropic.Anthropic(
             api_key=settings.require_key(),
-            base_url=settings.base_url or None,
+            base_url=_sdk_base_url(settings),
         )
 
-    @staticmethod
-    def available() -> bool:
-        try:
-            import anthropic  # noqa: F401
-        except ImportError:
-            return False
-        return True
+    @classmethod
+    def available(cls) -> bool:
+        return _importable(cls.module)
 
     def send(self, request: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -167,6 +168,70 @@ class SdkTransport(Transport):
         except Exception as error:  # the SDK's hierarchy is not ours to depend on
             raise TransportError(f"the model service refused the call: {error}") from None
         return message.to_dict() if hasattr(message, "to_dict") else dict(message)
+
+
+class OpenAiSdkTransport(Transport):
+    """The ``openai`` package, when it is there."""
+
+    label = "openai SDK"
+    provider = "openai"
+    module = "openai"
+
+    def __init__(self, settings: Settings) -> None:
+        import openai  # deliberately local: only built when available
+
+        self.settings = settings
+        self._client = openai.OpenAI(
+            api_key=settings.require_key(),
+            base_url=_sdk_base_url(settings),
+        )
+
+    @classmethod
+    def available(cls) -> bool:
+        return _importable(cls.module)
+
+    def send(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            completion = self._client.chat.completions.create(**request)
+        except Exception as error:  # as above: not our exception hierarchy
+            raise TransportError(f"the model service refused the call: {error}") from None
+        if hasattr(completion, "model_dump"):
+            return completion.model_dump()
+        return dict(completion)
+
+
+#: Which SDK speaks for which provider. Consulted by :func:`sdk_for`, which is
+#: the only thing standing between an installed ``anthropic`` and an OpenAI
+#: request being handed to it.
+SDKS: dict[str, type[Transport]] = {
+    SdkTransport.provider: SdkTransport,
+    OpenAiSdkTransport.provider: OpenAiSdkTransport,
+}
+
+
+def _importable(name: str) -> bool:
+    try:
+        __import__(name)
+    except ImportError:
+        return False
+    return True
+
+
+def _sdk_base_url(settings: Settings) -> str | None:
+    """Only override the SDK's own default when we have been pointed elsewhere.
+
+    An SDK knows its own host better than we do; what it cannot know is that
+    somebody set ``FILLERAI_LLM_BASE_URL`` to a gateway.
+    """
+    if not settings.custom_base_url:
+        return None
+    return settings.api.sdk_base_url(settings.base_url)
+
+
+def sdk_for(settings: Settings) -> type[Transport] | None:
+    """The first-party SDK for this provider, if it is installed."""
+    sdk = SDKS.get(settings.provider)
+    return sdk if sdk is not None and sdk.available() else None
 
 
 class RecordedTransport(Transport):
@@ -210,7 +275,8 @@ class RecordedTransport(Transport):
 
 
 def for_settings(settings: Settings) -> Transport:
-    """The transport to use, given what is installed."""
-    if SdkTransport.available():
-        return SdkTransport(settings)
+    """The transport to use, given the provider and what is installed."""
+    sdk = sdk_for(settings)
+    if sdk is not None:
+        return sdk(settings)
     return UrllibTransport(settings)

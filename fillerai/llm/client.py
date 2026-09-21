@@ -2,53 +2,25 @@
 
 The split between this and :mod:`.transport` is the whole point: everything
 that decides *what* to ask lives here and is ordinary testable code, and
-everything that actually sends it lives in one method somewhere else.
+everything that actually sends it lives in one method somewhere else. What the
+request and the reply look like on the wire is :mod:`.providers`' business,
+which is why this file has no provider's name in it.
 
-Two details about reading a response are worth stating, because both are easy
-to get wrong and neither fails loudly.
-
-**The answer is the last text block, not the first.** A response may carry
-thinking blocks before the answer. Taking ``content[0]`` works right up until
-the day the model thinks about something, and then returns an empty string.
-
-**A refusal arrives as a successful response.** ``stop_reason`` of
-``"refusal"`` comes back with HTTP 200 and no useful content, so it is checked
-before the content is read rather than after it confuses a JSON parser.
+:meth:`Client.read` will read a reply with nobody having told it who wrote it,
+by looking at the shape. That is not cleverness for its own sake: a recorded
+fixture is a response and nothing else, and a recording made against one
+service should still replay when the settings say another.
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field as dc_field
 from typing import Any
 
+from . import providers
 from . import transport as transport_module
 from .config import Settings
+from .providers import Reply, ReplyError
 from .transport import Transport, TransportError
-
-
-@dataclass
-class Reply:
-    """One answer, already parsed as far as it can be."""
-
-    text: str
-    model: str
-    stop_reason: str
-    usage: dict[str, Any] = dc_field(default_factory=dict)
-    #: The parsed JSON, when the call asked for structured output.
-    data: Any | None = None
-
-    @property
-    def input_tokens(self) -> int:
-        return int(self.usage.get("input_tokens") or 0)
-
-    @property
-    def output_tokens(self) -> int:
-        return int(self.usage.get("output_tokens") or 0)
-
-
-class ReplyError(RuntimeError):
-    """The far end answered, but not with anything usable."""
 
 
 class Client:
@@ -71,28 +43,11 @@ class Client:
     def build(self, *, system: str, user: str,
               output_schema: dict[str, Any] | None = None,
               max_tokens: int = 8000) -> dict[str, Any]:
-        """The request body, as a plain dictionary.
-
-        The system prompt is marked cacheable because it is identical across
-        runs and the user turn is not. Thinking is left unset on purpose: the
-        models these tasks default to run it adaptively already, and naming it
-        would only pin behaviour that the service is better placed to choose.
-        """
-        request: dict[str, Any] = {
-            "model": self.settings.model,
-            "max_tokens": max_tokens,
-            "system": [{
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"},
-            }],
-            "messages": [{"role": "user", "content": user}],
-        }
-        if output_schema is not None:
-            request["output_config"] = {
-                "format": {"type": "json_schema", "schema": output_schema}
-            }
-        return request
+        """The request body for this provider, as a plain dictionary."""
+        return self.settings.api.build(
+            model=self.settings.model, system=system, user=user,
+            output_schema=output_schema, max_tokens=max_tokens,
+        )
 
     # -- asking ------------------------------------------------------------
 
@@ -101,50 +56,22 @@ class Client:
             max_tokens: int = 8000) -> Reply:
         request = self.build(system=system, user=user,
                              output_schema=output_schema, max_tokens=max_tokens)
-        return self.read(self.transport.send(request), structured=output_schema is not None)
+        response = self.transport.send(request)
+        return self.read(response, structured=output_schema is not None)
 
     # -- reading -----------------------------------------------------------
 
     @staticmethod
-    def read(response: dict[str, Any], *, structured: bool = False) -> Reply:
-        stop = str(response.get("stop_reason") or "")
-        if stop == "refusal":
-            detail = (response.get("stop_details") or {}).get("explanation") or ""
-            raise ReplyError(
-                "the model declined to answer this request"
-                + (f": {detail}" if detail else "")
-            )
+    def read(response: dict[str, Any], *, structured: bool = False,
+             provider: str | None = None) -> Reply:
+        """Turn one response into a :class:`~.providers.Reply`.
 
-        texts = [
-            block.get("text", "")
-            for block in response.get("content") or []
-            if isinstance(block, dict) and block.get("type") == "text"
-        ]
-        if not texts:
-            raise ReplyError(
-                f"the model returned no text (stop_reason {stop!r})"
-            )
-        text = texts[-1].strip()
-
-        reply = Reply(
-            text=text,
-            model=str(response.get("model") or ""),
-            stop_reason=stop,
-            usage=dict(response.get("usage") or {}),
-        )
-
-        if stop == "max_tokens":
-            raise ReplyError(
-                "the answer was cut off by the token limit; the form may be "
-                "larger than this command's budget allows"
-            )
-
-        if structured:
-            try:
-                reply.data = json.loads(text)
-            except json.JSONDecodeError as error:
-                raise ReplyError(f"the model's answer was not valid JSON: {error}") from None
-        return reply
+        With no ``provider``, the response's own shape decides which reader
+        runs - see the module docstring.
+        """
+        api = (providers.get(provider) if provider
+               else providers.for_response(response))
+        return api.read(response, structured=structured)
 
 
 __all__ = ["Client", "Reply", "ReplyError", "TransportError"]

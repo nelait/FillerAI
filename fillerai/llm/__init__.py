@@ -11,13 +11,14 @@ import in the wrong place turns an optional feature into a mandatory one
 without anybody noticing, so the fence is a test rather than a convention.
 
 Everything here is also still dependency-free: :class:`~.transport.
-UrllibTransport` calls the Messages API with ``urllib.request`` and ``json``,
-because that is all an HTTPS JSON endpoint needs. The ``anthropic`` SDK is
-used automatically when it happens to be installed and is required by nothing
-in phase 1.
+UrllibTransport` calls either service with ``urllib.request`` and ``json``,
+because that is all an HTTPS JSON endpoint needs. A first-party SDK
+(``anthropic`` or ``openai``) is used automatically when it happens to be
+installed and matches the provider in use, and is required by nothing here.
 
 What is here:
 
+``providers``  the two wire formats, and everything that differs between them
 ``config``     where the key and the model come from, and how not to print them
 ``transport``  the only module that opens a socket - and its recorded stand-in
 ``client``     building a request, reading a reply; no network
@@ -28,11 +29,13 @@ What is here:
 
 from __future__ import annotations
 
-from . import client, config, cost, prompts, rules, transport
+from . import client, config, cost, prompts, providers, rules, transport
 from .client import Client, Reply, ReplyError
 from .config import ConfigError, Settings
 from .cost import Estimate, SpendRefused
+from .providers import Provider, strict_ready
 from .transport import (
+    OpenAiSdkTransport,
     RecordedTransport,
     SdkTransport,
     Transport,
@@ -44,6 +47,8 @@ __all__ = [
     "Client",
     "ConfigError",
     "Estimate",
+    "OpenAiSdkTransport",
+    "Provider",
     "RecordedTransport",
     "Reply",
     "ReplyError",
@@ -57,6 +62,8 @@ __all__ = [
     "config",
     "cost",
     "prompts",
+    "providers",
     "rules",
+    "strict_ready",
     "transport",
 ]
