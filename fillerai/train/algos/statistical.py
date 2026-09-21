@@ -46,7 +46,7 @@ class StatisticalEngine(Engine):
     # -- prediction --------------------------------------------------------
 
     def guess(self, name: str, known: dict[str, str], profile: Profile) -> Guess:
-        ballot = Ballot()
+        ballot = Ballot(self.combiner)
         for link in self.links.get(name, []):
             value = known.get(link.source)
             if not value:
@@ -60,6 +60,7 @@ class StatisticalEngine(Engine):
                 distribution, weight,
                 reason=(f"{link.source} = {value} -> {top} in "
                         f"{distribution[top] * 100:.0f}% of {rows} records"),
+                strength=link.strength, support=rows,
             )
         ballot.floor(profile)
         return ballot.guess()

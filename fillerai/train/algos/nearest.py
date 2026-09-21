@@ -92,7 +92,7 @@ class NearestEngine(Engine):
 
     def guess(self, name: str, known: dict[str, str], profile: Profile) -> Guess:
         target_index = self._index.get(name)
-        ballot = Ballot()
+        ballot = Ballot(self.combiner)
         if target_index is None:
             ballot.floor(profile)
             return ballot.guess()
@@ -137,6 +137,8 @@ class NearestEngine(Engine):
                     reason=(f"{len(chosen)} similar record(s), {agreement * 100:.0f}% "
                             f"agreement -> {top} in "
                             f"{distribution[top] * 100:.0f}% of them"),
+                    strength=self.strengths.get(name, 0.5),
+                    support=len(chosen),
                 )
         ballot.floor(profile)
         return ballot.guess()

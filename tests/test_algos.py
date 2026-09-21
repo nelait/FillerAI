@@ -19,12 +19,14 @@ from __future__ import annotations
 import random
 import sys
 import unittest
+import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fillerai.schema import Constraints, Field, FormSchema, Option
 from fillerai.train import algos
+from fillerai.train.algos import linear as linear_module
 from fillerai.train.algos import tree as tree_module
 from fillerai.train.model import USUAL_FLOOR, AutofillModel, TrainOptions, train
 from fillerai.train.trace import Trace
@@ -392,6 +394,129 @@ class TestBayes(unittest.TestCase):
         # user is shown is the measured rate for that band instead.
         self.assertGreater(guess.score, 0.7)
         self.assertLessEqual(model.calibration.apply(guess.score), 1.0)
+
+
+class TestLinear(unittest.TestCase):
+    """The fitted-weights engine, and the defect it exists for."""
+
+    def wide_records(self, cities: int, count: int = 4000,
+                     seed: int = 3) -> list[dict[str, str]]:
+        """``city`` fixes ``state`` exactly; only how many cities there are varies."""
+        states = ["TX", "CA", "NY", "FL", "IL"]
+        rng = random.Random(seed)
+        pairs = [(f"City{index}", states[index % 5]) for index in range(cities)]
+        return [dict(zip(("city", "state", "reference"),
+                         pairs[rng.randrange(cities)] + (f"R{row:06d}",)))
+                for row in range(count)]
+
+    WIDE_SCHEMA = plain_schema("city", "state", "reference")
+
+    def test_it_answers_from_a_field_the_other_engines_cannot_see(self):
+        """The whole reason this engine exists.
+
+        Past ``MAX_DISTINCT`` a field is classed ``open``, and the conditional
+        tables take open fields neither as target nor as source - so a city
+        column that fixes the state exactly stops being evidence at all. A
+        weight does not need the values enumerated, only bucketed.
+        """
+        records = self.wide_records(700)
+        tables = train(self.WIDE_SCHEMA, records,
+                       TrainOptions(algorithm="statistical", seed=1))
+        weights = train(self.WIDE_SCHEMA, records,
+                        TrainOptions(algorithm="linear", seed=1))
+
+        self.assertEqual(tables.profiles["city"].kind, "open")
+        self.assertIsNone(tables.predict_field("state", {"city": "City7"}).value)
+
+        answer = weights.predict_field("state", {"city": "City7"})
+        self.assertEqual(answer.value, "NY")  # City7 -> states[7 % 5]
+        self.assertGreater(answer.confidence, 0.7)
+        self.assertEqual(answer.basis, "learned")
+
+    def test_the_model_stops_growing_with_the_cardinality(self):
+        """What bucketing buys: a fixed size however many values there are."""
+        sizes = []
+        for cities, rows in ((700, 4000), (3000, 12000)):
+            model = train(self.WIDE_SCHEMA, self.wide_records(cities, rows),
+                          TrainOptions(algorithm="linear", seed=1,
+                                       tuning={"buckets": 64}))
+            self.assertIn("city", model.engine.hashed)
+            self.assertEqual(model.profiles["city"].kind, "open")
+            sizes.append(sum(len(w.rows) for w in model.engine.weights.values()))
+        # Four times the cities, the same model, because the buckets decide the
+        # size and the cardinality does not.
+        self.assertEqual(sizes[0], sizes[1])
+        self.assertLessEqual(max(sizes), 64)
+
+    def test_a_field_different_in_every_record_is_not_bucketed(self):
+        """Bucketing a claim number learns nothing and carries the rows for it."""
+        model = train(self.WIDE_SCHEMA, self.wide_records(700),
+                      TrainOptions(algorithm="linear", seed=1))
+        self.assertIn("city", model.engine.hashed)
+        self.assertNotIn("reference", model.engine.hashed)
+
+    def test_the_buckets_are_the_same_in_the_next_process(self):
+        """``hash`` is salted per process; a model fitted once has to stay fitted."""
+        first = linear_module.bucket_of("city", "Austin", 4096)
+        self.assertEqual(first, linear_module.bucket_of("city", "Austin", 4096))
+        self.assertTrue(first.startswith("city#"))
+        self.assertEqual(int(first.split("#")[1]),
+                         zlib.crc32(b"Austin") % 4096)
+
+    def test_it_names_the_fields_that_pushed_toward_the_answer(self):
+        """Weaker than a conditional table's reason, and it has to say so honestly."""
+        model = train(CITY_SCHEMA, city_records(400),
+                      TrainOptions(algorithm="linear", seed=1))
+        answer = model.predict_field("state", {"city": "Denver"})
+        self.assertEqual(answer.value, "CO")
+        self.assertIn("city = Denver", answer.because[0])
+        self.assertIn("before calibration", answer.because[0])
+
+    def test_a_bucketed_field_says_so_in_the_report(self):
+        model = train(self.WIDE_SCHEMA, self.wide_records(700),
+                      TrainOptions(algorithm="linear", seed=1))
+        self.assertIn("bucketed", model.engine.explain("state"))
+        row = next(r for r in model.field_report() if r["name"] == "state")
+        self.assertEqual(row["how"], "learned")
+        self.assertIn("city", row["from"])
+
+    def test_pruning_shrinks_the_model_without_losing_the_answer(self):
+        kept, answers = {}, {}
+        for prune in (0.0, 1.0):
+            model = train(self.WIDE_SCHEMA, self.wide_records(700),
+                          TrainOptions(algorithm="linear", seed=1,
+                                       tuning={"prune": prune}))
+            kept[prune] = sum(len(w.rows) for w in model.engine.weights.values())
+            answers[prune] = model.predict_field("state", {"city": "City7"}).value
+        self.assertLess(kept[1.0], kept[0.0])
+        self.assertEqual(answers[1.0], "NY")
+
+    def test_it_finds_the_interaction_the_conditional_tables_cannot(self):
+        """An additive weight model handles this layout; a vote of tables does not."""
+        model = train(INTERACTION_SCHEMA, interaction_records(),
+                      TrainOptions(algorithm="linear", seed=3))
+        answer = model.predict_field(
+            "relationship", {"policy": "family", "role": "dependent"})
+        self.assertEqual(answer.value, "child")
+        self.assertEqual(answer.basis, "learned")
+
+    def test_a_field_that_has_learned_enough_stops_early(self):
+        """Per field, not per run: one column can be done while another is not."""
+        model = train(CITY_SCHEMA, city_records(400),
+                      TrainOptions(algorithm="linear", seed=1,
+                                   tuning={"epochs": 30}))
+        passes = [w.epochs for w in model.engine.weights.values()]
+        self.assertTrue(passes)
+        self.assertLess(min(passes), 30)
+        self.assertLessEqual(max(passes), 30)
+
+    def test_a_field_nothing_predicts_gets_no_weights_at_all(self):
+        """The shortlist keeps noise out, so one unfittable field cannot drag
+        the shared confidence curve down with confident nonsense."""
+        model = train(INTERACTION_SCHEMA, interaction_records(600),
+                      TrainOptions(algorithm="linear", seed=3))
+        self.assertIn("relationship", model.engine.weights)
+        self.assertNotIn("reference", model.engine.weights)
 
 
 # ----------------------------------------------------------------------

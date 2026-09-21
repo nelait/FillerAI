@@ -39,6 +39,8 @@ from typing import Any, Callable, Iterable
 from ...schema import FormSchema
 from ..features import Profile
 from ..trace import Trace, resolve
+from . import combine
+from .combine import Combiner, support_share
 
 
 @dataclass
@@ -65,6 +67,10 @@ class Guess:
     # "answered by other fields" versus "answered by its usual value"
     # distinction in every report.
     used_evidence: bool = False
+    # The individual votes behind the answer, as ``(features, top candidate)``
+    # - filled only while :func:`.combine.recording` is on, which is when the
+    # combiner is being fitted. Empty for every ordinary prediction.
+    votes: list[tuple[tuple[float, ...], str]] = dc_field(default_factory=list)
 
     @property
     def known(self) -> bool:
@@ -112,6 +118,11 @@ class Engine:
     #: Matches the ``name`` of the algorithm that produced it, so a saved
     #: model reloads into the same engine class.
     algorithm = "none"
+
+    #: How much each of its votes deserves to be believed. The shared layer
+    #: installs a fitted one after training; until then this is the
+    #: hand-picked arithmetic every engine used before it was learnable.
+    combiner: Combiner = combine.HEURISTIC
 
     # -- prediction --------------------------------------------------------
 
@@ -307,15 +318,39 @@ class Ballot:
     whole point is telling an agent what to check.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, combiner: Combiner | None = None) -> None:
         self.scores: dict[str, float] = {}
         self.weight = 0.0
         self.because: list[str] = []
         self.evidence = False
+        #: Decides how loudly each vote speaks. Unfitted, it hands back the
+        #: weight the engine proposed, which is what this class did before
+        #: weights were learnable.
+        self.combiner = combiner or combine.HEURISTIC
+        self.votes: list[tuple[tuple[float, ...], str]] = []
 
     def cast(self, distribution: dict[str, float], weight: float,
-             reason: str | None = None, evidence: bool = True) -> None:
+             reason: str | None = None, evidence: bool = True,
+             strength: float = 0.0, support: int = 0) -> None:
+        """Add one voter's opinion, at the weight it turns out to deserve.
+
+        ``weight`` is what the engine thinks the vote is worth, and it is the
+        first thing the combiner is told rather than the last word.
+        ``strength`` and ``support`` are what the engine knows about this
+        particular voter - how much guessing it removes, and how many records
+        stand behind the number it just read - and they are optional because
+        an engine that cannot say is no worse off than before.
+        """
         if weight <= 0 or not distribution:
+            return
+        peak = max(distribution.values())
+        features = (weight, strength, support_share(support), peak,
+                    0.0 if evidence else 1.0)
+        if combine.RECORD:
+            self.votes.append(
+                (features, max(distribution, key=lambda c: distribution[c])))
+        weight = self.combiner.weight(features)
+        if weight <= 0:
             return
         for candidate, probability in distribution.items():
             self.scores[candidate] = self.scores.get(candidate, 0.0) + weight * probability
@@ -332,7 +367,8 @@ class Ballot:
         common answer at a modest score, which is both more often right and
         more honest about why.
         """
-        self.cast(profile.distribution(), weight, evidence=False)
+        self.cast(profile.distribution(), weight, evidence=False,
+                  support=profile.total)
 
     def result(self) -> dict[str, float]:
         if self.weight <= 0:
@@ -342,11 +378,11 @@ class Ballot:
     def guess(self, keep: int = 5) -> Guess:
         distribution = self.result()
         if not distribution:
-            return Guess()
+            return Guess(votes=list(self.votes))
         order = ranked(distribution, keep + 1)
         value, score = order[0]
         return Guess(
             value=value, score=score, because=list(self.because),
             alternatives=order[1:keep + 1], distribution=distribution,
-            used_evidence=self.evidence,
+            used_evidence=self.evidence, votes=list(self.votes),
         )

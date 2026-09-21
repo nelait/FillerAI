@@ -40,7 +40,7 @@ from .train.evaluate import Report, evaluate, suggest_seed_fields
 from .train.model import AutofillModel, Prediction, TrainOptions, train as _train
 from .train.trace import Trace
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -118,7 +118,8 @@ def train(schema: FormSchema, records: list[dict[str, object]],
     on getting that number honest.
 
     ``algorithm`` picks the engine: ``"statistical"``, ``"tree"``,
-    ``"forest"``, ``"nearest"`` or ``"bayes"``. For anything beyond the name
+    ``"forest"``, ``"nearest"``, ``"bayes"`` or ``"linear"``. For anything
+    beyond the name
     - the per-algorithm settings, a trace to watch it run - build a
     :class:`TrainOptions` and call :func:`fillerai.train.train` directly.
     """

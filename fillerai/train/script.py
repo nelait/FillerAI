@@ -51,6 +51,8 @@ def command(options: TrainOptions, schema_path: str = "form.schema.json",
         parts.append(f"--holdout {options.holdout}")
     if not options.use_rules:
         parts.append("--no-rules")
+    if not options.learn_weights:
+        parts.append("--no-learned-weights")
     for key, value in sorted(options.tuning.items()):
         parts.append(f"--set {key}={value}")
     parts.append("--verbose")
@@ -71,6 +73,8 @@ def script(options: TrainOptions, schema: FormSchema | None = None,
     seed_line = (f"    seed={options.seed},\n" if options.seed is not None
                  else "    # seed=42,  # pin this to get the same model every time\n")
     rules_line = "" if options.use_rules else "    use_rules=False,\n"
+    weights_line = ("" if options.learn_weights
+                    else "    learn_weights=False,\n")
     steps = "\n".join(f"#   {index}. {line}"
                       for index, line in enumerate(algorithm.recipe, start=1))
     chosen = ("\n".join(f"    {seed!r}," for seed in seeds)
@@ -113,7 +117,7 @@ print(f"{{len(records)}} record(s), {{len(schema.fields)}} field(s) on the form"
 options = TrainOptions(
     algorithm={options.algorithm!r},
     holdout={options.holdout},
-{seed_line}{rules_line}{tuning_block})
+{seed_line}{rules_line}{weights_line}{tuning_block})
 
 # The trace is what the UI shows as live logs. Echoing it prints each stage
 # as it happens, which on a wide form is the difference between watching it

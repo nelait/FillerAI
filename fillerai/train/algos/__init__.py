@@ -27,7 +27,7 @@ from .base import (
     names,
     register,
 )
-from . import statistical, tree, nearest, bayes  # noqa: F401 - registers them
+from . import statistical, tree, nearest, bayes, linear  # noqa: F401 - registers them
 
 #: What a caller gets without saying. The conditional-table engine, because
 #: it is the one whose every number can be checked by hand, and because it is

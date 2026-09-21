@@ -259,6 +259,48 @@ do that: with every voter agreeing, the result is still just their shared
 probability. The number stays interpretable as a confidence, which matters,
 because the whole point is telling an agent what to check.
 
+#### And the vote weights are fitted too
+
+How loudly each voter speaks was, for a long time, a set of reasonable
+guesses: a conditional table votes at its lambda times its bucket support, the
+marginal floor votes at a flat 0.2, a tree that could not ask anything votes
+at a quarter of its strength. None of them had ever been *measured*, and the
+signal to measure them with was already being computed and thrown away — the
+calibration pass predicts every field of every held-out record and knows
+whether each answer was right.
+
+So on a run with enough records to spare some, a small logistic regression is
+fitted over five things known about each vote — the weight the engine
+proposed, its strength, how many records back it, how decisive it is, and
+whether it is the marginal floor — to predict whether that voter was right.
+Its odds of being right become the weight. Six parameters, no new engine, and
+every explanation untouched: what changes is how loudly a reason votes, not
+what the reason is.
+
+Two rules keep it honest. It is **never fitted on the rows that calibrate** —
+a slice off the front of the holdout is set aside for it, and the confidence
+curve keeps the rest — and it has to **earn its place**: the fitted weights
+and the hand-picked ones are both run over records neither saw, and the
+fitted ones are kept only if they do at least as well. Otherwise the run says
+so and keeps the old arithmetic. `--no-learned-weights` turns it off, which is
+the only way to see what it was worth.
+
+It is worth less than it looks on generated data, for a reason worth knowing:
+95% of ballots on the claims form have a single voter, and a lone voter always
+gets its own distribution back whatever weight it was given. Vote weights only
+move a ballot where voters compete. On a form where two predictors genuinely
+disagree, fitting them cuts log loss by 3-5%; on the generated claims form it
+is a few tenths of a percent, which is the same story as everywhere else here —
+invented records only carry the relationships the generator put in them.
+
+The UI draws all of it. The training log says what was fitted and what it
+scored while the run is still going, and a panel under the model's numbers
+shows each of the five weights as a signed bar, largest pull first, with the
+two losses that decided whether they were kept. A run too small to spare any
+records has no panel rather than an empty one, and a fit that lost to the
+hand-picked weights says so in the panel instead of vanishing — the answer to
+"did measuring this help" is worth showing when it is no.
+
 ### How a predictor earns its weight
 
 Not by accuracy. On a form where 94% of records say "United States", *every*
@@ -337,7 +379,7 @@ The model is not one algorithm, and only one part of it is up for choice.
 Rules are arithmetic, and an age that is the date of birth's arithmetic is
 that whichever algorithm is selected. The marginal floor is counting. What
 sits between them — *given the fields an agent has typed, what are the
-others?* — is the **engine**, and there are five of them.
+others?* — is the **engine**, and there are six of them.
 
 ```bash
 $ python -m fillerai algorithms
@@ -346,6 +388,7 @@ $ python -m fillerai algorithms
   forest       Random forest
   nearest      Nearest records
   bayes        Naive Bayes
+  linear       Fitted weights (linear)
 ```
 
 | | what it does | where it wins |
@@ -355,6 +398,7 @@ $ python -m fillerai algorithms
 | **forest** | ten trees per field, resampled and averaged | usually the most accurate, and least fussy about which fields get typed |
 | **nearest** | keeps a sample of records and copies the closest matches | closest to how an experienced agent actually works |
 | **bayes** | multiplies the evidence under an independence assumption | fast; a clear demonstration of what the calibration step is for |
+| **linear** | fits a weight per field value per candidate answer, by gradient descent | fields with thousands of distinct values, which every other engine drops |
 
 Everything around the choice is shared, and that is the interesting part.
 The same profiling, the same verified rules, the same quarter of the records
@@ -363,6 +407,37 @@ a confidence of 0.8 means the same thing whichever engine produced it:
 changing the dropdown changes the model, not the yardstick. It is also what
 keeps naive Bayes usable — its raw scores really are overconfident, and the
 calibration is *measuring* them rather than trusting them.
+
+#### Why the linear engine exists
+
+Not for accuracy, and not for interactions — a tree gets those in a three
+second fit. It is there for **cardinality**, which is the one place the other
+five have a hole in them.
+
+A field is only usable if its values form a set small enough to choose from,
+and past 500 distinct values it is classed `open` and dropped — as a field to
+answer *and as a field to answer from*. So a city column with two thousand
+cities stops being evidence, even where it fixes the state exactly. More
+history makes fewer fields usable, which is backwards.
+
+A weight does not need the values listed. `linear` hashes `home_city=Austin`
+into one of a fixed number of buckets and learns a weight for the bucket, so
+the field becomes evidence and the model costs buckets rather than cities:
+
+| distinct cities | `city` classed as | `statistical` answers `state` | `linear` answers `state` |
+|---|---|---|---|
+| 400 | enumerable | correct, 1.00 | correct, 1.00 |
+| 600 | **open** | **nothing at all** | correct, 1.00 |
+| 2,000 | **open** | **nothing at all** | correct, 0.87 |
+
+What it costs is the thing this project values most: a weight is not a count
+of anything, so there is no *"home_city = Austin → TX in 94% of 213 records"*
+to show an agent — only which fields pushed, and which way. And one weight per
+value has to serve every evidence size at once, where a conditional table
+keeps a separate table per predictor and simply drops the ones nobody typed.
+It is the right engine for a form full of codes and the wrong one for a form
+whose answers have to be explained. `docs/weight-based-training.md` is the
+analysis it was built from, including what was rejected.
 
 #### Why the trees exist
 
@@ -406,14 +481,15 @@ same split, the same seed and the same held-out rows:
 
 ```bash
 $ python -m fillerai train schema.json data.json --seed 1 --compare
-claims_intake: 300 record(s), 5 algorithm(s), same split for each
+claims_intake: 300 record(s), 6 algorithm(s), same split for each
 
   algorithm       fills  right  offers  rules     fit  asks for
-  statistical        6%   100%     20%      0    0.8s  home_city, employer_city
-  tree               4%   100%     20%      0    0.8s  home_city, last_name
-  forest             2%   100%     28%      0    1.5s  home_state, deductible_amount
-  nearest            2%   100%     15%      0    1.0s  date_of_birth, effective_date
-  bayes              2%   100%     28%      0    0.9s  deductible_amount, last_name
+  statistical        6%   100%     21%      0    0.5s  home_city, mailing_city
+  tree               2%   100%     19%      0    0.5s  home_state, employer_job_title
+  forest             3%    99%     22%      0    1.0s  employer_state, first_name
+  nearest            2%   100%     28%      0    0.7s  home_city, deductible_amount
+  bayes              2%   100%     28%      0    0.6s  deductible_amount, coverage_limit
+  linear             3%   100%     18%      0    2.1s  home_city, last_name
 
   best on this form: statistical
 ```
@@ -841,6 +917,7 @@ it asks.
 | `--set KEY=VALUE` | — | A setting for that algorithm; repeatable. `fillerai algorithms` lists each one's |
 | `--compare [NAME ...]` | — | Fit every algorithm on the same records, same split, and print them side by side |
 | `--no-rules` | off | Skip the verified rules, to see what the algorithm manages on its own |
+| `--no-learned-weights` | off | Use the hand-picked vote weights instead of fitting them |
 | `-v, --verbose` | off | Print each stage of the fit as it happens |
 | `--script PATH` | — | Write a runnable script that reproduces this run |
 | `--tree FIELD` | — | Draw the tree grown for one field |
@@ -993,6 +1070,8 @@ fillerai/
       tree.py          decision trees, and a forest of them
       nearest.py       the most similar past records, weighted per field
       bayes.py         naive Bayes, and what the calibration does to it
+      linear.py        fitted weights, and hashed evidence for a wide field
+      combine.py       how loudly each voter speaks, learned rather than guessed
       relevance.py     the cheap "which fields matter here" shortlist
   simulate/
     form.py            schema -> a form a browser can draw
@@ -1162,3 +1241,8 @@ something you run.
 would take to serve a model against a real production form, and measured
 behaviour at 20,000 records including the one classification limit that
 silently drops high-cardinality fields.
+
+[**Weight-based training: what it would take, and what it would buy**](docs/weight-based-training.md)
+— an analysis, not a change: what a sixth engine that learns weights rather
+than counts would cost under the no-dependency rule, measured against the five
+that exist, and which of the candidates is worth building.

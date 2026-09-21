@@ -37,14 +37,16 @@ the calibration step is measuring, not trusting, them.
 from __future__ import annotations
 
 import json
+import math
 import random
 from dataclasses import dataclass, field as dc_field
 from typing import Any
 
 from ..schema import FormSchema
 from . import algos, associate, derive, features
-from .algos import Engine
+from .algos import Engine, combine
 from .algos.base import MARGINAL_WEIGHT  # noqa: F401 - kept importable
+from .algos.combine import Combiner
 from .algos.statistical import StatisticalEngine, links_from
 from .associate import Link
 from .derive import Derivation
@@ -131,6 +133,10 @@ class TrainOptions:
     # them on, an engine gets no credit for the fields a rule already
     # answers exactly.
     use_rules: bool = True
+    # Fit the vote weights instead of using the hand-picked ones. Needs enough
+    # held-out records to spare some, and the fitted weights are kept only if
+    # they do at least as well - see :mod:`.algos.combine`.
+    learn_weights: bool = True
     # Somewhere to watch the run from. ``None`` means nobody is watching.
     trace: Trace | None = None
 
@@ -141,6 +147,7 @@ class TrainOptions:
             "seed": self.seed,
             "tuning": dict(self.tuning),
             "use_rules": self.use_rules,
+            "learn_weights": self.learn_weights,
         }
 
 
@@ -236,12 +243,25 @@ class AutofillModel:
     engine: Engine = dc_field(default_factory=lambda: StatisticalEngine({}))
     derivations: dict[str, Derivation] = dc_field(default_factory=dict)
     calibration: Calibration = dc_field(default_factory=Calibration)
+    #: How much each of the engine's votes deserves to be believed. Unfitted
+    #: by default, which is the hand-picked arithmetic.
+    combiner: Combiner = dc_field(default_factory=Combiner)
     trained_on: int = 0
     held_out: int = 0
     model_version: str = MODEL_VERSION
     algorithm: str = algos.DEFAULT
     #: What the run was asked for, so a saved model says how to reproduce it.
     settings: dict[str, Any] = dc_field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # The engine does the voting, so it is the engine that has to hold the
+        # combiner. Keeping the assignment here means a model built any way at
+        # all - fitted, loaded, or by hand in a test - is consistent.
+        self.engine.combiner = self.combiner
+
+    def set_combiner(self, combiner: Combiner) -> None:
+        self.combiner = combiner
+        self.engine.combiner = combiner
 
     @property
     def links(self) -> dict[str, list[Link]]:
@@ -383,6 +403,7 @@ class AutofillModel:
             "engine": self.engine.to_dict(),
             "derivations": [d.to_dict() for d in self.derivations.values()],
             "calibration": self.calibration.to_dict(),
+            "combiner": self.combiner.to_dict(),
         }
 
     def to_json(self, indent: int = 2) -> str:
@@ -422,6 +443,7 @@ class AutofillModel:
                 d["target"]: Derivation.from_dict(d) for d in data.get("derivations", [])
             },
             calibration=Calibration.from_dict(data.get("calibration") or {}),
+            combiner=Combiner.from_dict(data.get("combiner") or {}),
             trained_on=int(data.get("trained_on", 0)),
             held_out=int(data.get("held_out", 0)),
             model_version=MODEL_VERSION,
@@ -474,7 +496,7 @@ def train(schema: FormSchema, records: list[dict[str, Any]],
         raise ValueError("training needs at least one record")
 
     algorithm = algos.get(options.algorithm)
-    trace.expect(6)
+    trace.expect(7)
     trace.step(f"{algorithm.label}: {len(records)} record(s), "
                f"{len(schema.fields)} field(s) on the form")
 
@@ -527,11 +549,37 @@ def train(schema: FormSchema, records: list[dict[str, Any]],
         algorithm=algorithm.name, settings=options.to_dict(),
     )
 
+    tune_rows, measure_rows = split_holdout(holdout_rows, options)
+    if tune_rows:
+        trace.step(f"learning how loudly each voter should speak, on "
+                   f"{len(tune_rows)} record(s) set aside for it")
+        combiner = _fit_combiner(model, tune_rows, options.seed)
+        # Installed either way. A declined combiner is unfitted, so it hands
+        # back the hand-picked weight untouched - but it carries the two
+        # numbers that say so, and those are worth saving with the model.
+        model.set_combiner(combiner)
+        if combiner.fitted:
+            trace.done(f"fitted vote weights kept: loss {combiner.loss:.4f} against "
+                       f"{combiner.baseline_loss:.4f} hand-picked, on records "
+                       f"neither was fitted on")
+        elif combiner.votes:
+            trace.done(f"fitted vote weights declined: loss {combiner.loss:.4f} "
+                       f"against {combiner.baseline_loss:.4f} hand-picked, so the "
+                       f"hand-picked ones stay")
+        else:
+            trace.detail("  too few votes to fit weights from; "
+                         "the hand-picked ones stay")
+        for line in combiner.explain()[1:]:
+            trace.detail("  " + line)
+    elif options.learn_weights and holdout_rows:
+        trace.step(f"too few records held back ({len(holdout_rows)}) to spare any "
+                   f"for fitting vote weights; the hand-picked ones stay")
+
     trace.step(
-        f"calibrating confidence on {len(holdout_rows)} unseen record(s)"
-        if holdout_rows else "no records held back, so nothing to calibrate against"
+        f"calibrating confidence on {len(measure_rows)} unseen record(s)"
+        if measure_rows else "no records held back, so nothing to calibrate against"
     )
-    model.calibration = _calibrate(model, holdout_rows, options.seed)
+    model.calibration = _calibrate(model, measure_rows, options.seed)
     if model.calibration.fitted:
         attempts = sum(a for a, _ in model.calibration.bins)
         trace.done(f"measured on {attempts} prediction(s) the model had never seen")
@@ -563,10 +611,64 @@ def split_records(records: list[dict[str, Any]],
     return shuffled[cut:], shuffled[:cut]
 
 
+# Below this many held-out records, none of them are spared for fitting vote
+# weights: the confidence curve is the thing that must not be starved, and a
+# curve measured on a hundred records is already thin.
+COMBINER_MIN_HOLDOUT = 200
+
+# How much top-1 accuracy the fitted weights are allowed to give up for a
+# better-ordered set of scores. Measured on a few thousand answers, accuracy
+# moves by about this much on noise alone, so demanding none at all would veto
+# genuine improvements to the thing the gate is actually reading.
+COMBINER_ACCURACY_SLACK = 0.005
+
+# And never more than this many, however large the holdout. Six parameters
+# settle long before it, and every row taken is a row the calibration does not
+# get - at 20,000 records this leaves the curve 4,800 of its 5,000.
+COMBINER_TUNE_ROWS = 200
+
+
+def split_holdout(holdout: list[dict[str, Any]],
+                  options: TrainOptions) -> tuple[list[dict[str, Any]],
+                                                  list[dict[str, Any]]]:
+    """Separate the rows that tune the vote weights from the rows that measure.
+
+    These have to be different rows. Weights chosen on the records the
+    confidence curve is then measured against would make that curve describe
+    rows the weights were picked for, which is exactly what holding records
+    back is for.
+    """
+    if not options.learn_weights or len(holdout) < COMBINER_MIN_HOLDOUT:
+        return [], list(holdout)
+    cut = min(COMBINER_TUNE_ROWS, len(holdout) // 3)
+    return holdout[:cut], holdout[cut:]
+
+
 # How many fields the simulated agent has typed, when measuring. Sweeping the
 # range is deliberate: confidence has to mean the same thing on the second
 # field of a form as on the thirtieth.
 _EVIDENCE_SIZES = (1, 2, 3, 5, 8)
+
+
+def _evidence_walk(model: AutofillModel, rows: list[dict[str, Any]],
+                   seed: int | None):
+    """Every (typed fields, record) pair the measuring passes work from.
+
+    One generator for all of them, so the confidence curve, the vote weights
+    and any comparison between them are measured against the same idea of what
+    an agent has typed - a handful of fields, swept across sizes.
+    """
+    rng = random.Random(seed if seed is not None else 0)
+    names = model.targets()
+    for record in rows:
+        present = [n for n in names if features.normalise(record.get(n))]
+        if len(present) < 2:
+            continue
+        for size in _EVIDENCE_SIZES:
+            if size >= len(present):
+                break
+            given = rng.sample(present, size)
+            yield {n: features.normalise(record[n]) for n in given}, record
 
 
 def _calibrate(model: AutofillModel, holdout: list[dict[str, Any]],
@@ -576,31 +678,22 @@ def _calibrate(model: AutofillModel, holdout: list[dict[str, Any]],
 
     attempts = [0] * BIN_COUNT
     hits = [0] * BIN_COUNT
-    rng = random.Random(seed if seed is not None else 0)
     names = model.targets()
 
-    for record in holdout:
-        present = [n for n in names if features.normalise(record.get(n))]
-        if len(present) < 2:
-            continue
-        for size in _EVIDENCE_SIZES:
-            if size >= len(present):
-                break
-            given = rng.sample(present, size)
-            known = {n: features.normalise(record[n]) for n in given}
-            for name in names:
-                if name in known:
-                    continue
-                truth = features.normalise(record.get(name))
-                if not truth:
-                    continue
-                prediction = model.predict_field(name, known)
-                if not prediction.known:
-                    continue
-                index = min(BIN_COUNT - 1, max(0, int(prediction.score * BIN_COUNT)))
-                attempts[index] += 1
-                if prediction.value == truth:
-                    hits[index] += 1
+    for known, record in _evidence_walk(model, holdout, seed):
+        for name in names:
+            if name in known:
+                continue
+            truth = features.normalise(record.get(name))
+            if not truth:
+                continue
+            prediction = model.predict_field(name, known)
+            if not prediction.known:
+                continue
+            index = min(BIN_COUNT - 1, max(0, int(prediction.score * BIN_COUNT)))
+            attempts[index] += 1
+            if prediction.value == truth:
+                hits[index] += 1
 
     if sum(attempts) < MIN_CALIBRATION_ROWS:
         return Calibration()
@@ -616,3 +709,108 @@ def _calibrate(model: AutofillModel, holdout: list[dict[str, Any]],
         rates=[round(r, 4) for r in _isotonic(rates, weights)],
         fitted=True,
     )
+
+
+# ----------------------------------------------------------------------
+# vote weights
+# ----------------------------------------------------------------------
+
+
+def _collect_votes(model: AutofillModel, rows: list[dict[str, Any]],
+                   seed: int | None) -> list[tuple[tuple[float, ...], bool]]:
+    """Every individual vote the engine casts on ``rows``, and whether it was right.
+
+    Fields a rule answers are skipped, because no ballot is held for them, and
+    so are open fields, because no engine is asked about them. What is left is
+    exactly the population the vote weights govern.
+    """
+    votes: list[tuple[tuple[float, ...], bool]] = []
+    names = model.targets()
+    with combine.recording():
+        for known, record in _evidence_walk(model, rows, seed):
+            for name in names:
+                if name in known or name in model.derivations:
+                    continue
+                profile = model.profiles.get(name)
+                if profile is None or profile.kind == "open":
+                    continue
+                truth = features.normalise(record.get(name))
+                if not truth:
+                    continue
+                guess = model.engine.guess(name, known, profile)
+                for vote, top in guess.votes:
+                    votes.append((vote, top == truth))
+    return votes
+
+
+def _voted_quality(model: AutofillModel, rows: list[dict[str, Any]],
+                   seed: int | None) -> tuple[float, float]:
+    """``(log loss, accuracy)`` of the ballots the vote weights govern.
+
+    Only the engine is asked, so rules and open fields are out of it: they come
+    out the same whatever the weights are, and including them would dilute the
+    difference being measured.
+
+    The loss comes first because it is what the gate reads. Weights cannot
+    change a ballot with one voter at all - the result is normalised by the
+    weight cast - and where voters do compete, the first thing better weights
+    change is how far apart the candidates end up rather than which one wins.
+    The log loss of the true value measures that; top-1 accuracy is mostly
+    blind to it.
+    """
+    attempts = hits = 0
+    total_loss = 0.0
+    names = model.targets()
+    for known, record in _evidence_walk(model, rows, seed):
+        for name in names:
+            if name in known or name in model.derivations:
+                continue
+            profile = model.profiles.get(name)
+            if profile is None or profile.kind == "open":
+                continue
+            truth = features.normalise(record.get(name))
+            if not truth:
+                continue
+            guess = model.engine.guess(name, known, profile)
+            if not guess.known:
+                continue
+            attempts += 1
+            hits += guess.value == truth
+            total_loss -= math.log(max(guess.distribution.get(truth, 0.0), 1e-9))
+    if not attempts:
+        return 0.0, 0.0
+    return total_loss / attempts, hits / attempts
+
+
+def _fit_combiner(model: AutofillModel, rows: list[dict[str, Any]],
+                  seed: int | None) -> Combiner:
+    """Fit vote weights on half of ``rows``, then make them earn their place.
+
+    The half that decides is not the half that fitted, and neither is the
+    holdout the confidence is measured on. Returning an unfitted combiner
+    means the hand-picked weights stay - and it still carries the two numbers,
+    because "measured and not better" is a result, not a silence.
+    """
+    cut = max(1, len(rows) // 2)
+    learn, check = rows[:cut], rows[cut:]
+    candidate = combine.fit(_collect_votes(model, learn, seed), seed)
+    if not candidate.fitted or not check:
+        return Combiner()
+
+    was = model.combiner
+    try:
+        model.set_combiner(Combiner())  # the hand-picked arithmetic
+        base_loss, base_hits = _voted_quality(model, check, seed)
+        model.set_combiner(candidate)
+        loss, hits = _voted_quality(model, check, seed)
+    finally:
+        model.set_combiner(was)
+
+    candidate.loss, candidate.baseline_loss = loss, base_loss
+    candidate.accuracy, candidate.baseline_accuracy = hits, base_hits
+    if loss > base_loss or hits < base_hits - COMBINER_ACCURACY_SLACK:
+        # Measured and not better, so the hand-picked weights stay. The numbers
+        # come back anyway: a fit that was tried and declined is a result.
+        return Combiner(votes=candidate.votes, loss=loss, baseline_loss=base_loss,
+                        accuracy=hits, baseline_accuracy=base_hits)
+    return candidate

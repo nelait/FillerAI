@@ -224,6 +224,7 @@ def _train_options(args: argparse.Namespace, trace: Trace | None = None) -> Trai
         seed=args.seed,
         tuning=_tuning(getattr(args, "set", None)),
         use_rules=not args.no_rules,
+        learn_weights=not getattr(args, "no_learned_weights", False),
         trace=trace,
     )
 
@@ -265,6 +266,9 @@ def cmd_train(args: argparse.Namespace) -> int:
     summary = model.engine.summary()
     if summary:
         print("  " + ", ".join(f"{k}: {v}" for k, v in summary.items()), file=sys.stderr)
+    if model.combiner.votes:
+        for line in model.combiner.explain():
+            print(f"  {line}", file=sys.stderr)
 
     if args.tree:
         drawn = getattr(model.engine, "drawn", lambda *_: [])(args.tree)
@@ -898,6 +902,10 @@ def build_parser() -> argparse.ArgumentParser:
                               "'fillerai algorithms' explains each one")
     trainer.add_argument("--set", action="append", metavar="KEY=VALUE",
                          help="a setting for the chosen algorithm; repeatable")
+    trainer.add_argument("--no-learned-weights", action="store_true",
+                         help="use the hand-picked vote weights instead of "
+                              "fitting them; needed to see what fitting them "
+                              "is worth")
     trainer.add_argument("--no-rules", action="store_true",
                          help="skip the verified rules, to see what the "
                               "algorithm manages on its own")
