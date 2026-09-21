@@ -720,6 +720,30 @@ rather than gaps:
 | *held back* | the model has an answer, below the bar to use it. Shown beside the box with a button, and still counted as the agent's to type |
 | *yours* | the model declines. A claim number is different in every record, and saying so is the honest answer |
 
+### Which model is doing the filling
+
+A saving nobody can attribute to a model is a demo. The panel therefore opens
+by saying which model is about to fill the form in — what it is, and what it
+was made from:
+
+| | |
+| --- | --- |
+| *what it is* | the algorithm that fitted it, how many records it learned from, how many were held back, the fields it will answer for, the rules it found, and the engine's own numbers |
+| *what it was made from* | the library entries it descends from, oldest first: the page the form was read out of, the schema, the records it learned from |
+
+The chain is the library's, not a second record kept alongside it: every
+stage already writes what it produced into the library with the id of what it
+was made from, and this is that lineage read at the point of use rather than
+in another panel. Each name leads back to its entry, which is how a number on
+this page is traced to the 400 records and the page of markup behind it.
+
+Nothing here is inferred. A model that was never saved has no chain, and says
+so rather than drawing a plausible one; so does a model whose library entry
+has since been deleted. What the model is — the algorithm, the counts, the
+engine — is intrinsic to the model and survives being written to a file and
+read back, which is why `fillerai simulate` prints the same facts and writes
+them into the JSON it exports.
+
 ### What it saved
 
 The saving is the whole argument for the project, and an argument needs a
@@ -1106,7 +1130,7 @@ tests/
 python -m unittest discover -s tests -v
 ```
 
-475 tests, no dependencies. They cover malformed markup, each inference rule,
+515 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real

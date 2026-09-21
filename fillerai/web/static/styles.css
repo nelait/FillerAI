@@ -406,6 +406,35 @@ input[type="search"] { width: 200px; }
 .stats.tight .stat { padding: 8px 10px; }
 .stats.tight .stat b { font-size: 18px; }
 
+/* Which model is filling the form in, and the chain behind it. Laid out
+   down the card rather than across it like the library's breadcrumbs: this
+   column is narrow, and four crumbs across it wrap into an unreadable line. */
+.model-line { margin: 0 0 10px; font-size: 0.9rem; line-height: 1.5; }
+.model-line b { display: block; }
+.model-line .muted { display: block; font-size: 0.78rem; color: var(--text-soft); }
+.model-line .link { display: block; margin-top: 2px; }
+
+.chain { list-style: none; margin: 0; padding: 0; display: flex;
+         flex-direction: column; gap: 6px; }
+.chain-step {
+  display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: center;
+  padding: 7px 9px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface-2);
+}
+.chain-step .muted { display: block; font-size: 0.72rem; color: var(--text-soft); }
+/* The name is the way through to the library. A row of "find it in the
+   library" links under four crumbs says the same thing four times. */
+.chain-name {
+  display: block; padding: 0; text-align: left; cursor: pointer;
+  font: inherit; font-size: 0.82rem; font-weight: 600;
+  color: var(--text); background: none; border: 0;
+}
+.chain-name:hover, .chain-name:focus-visible {
+  color: var(--accent); text-decoration: underline;
+}
+
+.engine-line { margin: -4px 0 10px; font-size: 0.74rem; color: var(--text-soft); }
+
 .meter {
   display: flex; height: 10px; overflow: hidden;
   border-radius: 99px; background: var(--surface-2);
@@ -640,6 +669,13 @@ input[type="search"] { width: 200px; }
 .lineage .arrow { margin: 0 6px; color: var(--text-faint); }
 
 .lib-actions { display: flex; gap: 6px; }
+
+/* The row another panel sent you here to look at, marked for as long as it
+   takes to spot it. */
+.lib-row.is-found {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 
 @media (max-width: 760px) {
   .lib-row { grid-template-columns: 1fr; }
