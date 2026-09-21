@@ -1345,3 +1345,10 @@ silently drops high-cardinality fields.
 — an analysis, not a change: what a sixth engine that learns weights rather
 than counts would cost under the no-dependency rule, measured against the five
 that exist, and which of the candidates is worth building.
+
+[**LLM-based modelling: where it would earn its place**](docs/llm-modelling.md)
+— an analysis, not a change: what a language model would add at each stage of
+the pipeline, what it would cost per form and per year, and why the ceiling on
+autofill turns out to be information rather than model quality — along with the
+two places, both of them offline and neither of them prediction, where it is
+worth the money.
