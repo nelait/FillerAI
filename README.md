@@ -293,6 +293,14 @@ disagree, fitting them cuts log loss by 3-5%; on the generated claims form it
 is a few tenths of a percent, which is the same story as everywhere else here —
 invented records only carry the relationships the generator put in them.
 
+The UI draws all of it. The training log says what was fitted and what it
+scored while the run is still going, and a panel under the model's numbers
+shows each of the five weights as a signed bar, largest pull first, with the
+two losses that decided whether they were kept. A run too small to spare any
+records has no panel rather than an empty one, and a fit that lost to the
+hand-picked weights says so in the panel instead of vanishing — the answer to
+"did measuring this help" is worth showing when it is no.
+
 ### How a predictor earns its weight
 
 Not by accuracy. On a form where 94% of records say "United States", *every*

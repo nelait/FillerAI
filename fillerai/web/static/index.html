@@ -220,6 +220,19 @@
 
     <div class="stats" id="trainStats" hidden></div>
 
+    <!-- The fitted vote weights, when there were enough records to measure
+         them. Several engines can have an opinion about one field; this is how
+         much each opinion was believed, and whether measuring it beat the
+         hand-picked guess it started from. -->
+    <div class="voters" id="voterPanel" hidden>
+      <div class="voters-head">
+        <h3>How loudly each voter speaks</h3>
+        <span class="pill" id="voterVerdict"></span>
+      </div>
+      <p class="sub" id="voterNote"></p>
+      <ul class="pulls" id="voterPulls"></ul>
+    </div>
+
     <div id="tryIt" hidden>
       <div class="panel-head">
         <h3>Type the first few</h3>

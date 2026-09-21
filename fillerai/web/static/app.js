@@ -363,7 +363,7 @@ $('run').addEventListener('click', () => withBusy($('run'), 'Generating...', asy
   state.model = null;
   state.ids.model = null;
   state.typed = {};
-  ['tryIt', 'trainReport', 'trainStats', 'treePanel', 'runPanel']
+  ['tryIt', 'trainReport', 'trainStats', 'voterPanel', 'treePanel', 'runPanel']
     .forEach((id) => { $(id).hidden = true; });
   $('downloadModel').hidden = true;
   unlock('train');
@@ -470,6 +470,21 @@ function currentAlgorithm() {
   return state.algorithms.find((a) => a.name === $('algorithm').value) || null;
 }
 
+// A float knob needs a step it can actually express. A flat 0.05 was fine
+// until an engine arrived with a knob whose default is 0.00002: the browser
+// then calls the field invalid on arrival, and its arrows step straight past
+// the top of the range. So take the finer of a twentieth of the range and the
+// default's own size, and round that down to a power of ten, which is the
+// digit a person would type.
+function knobStep(knob) {
+  if (knob.kind === 'int') return '1';
+  const span = Math.abs(Number(knob.high) - Number(knob.low));
+  const fine = Math.abs(Number(knob.default)) || span / 20;
+  const step = Math.min(span / 20 || fine, fine);
+  if (!(step > 0) || !isFinite(step)) return 'any';
+  return String(Number(Math.pow(10, Math.floor(Math.log10(step))).toPrecision(15)));
+}
+
 function renderAlgorithm() {
   const algorithm = currentAlgorithm();
   state.algorithm = algorithm;
@@ -483,7 +498,7 @@ function renderAlgorithm() {
       <input type="number" data-knob="${escapeAttr(knob.key)}"
              value="${escapeAttr(String(knob.default))}"
              min="${escapeAttr(String(knob.low))}" max="${escapeAttr(String(knob.high))}"
-             step="${knob.kind === 'int' ? '1' : '0.05'}">
+             step="${escapeAttr(knobStep(knob))}">
     </label>`).join('');
 }
 
@@ -560,7 +575,8 @@ $('trainRun').addEventListener('click', () => withBusy($('trainRun'), 'Training.
   $('runLog').textContent = '';
   $('runStage').textContent = `${started.algorithm.label}: starting`;
   $('runBar').style.width = '2%';
-  ['tryIt', 'trainReport', 'trainStats', 'treePanel'].forEach((id) => { $(id).hidden = true; });
+  ['tryIt', 'trainReport', 'trainStats', 'voterPanel', 'treePanel']
+    .forEach((id) => { $(id).hidden = true; });
   await watchRun(started);
 }));
 
@@ -656,9 +672,95 @@ function renderTrainResult() {
     </div>${engine}`;
 
   $('downloadModel').hidden = false;
+  renderVoteWeights();
   renderSeedInputs();
   renderTrees();
   renderReport();
+}
+
+// -- the fitted vote weights -------------------------------------------------
+//
+// Several engines can have an opinion about one field, and every opinion used
+// to be believed by a hand-picked formula. Now the formula is fitted, and this
+// panel is where that shows: what each thing known about a vote does to how
+// loudly it speaks, and the two numbers that decided whether the fitted
+// weights were kept at all.
+//
+// The wording lives here rather than on the server because it is wording. What
+// arrives is five features and five numbers.
+
+const VOTER_FEATURES = {
+  heuristic: 'what the engine asked for',
+  strength: 'how well that predictor scores',
+  support: 'how many records back it',
+  peak: 'how decisive the vote is',
+  floor: 'it is only the usual answer',
+};
+
+function renderVoteWeights() {
+  const panel = $('voterPanel');
+  const combiner = (state.model && state.model.combiner) || {};
+  const votes = combiner.votes || 0;
+
+  // Nothing was measured: too few records to spare any, and the hand-picked
+  // weights stand unexamined. Saying so here would be a sentence about an
+  // absence, so the panel is simply not there.
+  if (!votes) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+
+  const loss = combiner.loss || 0;
+  const baseLoss = combiner.baseline_loss || 0;
+  const better = baseLoss > 0 ? (baseLoss - loss) / baseLoss : 0;
+  const verdict = $('voterVerdict');
+
+  if (combiner.fitted) {
+    verdict.className = 'pill good';
+    verdict.textContent = `kept: ${(better * 100).toFixed(1)}% better`;
+    $('voterNote').textContent =
+      `Fitted on ${votes.toLocaleString()} votes from records held back from the`
+      + ` rest of the run, then checked against the hand-picked weights on`
+      + ` records neither had seen: ${loss.toFixed(4)} against ${baseLoss.toFixed(4)}`
+      + ` (lower is better), filling ${(combiner.accuracy * 100).toFixed(1)}% right`
+      + ` against ${(combiner.baseline_accuracy * 100).toFixed(1)}%.`;
+  } else {
+    // Measured and beaten by the guess. Worth showing: it is the answer to
+    // "did fitting this help", and the answer was no on these records.
+    verdict.className = 'pill warn';
+    verdict.textContent = 'measured, then declined';
+    $('voterNote').textContent =
+      `Fitted on ${votes.toLocaleString()} votes, then checked against the`
+      + ` hand-picked weights on records neither had seen: ${loss.toFixed(4)}`
+      + ` against ${baseLoss.toFixed(4)} (lower is better). The hand-picked ones`
+      + ` were at least as good, so they stay and this model behaves exactly as`
+      + ` it would have without them.`;
+    $('voterPulls').innerHTML = '';
+    return;
+  }
+
+  const features = combiner.features || [];
+  const weights = combiner.weights || [];
+  const widest = Math.max(0.01, ...weights.map((w) => Math.abs(w)));
+
+  // Largest pull first, which is the order the question is asked in: what
+  // matters most to how loudly a vote speaks?
+  const rows = features
+    .map((name, i) => [name, weights[i] || 0])
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+
+  $('voterPulls').innerHTML = rows.map(([name, weight]) => {
+    const share = (Math.abs(weight) / widest) * 50;
+    const bar = weight >= 0
+      ? `<i style="left: 50%; width: ${share.toFixed(1)}%"></i>`
+      : `<i class="down" style="right: 50%; width: ${share.toFixed(1)}%"></i>`;
+    return `<li>
+      <span class="who">${escapeHtml(VOTER_FEATURES[name] || name)}</span>
+      <span class="track">${bar}</span>
+      <span class="how">${weight >= 0 ? '+' : ''}${weight.toFixed(2)}</span>
+    </li>`;
+  }).join('');
 }
 
 // -- the drawn tree ----------------------------------------------------------

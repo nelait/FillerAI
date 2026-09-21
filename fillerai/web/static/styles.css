@@ -537,6 +537,70 @@ input[type="search"] { width: 200px; }
 .btn.small { padding: 4px 10px; font-size: 0.8rem; }
 .stat.small b { font-size: 1.05rem; }
 
+/* ------------------------------------------------- the fitted vote weights */
+
+.voters {
+  margin: 14px 0 18px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.voters-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.voters-head h3 { margin: 0; font-size: 0.95rem; }
+.voters .sub { margin: 0 0 12px; font-size: 12.5px; color: var(--text-soft); max-width: 78ch; }
+
+.pulls { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+/* Name, then a track with zero down the middle, then the signed number: a
+ * weight that argues against believing a vote leans left, one that argues for
+ * it leans right, and the eye gets the sign before it reads the digits. */
+.pulls li {
+  display: grid;
+  grid-template-columns: 195px minmax(0, 1fr) 62px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.pulls .who { color: var(--text-soft); }
+
+.pulls .track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.pulls .track::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--border-strong);
+}
+
+.pulls .track i {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+.pulls .track i.down { background: var(--border-strong); }
+
+.pulls .how {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
 /* ---------------------------------------------------------- the library */
 
 .library { display: flex; flex-direction: column; gap: 10px; }

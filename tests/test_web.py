@@ -318,6 +318,30 @@ class TestTrainApi(ServerCase):
         self.assertTrue(body["seeds"])
         self.assertGreater(body["trained_on"], 0)
 
+    def test_a_small_run_measures_no_vote_weights_and_says_so(self):
+        # Under the holdout the combiner needs, nothing is taken for it and
+        # nothing was measured. The key is still there - the browser decides
+        # from the vote count whether there is a panel to draw at all.
+        body = self.trained()
+        self.assertIn("combiner", body)
+        self.assertEqual(body["combiner"]["votes"], 0)
+        self.assertFalse(body["combiner"]["fitted"])
+
+    def test_a_run_large_enough_carries_the_fitted_vote_weights(self):
+        records = fillerai.generate(self.schema, count=1200, seed=42).records
+        status, body = self.post("/api/train", {
+            "schema": self.schema.to_dict(), "records": records, "seed": 1,
+        })
+        self.assertEqual(status, 200)
+        combiner = body["combiner"]
+        # One weight per feature, and the two numbers that decided whether the
+        # fitted weights were kept. Everything the panel draws, in other words.
+        self.assertGreater(combiner["votes"], 0)
+        self.assertEqual(len(combiner["weights"]), len(combiner["features"]))
+        self.assertIn("heuristic", combiner["features"])
+        self.assertGreater(combiner["baseline_loss"], 0)
+        self.assertGreater(combiner["loss"], 0)
+
     def test_the_score_is_measured_on_records_held_back_from_the_fit(self):
         body = self.trained()
         self.assertGreater(body["held_out"], 0)
@@ -770,6 +794,9 @@ class TestLibraryApi(ServerCase):
         self.assertEqual(body["dataset_id"], generated["dataset_id"])
         self.assertIn("source", body)
         self.assertTrue(body["fields"])
+        # Including how loudly each voter was told to speak, so a reopened
+        # model describes itself the same way a freshly trained one does.
+        self.assertIn("combiner", body)
         # The reopened model is usable immediately, not just describable.
         status, predicted = self.post(
             "/api/predict", {"model_id": body["model_id"], "observed": {}})

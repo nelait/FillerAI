@@ -509,6 +509,13 @@ def _train_result(model: AutofillModel, records: list[dict[str, Any]],
         "held_out": model.held_out,
         "threshold": ACCEPT_ABOVE,
         "engine": model.engine.summary(),
+        # How loudly each voter was told to speak. This one goes out as the
+        # structured form rather than ``summary()``: the panel draws a weight
+        # per feature as a signed bar and needs the numbers apart from the
+        # words, and it is the browser's business what to call each feature.
+        # A combiner that was never measured carries no votes, and the panel
+        # is then simply not there rather than there and empty.
+        "combiner": model.combiner.to_dict(),
         "settings": model.settings,
         "rules": [
             {"target": d.target, "inputs": d.inputs, "kind": d.kind,
@@ -939,6 +946,7 @@ def api_library_open(payload: dict[str, Any]) -> dict[str, Any]:
             out["fields"] = model.field_report()
             out["drawable"] = sorted(getattr(model.engine, "trees", {}))
             out["engine"] = model.engine.summary()
+            out["combiner"] = model.combiner.to_dict()
             out["counts"] = {
                 "predictable": sum(1 for r in out["fields"] if r["how"] != "you"),
                 "yours": sum(1 for r in out["fields"] if r["how"] == "you"),
