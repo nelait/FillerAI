@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fillerai"
-version = "0.7.0"
+version = "0.8.0"
 description = "Synthetic sample data, autofill and simulation for dense web forms"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,7 @@ packages = [
     "fillerai",
     "fillerai.extract",
     "fillerai.generate",
+    "fillerai.llm",
     "fillerai.simulate",
     "fillerai.train",
     "fillerai.train.algos",
