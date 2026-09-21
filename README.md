@@ -1162,3 +1162,8 @@ something you run.
 would take to serve a model against a real production form, and measured
 behaviour at 20,000 records including the one classification limit that
 silently drops high-cardinality fields.
+
+[**Weight-based training: what it would take, and what it would buy**](docs/weight-based-training.md)
+— an analysis, not a change: what a sixth engine that learns weights rather
+than counts would cost under the no-dependency rule, measured against the five
+that exist, and which of the candidates is worth building.
