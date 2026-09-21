@@ -142,6 +142,66 @@ class Option:
 
 
 @dataclass
+class Derived:
+    """A rule the form itself declares: this field follows those.
+
+    A generated dropdown is otherwise a coin toss, and a coin toss teaches a
+    model nothing - which is why synthetic data made from a bare field list
+    autofills addresses and little else. Real forms are not like that. A
+    plan tier fixes the deductible, a department narrows the job title to a
+    handful, a vehicle make decides which models are on the menu. Those
+    rules are the part of a form a company can hand over freely: they are in
+    the business manual, not in anybody's submitted record.
+
+    So the spec carries them, the generator honours them, and the model then
+    has something real to find. ``sources`` names the fields this one
+    follows, ``table`` maps their joined values to what this field may then
+    hold, and ``otherwise`` covers a combination the table does not mention.
+
+    A list of several values is a narrowing rather than a determination, and
+    both are worth having: "Engineering means one of these four titles" is a
+    weaker rule than "Platinum means a 250 deductible", and a form carries
+    both kinds.
+    """
+
+    sources: tuple[str, ...]
+    table: dict[str, tuple[str, ...]] = dc_field(default_factory=dict)
+    otherwise: tuple[str, ...] = ()
+
+    @staticmethod
+    def key(values: "list[str] | tuple[str, ...]") -> str:
+        """The table key a set of source values looks up.
+
+        Case and surrounding space are ignored, because the value written in
+        a rule and the option value on the field are written by different
+        people at different times.
+        """
+        return "|".join(str(v).strip().lower() for v in values)
+
+    def lookup(self, values: "list[str] | tuple[str, ...]") -> tuple[str, ...]:
+        """What this field may hold, given its sources' values."""
+        return self.table.get(self.key(values), self.otherwise)
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "sources": list(self.sources),
+            "table": {k: list(v) for k, v in self.table.items()},
+        }
+        if self.otherwise:
+            out["otherwise"] = list(self.otherwise)
+        return out
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Derived":
+        return cls(
+            sources=tuple(str(s) for s in data.get("sources", [])),
+            table={str(k): tuple(str(v) for v in values)
+                   for k, values in (data.get("table") or {}).items()},
+            otherwise=tuple(str(v) for v in data.get("otherwise", [])),
+        )
+
+
+@dataclass
 class Field:
     """A single thing the form asks the agent to fill in."""
 
@@ -162,6 +222,8 @@ class Field:
     # Free-form escape hatch for source-specific detail (autocomplete tokens,
     # ARIA attributes, vendor metadata). Never load-bearing for generation.
     extra: dict[str, Any] = dc_field(default_factory=dict)
+    # A rule the form declares about this field. See :class:`Derived`.
+    derived: "Derived | None" = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -189,6 +251,8 @@ class Field:
             out["evidence"] = self.evidence
         if self.extra:
             out["extra"] = self.extra
+        if self.derived:
+            out["derived"] = self.derived.to_dict()
         return out
 
     @classmethod
@@ -208,6 +272,8 @@ class Field:
             confidence=float(data.get("confidence", 0.0)),
             evidence=list(data.get("evidence", [])),
             extra=dict(data.get("extra", {})),
+            derived=(Derived.from_dict(data["derived"])
+                     if data.get("derived") else None),
         )
 
 

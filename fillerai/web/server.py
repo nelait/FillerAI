@@ -636,7 +636,17 @@ class Run:
 
     def start(self, schema: FormSchema, records: list[dict[str, Any]],
               payload: dict[str, Any]) -> None:
+        # Who asked for this run, read here on the request thread while the
+        # context is still in scope. A new thread starts with an empty one,
+        # so a worker that did not carry this would save the model it just
+        # fitted into the unowned library and the person who trained it
+        # would not find it in theirs. Its own Context rather than the
+        # caller's object: the worker inherits who the run is for, and
+        # cannot write a cookie onto a request that has long since replied.
+        caller = context()
+
         def work() -> None:
+            _CONTEXT.set(Context(user=caller.user, session=caller.session))
             try:
                 self.options.trace = self.trace
                 _, holdout = split_records(records, self.options)

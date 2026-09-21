@@ -1,0 +1,973 @@
+{
+  "name": "employee_onboarding",
+  "screens": [
+    {
+      "id": "person",
+      "title": "Person"
+    },
+    {
+      "id": "role",
+      "title": "Role"
+    },
+    {
+      "id": "compensation",
+      "title": "Compensation"
+    },
+    {
+      "id": "workplace",
+      "title": "Workplace"
+    },
+    {
+      "id": "it",
+      "title": "IT Provisioning"
+    },
+    {
+      "id": "compliance",
+      "title": "Compliance"
+    }
+  ],
+  "fields": [
+    {
+      "name": "legal_first_name",
+      "label": "Legal First Name",
+      "screen": "person",
+      "group": "employee",
+      "required": true,
+      "max_length": 40
+    },
+    {
+      "name": "legal_last_name",
+      "label": "Legal Last Name",
+      "screen": "person",
+      "group": "employee",
+      "required": true,
+      "max_length": 40
+    },
+    {
+      "name": "preferred_name",
+      "label": "Preferred Name",
+      "screen": "person",
+      "group": "employee",
+      "max_length": 40
+    },
+    {
+      "name": "date_of_birth",
+      "label": "Date of Birth",
+      "screen": "person",
+      "group": "employee",
+      "control": "date",
+      "required": true
+    },
+    {
+      "name": "personal_email",
+      "label": "Personal Email",
+      "screen": "person",
+      "group": "employee",
+      "required": true,
+      "max_length": 80
+    },
+    {
+      "name": "mobile_phone",
+      "label": "Mobile Phone",
+      "screen": "person",
+      "group": "employee",
+      "required": true,
+      "placeholder": "(555) 555-0100"
+    },
+    {
+      "name": "home_street",
+      "label": "Home Street",
+      "screen": "person",
+      "group": "employee",
+      "required": true,
+      "max_length": 60
+    },
+    {
+      "name": "home_city",
+      "label": "Home City",
+      "screen": "person",
+      "group": "employee",
+      "required": true,
+      "max_length": 40
+    },
+    {
+      "name": "home_state",
+      "label": "Home State",
+      "screen": "person",
+      "group": "employee",
+      "control": "select",
+      "required": true,
+      "options": [
+        "AZ",
+        "CA",
+        "CO",
+        "FL",
+        "IL",
+        "NY",
+        "TX",
+        "WA"
+      ]
+    },
+    {
+      "name": "home_postal_code",
+      "label": "Home ZIP",
+      "screen": "person",
+      "group": "employee",
+      "required": true,
+      "pattern": "\\d{5}"
+    },
+    {
+      "name": "emergency_contact_name",
+      "label": "Emergency Contact",
+      "screen": "person",
+      "semantic_type": "full_name",
+      "required": true,
+      "max_length": 80
+    },
+    {
+      "name": "emergency_contact_phone",
+      "label": "Emergency Contact Phone",
+      "screen": "person",
+      "required": true,
+      "placeholder": "(555) 555-0100"
+    },
+    {
+      "name": "emergency_contact_relationship",
+      "label": "Relationship",
+      "screen": "person",
+      "control": "select",
+      "options": [
+        "Spouse",
+        "Parent",
+        "Sibling",
+        "Friend",
+        "Partner"
+      ]
+    },
+    {
+      "name": "department",
+      "label": "Department",
+      "screen": "role",
+      "control": "select",
+      "required": true,
+      "options": [
+        "Customer Support",
+        "Engineering",
+        "Finance",
+        "Legal",
+        "Marketing",
+        "People Ops",
+        "Sales"
+      ]
+    },
+    {
+      "name": "job_title",
+      "label": "Job Title",
+      "screen": "role",
+      "control": "select",
+      "required": true,
+      "options": [
+        "Account Executive",
+        "Compliance Analyst",
+        "Content Strategist",
+        "Contracts Counsel",
+        "Controller",
+        "Demand Generation Manager",
+        "Engineering Manager",
+        "Financial Analyst",
+        "Paralegal",
+        "People Ops Manager",
+        "People Partner",
+        "Product Marketing Manager",
+        "QA Analyst",
+        "Recruiter",
+        "Sales Development Rep",
+        "Sales Manager",
+        "Site Reliability Engineer",
+        "Software Engineer",
+        "Solutions Engineer",
+        "Staff Accountant",
+        "Support Specialist",
+        "Support Team Lead",
+        "Technical Account Manager"
+      ],
+      "follows": "department",
+      "when": {
+        "Engineering": [
+          "Software Engineer",
+          "Site Reliability Engineer",
+          "QA Analyst",
+          "Engineering Manager"
+        ],
+        "Sales": [
+          "Account Executive",
+          "Sales Development Rep",
+          "Solutions Engineer",
+          "Sales Manager"
+        ],
+        "Marketing": [
+          "Content Strategist",
+          "Demand Generation Manager",
+          "Product Marketing Manager"
+        ],
+        "Finance": [
+          "Staff Accountant",
+          "Financial Analyst",
+          "Controller"
+        ],
+        "Customer Support": [
+          "Support Specialist",
+          "Support Team Lead",
+          "Technical Account Manager"
+        ],
+        "People Ops": [
+          "Recruiter",
+          "People Partner",
+          "People Ops Manager"
+        ],
+        "Legal": [
+          "Contracts Counsel",
+          "Paralegal",
+          "Compliance Analyst"
+        ]
+      }
+    },
+    {
+      "name": "job_level",
+      "label": "Level",
+      "screen": "role",
+      "control": "select",
+      "options": [
+        "IC1",
+        "IC2",
+        "IC3",
+        "IC4",
+        "M1",
+        "M2"
+      ],
+      "follows": "job_title",
+      "when": {
+        "Software Engineer": [
+          "IC2",
+          "IC3"
+        ],
+        "Site Reliability Engineer": [
+          "IC3",
+          "IC4"
+        ],
+        "QA Analyst": [
+          "IC1",
+          "IC2"
+        ],
+        "Engineering Manager": "M2",
+        "Account Executive": [
+          "IC2",
+          "IC3"
+        ],
+        "Sales Development Rep": "IC1",
+        "Solutions Engineer": "IC3",
+        "Sales Manager": "M2",
+        "Content Strategist": [
+          "IC1",
+          "IC2"
+        ],
+        "Demand Generation Manager": "M1",
+        "Product Marketing Manager": "IC4",
+        "Staff Accountant": "IC2",
+        "Financial Analyst": [
+          "IC2",
+          "IC3"
+        ],
+        "Controller": "M2",
+        "Support Specialist": "IC1",
+        "Support Team Lead": "M1",
+        "Technical Account Manager": "IC3",
+        "Recruiter": "IC2",
+        "People Partner": "IC3",
+        "People Ops Manager": "M1",
+        "Contracts Counsel": "IC4",
+        "Paralegal": "IC2",
+        "Compliance Analyst": "IC3"
+      }
+    },
+    {
+      "name": "employment_type",
+      "label": "Employment Type",
+      "screen": "role",
+      "control": "select",
+      "required": true,
+      "options": [
+        "Full-time",
+        "Part-time",
+        "Contract",
+        "Intern"
+      ]
+    },
+    {
+      "name": "cost_center",
+      "label": "Cost Centre",
+      "screen": "role",
+      "control": "select",
+      "semantic_type": "enum",
+      "options": [
+        "CC-1100",
+        "CC-2100",
+        "CC-2200",
+        "CC-3100",
+        "CC-4100",
+        "CC-5100",
+        "CC-6100"
+      ],
+      "follows": "department",
+      "when": {
+        "Engineering": "CC-1100",
+        "Sales": "CC-2100",
+        "Marketing": "CC-2200",
+        "Finance": "CC-3100",
+        "Customer Support": "CC-4100",
+        "People Ops": "CC-5100",
+        "Legal": "CC-6100"
+      }
+    },
+    {
+      "name": "reports_to",
+      "label": "Reports To",
+      "screen": "role",
+      "control": "select",
+      "options": [
+        "Alice Bergstrom",
+        "Dana Ellison",
+        "Hugo Marchetti",
+        "Lena Okonkwo",
+        "Marcus Webb",
+        "Priya Raghavan",
+        "Sam Trevino"
+      ],
+      "follows": "department",
+      "when": {
+        "Engineering": "Priya Raghavan",
+        "Sales": "Marcus Webb",
+        "Marketing": "Dana Ellison",
+        "Finance": "Hugo Marchetti",
+        "Customer Support": "Lena Okonkwo",
+        "People Ops": "Sam Trevino",
+        "Legal": "Alice Bergstrom"
+      }
+    },
+    {
+      "name": "flsa_status",
+      "label": "FLSA Status",
+      "screen": "role",
+      "control": "select",
+      "options": [
+        "Exempt",
+        "Non-exempt"
+      ],
+      "follows": "job_level",
+      "when": {
+        "IC1": "Non-exempt",
+        "IC2": "Exempt",
+        "IC3": "Exempt",
+        "IC4": "Exempt",
+        "M1": "Exempt",
+        "M2": "Exempt"
+      }
+    },
+    {
+      "name": "start_date",
+      "label": "Start Date",
+      "screen": "role",
+      "control": "date",
+      "required": true
+    },
+    {
+      "name": "probation_period",
+      "label": "Probation Period",
+      "screen": "role",
+      "control": "select",
+      "options": [
+        "None",
+        "90 days"
+      ],
+      "follows": "employment_type",
+      "when": {
+        "Full-time": "90 days",
+        "Part-time": "90 days",
+        "Contract": "None",
+        "Intern": "None"
+      }
+    },
+    {
+      "name": "onboarding_track",
+      "label": "Onboarding Track",
+      "screen": "role",
+      "control": "select",
+      "options": [
+        "Contractor short form",
+        "Engineering bootcamp",
+        "General new hire",
+        "Internship cohort",
+        "Revenue academy"
+      ],
+      "follows": [
+        "department",
+        "employment_type"
+      ],
+      "when": {
+        "Customer Support|Full-time": "General new hire",
+        "Customer Support|Part-time": "General new hire",
+        "Customer Support|Contract": "Contractor short form",
+        "Customer Support|Intern": "Internship cohort",
+        "Engineering|Full-time": "Engineering bootcamp",
+        "Engineering|Part-time": "Engineering bootcamp",
+        "Engineering|Contract": "Contractor short form",
+        "Engineering|Intern": "Internship cohort",
+        "Finance|Full-time": "General new hire",
+        "Finance|Part-time": "General new hire",
+        "Finance|Contract": "Contractor short form",
+        "Finance|Intern": "Internship cohort",
+        "Legal|Full-time": "General new hire",
+        "Legal|Part-time": "General new hire",
+        "Legal|Contract": "Contractor short form",
+        "Legal|Intern": "Internship cohort",
+        "Marketing|Full-time": "General new hire",
+        "Marketing|Part-time": "General new hire",
+        "Marketing|Contract": "Contractor short form",
+        "Marketing|Intern": "Internship cohort",
+        "People Ops|Full-time": "General new hire",
+        "People Ops|Part-time": "General new hire",
+        "People Ops|Contract": "Contractor short form",
+        "People Ops|Intern": "Internship cohort",
+        "Sales|Full-time": "Revenue academy",
+        "Sales|Part-time": "Revenue academy",
+        "Sales|Contract": "Contractor short form",
+        "Sales|Intern": "Internship cohort"
+      },
+      "help_text": "Chosen by the department and the employment type together."
+    },
+    {
+      "name": "pay_grade",
+      "label": "Pay Grade",
+      "screen": "compensation",
+      "control": "select",
+      "options": [
+        "G4",
+        "G5",
+        "G6",
+        "G7",
+        "G8"
+      ],
+      "follows": "job_level",
+      "when": {
+        "IC1": "G4",
+        "IC2": "G5",
+        "IC3": "G6",
+        "IC4": "G7",
+        "M1": "G7",
+        "M2": "G8"
+      }
+    },
+    {
+      "name": "salary_band_min",
+      "label": "Band Minimum",
+      "screen": "compensation",
+      "control": "select",
+      "semantic_type": "enum",
+      "options": [
+        "126000",
+        "155000",
+        "62000",
+        "78000",
+        "98000"
+      ],
+      "follows": "pay_grade",
+      "when": {
+        "G4": "62000",
+        "G5": "78000",
+        "G6": "98000",
+        "G7": "126000",
+        "G8": "155000"
+      }
+    },
+    {
+      "name": "salary_band_max",
+      "label": "Band Maximum",
+      "screen": "compensation",
+      "control": "select",
+      "semantic_type": "enum",
+      "options": [
+        "102000",
+        "128000",
+        "164000",
+        "201000",
+        "81000"
+      ],
+      "follows": "pay_grade",
+      "when": {
+        "G4": "81000",
+        "G5": "102000",
+        "G6": "128000",
+        "G7": "164000",
+        "G8": "201000"
+      }
+    },
+    {
+      "name": "bonus_target_percent",
+      "label": "Bonus Target %",
+      "screen": "compensation",
+      "control": "select",
+      "semantic_type": "enum",
+      "options": [
+        "5",
+        "8",
+        "10",
+        "15",
+        "20"
+      ],
+      "follows": "pay_grade",
+      "when": {
+        "G4": "5",
+        "G5": "8",
+        "G6": "10",
+        "G7": "15",
+        "G8": "20"
+      }
+    },
+    {
+      "name": "equity_band",
+      "label": "Equity Band",
+      "screen": "compensation",
+      "control": "select",
+      "options": [
+        "None",
+        "Tier A",
+        "Tier B",
+        "Tier C"
+      ],
+      "follows": "pay_grade",
+      "when": {
+        "G4": "None",
+        "G5": "Tier C",
+        "G6": "Tier B",
+        "G7": "Tier B",
+        "G8": "Tier A"
+      }
+    },
+    {
+      "name": "approval_level",
+      "label": "Offer Approved By",
+      "screen": "compensation",
+      "control": "select",
+      "options": [
+        "Chief People Officer",
+        "Director",
+        "Manager",
+        "Vice President"
+      ],
+      "follows": "pay_grade",
+      "when": {
+        "G4": "Manager",
+        "G5": "Manager",
+        "G6": "Director",
+        "G7": "Vice President",
+        "G8": "Chief People Officer"
+      }
+    },
+    {
+      "name": "benefits_eligible",
+      "label": "Benefits Eligible",
+      "screen": "compensation",
+      "control": "select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "follows": "employment_type",
+      "when": {
+        "Full-time": "Yes",
+        "Part-time": "Yes",
+        "Contract": "No",
+        "Intern": "No"
+      }
+    },
+    {
+      "name": "vacation_days",
+      "label": "Annual Vacation Days",
+      "screen": "compensation",
+      "control": "select",
+      "semantic_type": "enum",
+      "options": [
+        "0",
+        "5",
+        "12",
+        "20"
+      ],
+      "follows": "employment_type",
+      "when": {
+        "Full-time": "20",
+        "Part-time": "12",
+        "Contract": "0",
+        "Intern": "5"
+      }
+    },
+    {
+      "name": "payroll_schedule",
+      "label": "Payroll Schedule",
+      "screen": "compensation",
+      "control": "select",
+      "options": [
+        "Semi-monthly",
+        "Bi-weekly"
+      ]
+    },
+    {
+      "name": "office_location",
+      "label": "Office",
+      "screen": "workplace",
+      "control": "select",
+      "required": true,
+      "options": [
+        "Austin",
+        "Denver",
+        "New York",
+        "Seattle",
+        "Remote"
+      ]
+    },
+    {
+      "name": "office_city",
+      "label": "Office City",
+      "screen": "workplace",
+      "group": "office",
+      "max_length": 40,
+      "follows": "office_location",
+      "when": {
+        "Austin": "Austin",
+        "Denver": "Denver",
+        "New York": "New York",
+        "Seattle": "Seattle"
+      }
+    },
+    {
+      "name": "office_state",
+      "label": "Office State",
+      "screen": "workplace",
+      "group": "office",
+      "control": "select",
+      "options": [
+        "CO",
+        "NY",
+        "TX",
+        "WA"
+      ],
+      "follows": "office_location",
+      "when": {
+        "Austin": "TX",
+        "Denver": "CO",
+        "New York": "NY",
+        "Seattle": "WA"
+      }
+    },
+    {
+      "name": "office_postal_code",
+      "label": "Office ZIP",
+      "screen": "workplace",
+      "group": "office",
+      "pattern": "\\d{5}",
+      "follows": "office_location",
+      "when": {
+        "Austin": "78701",
+        "Denver": "80202",
+        "New York": "10001",
+        "Seattle": "98101"
+      }
+    },
+    {
+      "name": "time_zone",
+      "label": "Time Zone",
+      "screen": "workplace",
+      "control": "select",
+      "options": [
+        "US/Central",
+        "US/Eastern",
+        "US/Mountain",
+        "US/Pacific"
+      ],
+      "follows": "office_location",
+      "when": {
+        "Austin": "US/Central",
+        "Denver": "US/Mountain",
+        "New York": "US/Eastern",
+        "Seattle": "US/Pacific",
+        "Remote": [
+          "US/Central",
+          "US/Mountain",
+          "US/Eastern",
+          "US/Pacific"
+        ]
+      }
+    },
+    {
+      "name": "building",
+      "label": "Building",
+      "screen": "workplace",
+      "control": "select",
+      "options": [
+        "Congress Tower",
+        "Flatiron Annex",
+        "Larimer Works",
+        "None",
+        "Pike Union"
+      ],
+      "follows": "office_location",
+      "when": {
+        "Austin": "Congress Tower",
+        "Denver": "Larimer Works",
+        "New York": "Flatiron Annex",
+        "Seattle": "Pike Union",
+        "Remote": "None"
+      }
+    },
+    {
+      "name": "parking_eligible",
+      "label": "Parking Eligible",
+      "screen": "workplace",
+      "control": "select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "follows": "office_location",
+      "when": {
+        "Austin": "Yes",
+        "Denver": "Yes",
+        "New York": "No",
+        "Seattle": "Yes",
+        "Remote": "No"
+      }
+    },
+    {
+      "name": "desk_number",
+      "label": "Desk",
+      "screen": "workplace",
+      "max_length": 10
+    },
+    {
+      "name": "remote_stipend",
+      "label": "Remote Stipend",
+      "screen": "workplace",
+      "control": "select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "follows": "office_location",
+      "when": {
+        "Remote": "Yes",
+        "Austin": "No",
+        "Denver": "No",
+        "New York": "No",
+        "Seattle": "No"
+      }
+    },
+    {
+      "name": "laptop_model",
+      "label": "Laptop",
+      "screen": "it",
+      "control": "select",
+      "options": [
+        "MacBook Air 13",
+        "MacBook Pro 14",
+        "MacBook Pro 16",
+        "ThinkPad T14"
+      ],
+      "follows": "department",
+      "when": {
+        "Engineering": "MacBook Pro 16",
+        "Marketing": "MacBook Pro 14",
+        "Sales": "MacBook Air 13",
+        "Finance": "ThinkPad T14",
+        "Customer Support": "ThinkPad T14",
+        "People Ops": "MacBook Air 13",
+        "Legal": "ThinkPad T14"
+      }
+    },
+    {
+      "name": "monitor_count",
+      "label": "Monitors",
+      "screen": "it",
+      "control": "select",
+      "semantic_type": "enum",
+      "options": [
+        "1",
+        "2"
+      ],
+      "follows": "department",
+      "when": {
+        "Engineering": "2",
+        "Sales": "1",
+        "Marketing": "2",
+        "Finance": "2",
+        "Customer Support": "2",
+        "People Ops": "1",
+        "Legal": "1"
+      }
+    },
+    {
+      "name": "repository_access",
+      "label": "Code Repository Access",
+      "screen": "it",
+      "control": "select",
+      "options": [
+        "None",
+        "Read",
+        "Write"
+      ],
+      "follows": "department",
+      "when": {
+        "Customer Support": "Read",
+        "Engineering": "Write",
+        "Finance": "None",
+        "Legal": "None",
+        "Marketing": "Read",
+        "People Ops": "None",
+        "Sales": "None"
+      }
+    },
+    {
+      "name": "crm_access",
+      "label": "CRM Access",
+      "screen": "it",
+      "control": "select",
+      "options": [
+        "None",
+        "Standard",
+        "Admin"
+      ],
+      "follows": "department",
+      "when": {
+        "Customer Support": "Standard",
+        "Engineering": "None",
+        "Finance": "None",
+        "Legal": "None",
+        "Marketing": "Standard",
+        "People Ops": "None",
+        "Sales": "Admin"
+      }
+    },
+    {
+      "name": "ledger_access",
+      "label": "Ledger Access",
+      "screen": "it",
+      "control": "select",
+      "options": [
+        "None",
+        "Full"
+      ],
+      "follows": "department",
+      "when": {
+        "Customer Support": "None",
+        "Engineering": "None",
+        "Finance": "Full",
+        "Legal": "None",
+        "Marketing": "None",
+        "People Ops": "None",
+        "Sales": "None"
+      }
+    },
+    {
+      "name": "badge_type",
+      "label": "Badge Type",
+      "screen": "it",
+      "control": "select",
+      "options": [
+        "Contractor",
+        "Employee",
+        "Intern"
+      ],
+      "follows": "employment_type",
+      "when": {
+        "Full-time": "Employee",
+        "Part-time": "Employee",
+        "Contract": "Contractor",
+        "Intern": "Intern"
+      }
+    },
+    {
+      "name": "vpn_required",
+      "label": "VPN Required",
+      "screen": "it",
+      "control": "select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "follows": "office_location",
+      "when": {
+        "Remote": "Yes",
+        "Austin": "No",
+        "Denver": "No",
+        "New York": "No",
+        "Seattle": "No"
+      }
+    },
+    {
+      "name": "background_check_level",
+      "label": "Background Check",
+      "screen": "compliance",
+      "control": "select",
+      "options": [
+        "Standard",
+        "Enhanced"
+      ],
+      "follows": "department",
+      "when": {
+        "Customer Support": "Standard",
+        "Engineering": "Standard",
+        "Finance": "Enhanced",
+        "Legal": "Enhanced",
+        "Marketing": "Standard",
+        "People Ops": "Standard",
+        "Sales": "Standard"
+      }
+    },
+    {
+      "name": "nda_required",
+      "label": "NDA Required",
+      "screen": "compliance",
+      "control": "select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "follows": "employment_type",
+      "when": {
+        "Full-time": "Yes",
+        "Part-time": "Yes",
+        "Contract": "Yes",
+        "Intern": "Yes"
+      }
+    },
+    {
+      "name": "i9_verification",
+      "label": "I-9 Verified",
+      "screen": "compliance",
+      "control": "checkbox",
+      "required": true
+    },
+    {
+      "name": "handbook_acknowledged",
+      "label": "Handbook Acknowledged",
+      "screen": "compliance",
+      "control": "checkbox",
+      "required": true
+    },
+    {
+      "name": "notes",
+      "label": "Notes For The Onboarding Team",
+      "screen": "compliance",
+      "control": "textarea",
+      "max_length": 300
+    }
+  ]
+}

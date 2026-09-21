@@ -14,6 +14,7 @@ import io
 import json
 import sys
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -380,6 +381,46 @@ class TestSeparateLibraries(AuthServerCase):
             with self.subTest(path):
                 status, _body = theirs.post(path, {"id": stranger, "name": "mine now"})
                 self.assertEqual(status, 404)
+
+    def test_a_model_trained_on_the_worker_lands_in_the_trainer_s_library(self):
+        """The fit happens on a thread the request does not wait for.
+
+        A thread starts with an empty context, so the run has to be told who
+        it is for. Without that the model it saves goes in under no owner at
+        all: trained, on disk, and absent from the library of the only person
+        who could have trained it.
+        """
+        mine = self.signed_in()
+        _status, made = mine.post(
+            "/api/extract",
+            {"kind": "html", "content": "<form><input name=city>"
+                                        "<input name=state></form>"})
+        records = [{"city": city, "state": state} for city, state in
+                   [("Austin", "TX"), ("Dallas", "TX"), ("Reno", "NV")] * 12]
+
+        status, started = mine.post("/api/train/start", {
+            "schema": made["schema"], "records": records, "seed": 1,
+            "schema_id": made["schema_id"]})
+        self.assertEqual(status, 200)
+        for _ in range(600):  # a hard bound, so a hung fit fails the test
+            _status, log = mine.post("/api/train/log",
+                                     {"run_id": started["run_id"]})
+            if log["result"] or log["error"]:
+                break
+            time.sleep(0.05)
+        self.assertIsNone(log["error"])
+        self.assertTrue(log["result"], "the run never finished")
+
+        entry_id = log["result"]["model_entry_id"]
+        _status, listing = mine.post("/api/library", {"kind": "model"})
+        self.assertIn(entry_id, [e["id"] for e in listing["entries"]],
+                      "the model is not in the library of whoever trained it")
+
+        # And it is theirs, not everyone's: the wall holds for a model the
+        # same as for anything else the stages save.
+        _status, theirs = self.signed_in("krishna").post("/api/library",
+                                                         {"kind": "model"})
+        self.assertNotIn(entry_id, [e["id"] for e in theirs["entries"]])
 
     def test_a_deleted_user_takes_their_library_with_them(self):
         _status, made = self.signed_in().post("/api/admin/users/create",
