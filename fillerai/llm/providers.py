@@ -74,7 +74,26 @@ class Reply:
 
 
 class ReplyError(RuntimeError):
-    """The far end answered, but not with anything usable."""
+    """The far end answered, but not with anything usable.
+
+    ``truncated`` marks the one failure here that is worth retrying rather
+    than reporting: the answer ran out of budget part-way through. A caller
+    that wants to ask a smaller question should branch on this rather than on
+    the wording of the message, which is written for a person.
+    """
+
+    def __init__(self, message: str, *, truncated: bool = False) -> None:
+        super().__init__(message)
+        self.truncated = truncated
+
+
+#: What to say when an answer is cut off. Shared, because both services do
+#: it and a reader hitting it needs the same two ways out either way.
+TRUNCATED = (
+    "the answer was cut off by the token limit. This form is large enough "
+    "that the model ran out of room mid-answer; ask about fewer fields at a "
+    "time (propose-rules --batch 20) if it keeps happening"
+)
 
 
 def strict_ready(schema: dict[str, Any]) -> bool:
@@ -231,10 +250,7 @@ class Anthropic(Provider):
                 + (f": {detail}" if detail else "")
             )
         if stop == "max_tokens":
-            raise ReplyError(
-                "the answer was cut off by the token limit; the form may be "
-                "larger than this command's budget allows"
-            )
+            raise ReplyError(TRUNCATED, truncated=True)
 
         # The answer is the *last* text block, not the first: a response may
         # carry thinking blocks ahead of it, and content[0] works right up
@@ -327,10 +343,7 @@ class OpenAI(Provider):
         if refusal:
             raise ReplyError(f"the model declined to answer this request: {refusal}")
         if stop == "length":
-            raise ReplyError(
-                "the answer was cut off by the token limit; the form may be "
-                "larger than this command's budget allows"
-            )
+            raise ReplyError(TRUNCATED, truncated=True)
 
         text = (message.get("content") or "").strip()
         if not text:
@@ -399,6 +412,7 @@ __all__ = [
     "Reply",
     "ReplyError",
     "SCHEMA_NAME",
+    "TRUNCATED",
     "for_model",
     "for_response",
     "get",

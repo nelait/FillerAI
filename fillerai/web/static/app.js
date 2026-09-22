@@ -1992,8 +1992,15 @@ $('proposeRules').addEventListener('click', () => withBusy(
       return;
     }
 
-    llmSay($('rulesStatus'), 'Asking, and checking the answer. This takes a '
-           + 'few seconds: every proposed rule is tried against generated records.');
+    // A form too large for one answer is asked in several calls, which is
+    // several times the wait. Saying so beats a spinner that looks stuck.
+    const several = estimate.calls > 1
+      ? `This form is too large to ask about at once, so it goes in `
+        + `${estimate.calls} calls of ${estimate.per_call} fields. `
+      : '';
+    llmSay($('rulesStatus'), several + 'Asking, and checking the answer. This '
+           + 'takes a few seconds: every proposed rule is tried against '
+           + 'generated records.');
     try {
       llm.proposals = await api('/api/llm/rules/propose', { schema: state.schema });
     } catch (error) {

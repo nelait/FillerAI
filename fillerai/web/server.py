@@ -1464,7 +1464,10 @@ def api_llm_rules_estimate(payload: dict[str, Any]) -> dict[str, Any]:
     schema = _schema_from(payload)
     settings = _llm_settings("rules")
     estimate = llm_rules.estimate(schema, settings)
+    groups = llm_rules.batches(schema)
     return {
+        "calls": len(groups),
+        "per_call": len(groups[0]),
         "provider": settings.provider,
         "label": settings.api.label,
         "model": settings.model,
@@ -1473,7 +1476,10 @@ def api_llm_rules_estimate(payload: dict[str, Any]) -> dict[str, Any]:
         "output_tokens": estimate.output_tokens,
         "dollars": round(estimate.dollars, 4),
         "priced": estimate.priced,
-        "lines": estimate.describe(),
+        "lines": estimate.describe() + ([
+            f"too large for one answer: {len(groups)} calls, "
+            f"{len(groups[0])} fields at a time"
+        ] if len(groups) > 1 else []),
     }
 
 
