@@ -45,12 +45,21 @@ from ..extract.spec import _derived_from_spec
 from ..generate.dataset import Options, coherence_report, generate, validate
 from ..schema import Derived, FormSchema
 from . import cost, prompts
-from .client import Client, Reply
+from .client import Client, Reply, ReplyError
 from .config import Settings
 
 #: Records generated to test the proposed rules against. Enough for a broken
 #: rule to show up in every record it touches, small enough to be instant.
 CHECK_SAMPLE = 200
+
+#: Fields asked about in one call. Chosen so the answer fits the budget
+#: :func:`prompts.rules_budget` allows with room left to think, and so a form
+#: under this many option fields - which is every example in this repository
+#: and most real forms - is still exactly one call.
+BATCH_TARGETS = 60
+
+#: How many times a group may be halved when an answer comes back truncated.
+SPLIT_DEPTH = 2
 CHECK_SEED = 20260921
 
 #: Strips the record number off a problem so two runs can be compared by what
@@ -342,6 +351,25 @@ def check(schema: FormSchema, proposals: list[Proposal], *,
     """
     verdicts = [Verdict(p, _structural(schema, p)) for p in proposals]
 
+    # Two rules for one field is not a rule, it is a coin toss: the one
+    # applied would be whichever happened to be last. The more confident one
+    # stays and the rest say why they went, which matters now that a large
+    # form is asked about in several calls and a model can answer outside the
+    # slice it was given.
+    seen: dict[str, Verdict] = {}
+    for verdict in verdicts:
+        if not verdict.kept:
+            continue
+        first = seen.get(verdict.proposal.field)
+        if first is None:
+            seen[verdict.proposal.field] = verdict
+            continue
+        loser = min((first, verdict), key=lambda v: v.proposal.confidence)
+        winner = first if loser is verdict else verdict
+        loser.problem = ("another proposal for this field was more confident "
+                         f"({winner.proposal.confidence:.2f})")
+        seen[verdict.proposal.field] = winner
+
     survivors = [v for v in verdicts if v.kept]
     caught = _cyclic(schema, [v.proposal for v in survivors])
     for verdict in survivors:
@@ -401,13 +429,44 @@ def _first_problem(problems: set[str], name: str) -> str:
 # --------------------------------------------------------------------------
 
 
-def estimate(schema: FormSchema, settings: Settings) -> cost.Estimate:
-    """What this run would cost, before a socket is opened."""
-    prompt = prompts.RULES_SYSTEM + prompts.rules_user(schema)
-    # A form declares a rule for a minority of its fields; half is generous
-    # and an estimate should be.
-    expected = max(400, (len(schema.fields) // 2) * prompts.TOKENS_PER_RULE)
-    return cost.estimate(settings.model, prompt, expected)
+def targets(schema: FormSchema) -> list[str]:
+    """The fields a rule could decide, which is fewer than the form's fields.
+
+    A rule puts a value in a field, and :func:`_structural` refuses any value
+    the field cannot hold - so a field with no option list can never be the
+    subject of one. Counting those fields in when sizing a run makes a
+    seventy-field form look like a two-hundred-field one.
+    """
+    return [f.name for f in schema.fields if f.options and not f.derived]
+
+
+def batches(schema: FormSchema, size: int = BATCH_TARGETS) -> list[list[str]]:
+    """The form's targets, split into groups small enough to answer in one go.
+
+    One group - the whole form - is the normal case and asks exactly the
+    question this module has always asked. Several is the overflow path.
+    """
+    wanted = targets(schema)
+    if size <= 0 or len(wanted) <= size:
+        return [wanted]
+    return [wanted[at:at + size] for at in range(0, len(wanted), size)]
+
+
+def estimate(schema: FormSchema, settings: Settings,
+             size: int = BATCH_TARGETS) -> cost.Estimate:
+    """What this run would cost, before a socket is opened.
+
+    A form too large for one call pays for the prompt again on each of them,
+    so the estimate counts the calls rather than pricing the first one and
+    letting the rest arrive on the bill.
+    """
+    groups = batches(schema, size)
+    prompt = prompts.RULES_SYSTEM + prompts.rules_user(
+        schema, groups[0] if len(groups) > 1 else None)
+    # A form declares a rule for a minority of the fields that could carry
+    # one; half is generous, and an estimate should be.
+    expected = max(400, (len(targets(schema)) // 2) * prompts.TOKENS_PER_RULE)
+    return cost.estimate(settings.model, prompt * len(groups), expected)
 
 
 def parse(payload: Any) -> tuple[list[Proposal], list[str]]:
@@ -427,22 +486,61 @@ def parse(payload: Any) -> tuple[list[Proposal], list[str]]:
     return proposals, unreadable
 
 
+def _ask(client: Client, schema: FormSchema, group: list[str] | None,
+         *, depth: int = 0) -> list[Reply]:
+    """One call - or, if the answer came back cut off, two smaller ones.
+
+    Truncation is the one failure worth retrying rather than reporting. The
+    budget is sized from the form, but how much a model thinks before it
+    answers is its business and not something this side can predict, so a
+    large form can still overrun. Halving the question halves the answer, and
+    two levels of that is enough for any form anybody has put through this.
+    """
+    try:
+        return [client.ask(
+            system=prompts.RULES_SYSTEM,
+            user=prompts.rules_user(schema, group),
+            output_schema=prompts.RULES_OUTPUT_SCHEMA,
+            max_tokens=prompts.rules_budget(len(group) if group else
+                                            len(targets(schema))),
+        )]
+    except ReplyError as error:
+        if not error.truncated or depth >= SPLIT_DEPTH or not group or len(group) < 2:
+            raise
+        middle = len(group) // 2
+        return (_ask(client, schema, group[:middle], depth=depth + 1)
+                + _ask(client, schema, group[middle:], depth=depth + 1))
+
+
 def propose(schema: FormSchema, *, client: Client | None = None,
             settings: Settings | None = None,
             sample: int = CHECK_SAMPLE, seed: int = CHECK_SEED,
-            max_spend: float | None = None) -> Proposals:
-    """Ask for this form's rules, then disbelieve the answer until it checks out."""
+            max_spend: float | None = None,
+            size: int = BATCH_TARGETS) -> Proposals:
+    """Ask for this form's rules, then disbelieve the answer until it checks out.
+
+    A form with more fields than one answer can hold is asked about in
+    groups. Every call sees the whole form - a rule's worth is that it links
+    two fields, and a model shown half a form would invent links inside that
+    half - and only the fields it is asked to decide change between them.
+    """
     settings = settings or Settings.resolve("rules")
-    est = estimate(schema, settings)
+    groups = batches(schema, size)
+    est = estimate(schema, settings, size)
     cost.enforce(est, max_spend)
 
     client = client or Client(settings)
-    reply: Reply = client.ask(
-        system=prompts.RULES_SYSTEM,
-        user=prompts.rules_user(schema),
-        output_schema=prompts.RULES_OUTPUT_SCHEMA,
-    )
-    proposals, unreadable = parse(reply.data)
+    replies: list[Reply] = []
+    for group in groups:
+        replies.extend(_ask(client, schema, group if len(groups) > 1 else None))
+
+    proposals: list[Proposal] = []
+    unreadable: list[str] = []
+    for reply in replies:
+        got, bad = parse(reply.data)
+        proposals.extend(got)
+        unreadable.extend(bad)
+
     verdicts = check(schema, proposals, sample=sample, seed=seed)
 
     for message in unreadable:
@@ -452,11 +550,16 @@ def propose(schema: FormSchema, *, client: Client | None = None,
             problem=message,
         ))
 
+    usage = {
+        "input_tokens": sum(r.input_tokens for r in replies),
+        "output_tokens": sum(r.output_tokens for r in replies),
+        "calls": len(replies),
+    }
     return Proposals(
         schema_name=schema.name,
         verdicts=verdicts,
-        model=reply.model or settings.model,
-        usage=reply.usage,
+        model=replies[0].model or settings.model,
+        usage=usage,
         estimate=est,
     )
 

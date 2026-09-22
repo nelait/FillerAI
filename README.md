@@ -1406,6 +1406,24 @@ proposed; what did not says which check killed it:
     group_number                 follows itself
 ```
 
+**A large form is asked about in several calls.** How much room an answer
+needs depends on how many rules were asked for, and on both services a model
+that reasons before answering spends that same budget thinking — so a form big
+enough will run out mid-answer whatever a single request allows. Past 60
+fields that could carry a rule the question is split, sixty at a time, and
+every call still sees the whole form because a rule's whole value is that it
+links two fields. `--batch` sets the size, and the estimate counts the calls:
+
+```
+  about 8,822 tokens in and 5,850 out
+  roughly $0.19 on claude-opus-5
+  too large for one answer: 3 calls, 60 fields at a time
+```
+
+Two calls can each propose a rule for the same field; the more confident one
+stays and the other is dropped saying so. An answer that comes back cut off
+anyway is asked again as two smaller ones rather than reported.
+
 A model proposing rules is **inventing plausible business logic, not observing
 a real one**. It gets "a Wrangler is a Jeep" right because that is a fact
 about the world; it will guess at a particular carrier's coverage ladder. So

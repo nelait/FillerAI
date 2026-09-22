@@ -277,9 +277,15 @@ def cmd_propose_rules(args: argparse.Namespace) -> int:
     schema = _load_schema(Path(args.source))
     settings, client = _rules_client(args)
 
-    estimate = llm_rules.estimate(schema, settings)
+    size = args.batch if args.batch is not None else llm_rules.BATCH_TARGETS
+    estimate = llm_rules.estimate(schema, settings, size)
+    groups = llm_rules.batches(schema, size)
     for line in estimate.describe():
         print(f"  {line}", file=sys.stderr)
+    if len(groups) > 1:
+        why = "too large for one answer" if args.batch is None else "as --batch asked"
+        print(f"  {why}: {len(groups)} calls, {len(groups[0])} fields at a time",
+              file=sys.stderr)
     if args.dry_run:
         print("  --dry-run: nothing was sent", file=sys.stderr)
         return 0
@@ -287,7 +293,7 @@ def cmd_propose_rules(args: argparse.Namespace) -> int:
     try:
         proposals = llm_rules.propose(
             schema, client=client, settings=settings,
-            sample=args.sample, max_spend=args.max_spend,
+            sample=args.sample, max_spend=args.max_spend, size=size,
         )
     except (ConfigError, SpendRefused, TransportError, ReplyError, ValueError) as error:
         print(f"could not propose rules: {error}", file=sys.stderr)
@@ -1127,6 +1133,11 @@ def build_parser() -> argparse.ArgumentParser:
                           help="refuse the run above this estimate (default: 1.00)")
     proposer.add_argument("--sample", type=int, default=200,
                           help="records generated to test the rules against")
+    proposer.add_argument("--batch", type=int, metavar="FIELDS",
+                          default=None,
+                          help="fields to ask about per call on a form too "
+                               "large for one answer (default: 60; 0 asks "
+                               "about the whole form however large it is)")
     proposer.add_argument("--replay", metavar="PATH",
                           help="replay a recorded exchange instead of calling out")
     proposer.add_argument("--review-below", **common_review)

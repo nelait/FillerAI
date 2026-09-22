@@ -157,17 +157,61 @@ RULES_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-def rules_user(schema: FormSchema) -> str:
-    """The turn that carries the form itself."""
+def rules_user(schema: FormSchema, targets: list[str] | None = None) -> str:
+    """The turn that carries the form itself.
+
+    ``targets`` narrows what to answer *about* without narrowing what is
+    shown: a rule's whole value is that it links two fields, so the model
+    still needs the entire form in front of it even when it is being asked
+    about a slice of it. Left out, the question is the same one this file has
+    always asked, which is what keeps a small form a single call.
+    """
+    question = "Propose the rules this form enforces."
+    if targets is not None:
+        listed = "\n".join(f"  {name}" for name in targets)
+        question = (
+            "Propose rules for these fields only. They are part of a form too "
+            "large to ask about at once, so the rest is shown for context and "
+            "a rule may follow any field on it - but the field a rule decides "
+            "must be one of these:\n\n"
+            f"{listed}"
+        )
     return (
         f"Form: {schema.name}\n"
         f"{len(schema.fields)} fields, one per line, as "
         f"name | label | meaning | control | [group] | [options]\n\n"
         f"{compact_schema(schema)}\n\n"
-        "Propose the rules this form enforces."
+        f"{question}"
     )
 
 
 #: What one rule costs to write out, roughly, for the cost estimate. A rule
 #: with a four-value table and a sentence of justification lands near here.
 TOKENS_PER_RULE = 90
+
+#: Room for a model that thinks before it answers.
+#:
+#: This is the part that is easy to get wrong, because it is invisible. The
+#: models these tasks default to reason first, and on both services those
+#: tokens come out of the *same* budget as the answer - ``max_tokens`` on one
+#: side, ``max_completion_tokens`` on the other. A budget sized to the JSON
+#: alone therefore runs out somewhere inside the thinking, and what comes back
+#: is a truncated answer rather than a short one.
+THINKING_ALLOWANCE = 6000
+
+#: Never ask for less than this however small the form is. Below it a model
+#: that thinks at all has nothing left to answer with, and the published
+#: advice for a non-streaming call lands in the same place.
+MIN_OUTPUT_TOKENS = 16000
+
+#: …and never more than this in one call, whatever the arithmetic says. Past
+#: it a single non-streaming request is long enough to be worth splitting for
+#: its own sake, which is what :func:`fillerai.llm.rules.propose` does.
+MAX_OUTPUT_TOKENS = 32000
+
+
+def rules_budget(target_count: int) -> int:
+    """How much room one call needs: the rules, plus room to think first."""
+    answer = max(1, target_count) * TOKENS_PER_RULE
+    return max(MIN_OUTPUT_TOKENS,
+               min(MAX_OUTPUT_TOKENS, answer + THINKING_ALLOWANCE))

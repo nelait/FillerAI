@@ -228,6 +228,27 @@ class TestProposingRules(LlmServerCase):
         self.assertGreater(body["input_tokens"], 0)
         self.assertTrue(any("tokens" in line for line in body["lines"]))
 
+    def test_the_estimate_says_how_many_calls_a_form_takes(self):
+        """The UI says "this goes in N calls" off these two numbers."""
+        _, body = self.post("/api/llm/rules/estimate", {"schema": self.schema()})
+        self.assertEqual(body["calls"], 1)
+        self.assertGreater(body["per_call"], 0)
+
+    def test_a_form_too_large_for_one_answer_says_so_in_the_estimate(self):
+        from fillerai.llm import rules as llm_rules
+
+        schema = self.schema()
+        wide = dict(schema)
+        wide["fields"] = list(schema["fields"]) + [
+            {"name": f"extra_{i}", "control": "select",
+             "options": [{"value": "A"}, {"value": "B"}]}
+            for i in range(llm_rules.BATCH_TARGETS * 2)
+        ]
+        _, body = self.post("/api/llm/rules/estimate", {"schema": wide})
+        self.assertGreater(body["calls"], 1)
+        self.assertEqual(body["per_call"], llm_rules.BATCH_TARGETS)
+        self.assertTrue(any("too large" in line for line in body["lines"]))
+
     def test_the_estimate_follows_the_chosen_service(self):
         self.post("/api/llm/key", {"provider": "openai", "key": OPENAI_KEY})
         _, openai = self.post("/api/llm/rules/estimate", {"schema": self.schema()})
