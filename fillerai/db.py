@@ -138,6 +138,25 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         )
         """,
     ]),
+    # Credentials for an application rather than a person: see
+    # :mod:`fillerai.tokens` for why the secret is hashed differently from a
+    # password, and why the id travels alongside it.
+    (2, [
+        """
+        CREATE TABLE IF NOT EXISTS api_tokens (
+            id          TEXT PRIMARY KEY,
+            user_id     TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            secret_hash TEXT NOT NULL,
+            created     TEXT NOT NULL,
+            last_used   TEXT,
+            expires     TEXT,
+            model_id    TEXT,
+            revoked     INTEGER NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS tokens_by_user ON api_tokens (user_id)",
+    ]),
 ]
 
 

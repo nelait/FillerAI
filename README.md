@@ -993,6 +993,74 @@ accounts off; everybody else does the work. Deleting an account takes its
 library with it, which the panel says — with the number of entries — before
 it asks.
 
+## Calling it from another application
+
+A trained model that can only be reached by clicking through the UI is a
+demonstration. The integration surface is how the claims system the agents
+actually work in asks it what to put in the boxes: a REST service at `/v1`,
+and a JavaScript client for the browser applications that are the common
+case.
+
+```bash
+python -m fillerai tokens add krishna --name "claims desk"
+python -m fillerai serve
+```
+
+```js
+import { FillerAI } from "http://localhost:8000/client/fillerai.js";
+
+const filler = new FillerAI({ baseUrl: "http://localhost:8000", token: "flr_..." });
+const { models } = await filler.models();
+const answer = await filler.suggest(models[0].id, { policy_number: "A-1188" });
+
+answer.values;      // what to put in the boxes
+answer.suggestions; // every field, with its confidence and its reason
+```
+
+There is a working page at `/client/` that does exactly this against your own
+library — it draws a form from whatever the service says the model's fields
+are, then fills it in as you type.
+
+**It is a second surface, not the UI's endpoints with a different door on
+them.** Everything under `/api` is the UI talking to its own server: a
+session cookie, a CSRF header, one POST per button, a model held under a
+handle the browser was given a moment ago. `/v1` is versioned, addressed by
+library id so a model outlives a restart, uses GET for reads so it can be
+explored from an address bar, and takes **bearer tokens only** — the session
+cookie is not read there at all, because a surface that honoured it could be
+driven by any page open in the user's browser.
+
+A token belongs to an account and reads that account's library. It is shown
+once and stored as a hash; it can be pinned to a single model, which is the
+right shape for an application embedded in one form; and disabling the
+account revokes it. Issue one from **Settings → API tokens** or from the
+command line:
+
+```bash
+python -m fillerai tokens add krishna --name "kiosk" --days 90 --model mdl-2026...
+python -m fillerai tokens list
+python -m fillerai tokens revoke kiosk
+```
+
+**Cross-origin is decided by whether there is a credential at all.** With
+accounts on, any origin may call `/v1`: the credential is a bearer token the
+calling page had to be given, not a cookie the browser attaches by itself, so
+a page without one gets a 401 whatever its origin — and credentials are never
+allowed on those responses, which is what keeps that true. With `--no-auth`
+there is no credential, so no origin is allowed until one is named:
+
+```bash
+python -m fillerai serve --no-auth --cors-origin http://localhost:5173
+```
+
+The client is one file with no dependencies and no build step, served at
+`/client/fillerai.js` so an application can fetch it from the service it is
+about to talk to. Its `bind()` does the part every integration would
+otherwise write for itself — ask after a pause rather than per keystroke,
+never overwrite what a person typed, and let editing a suggestion take it
+back. The full endpoint reference, the error codes and a React pattern are in
+[**Calling FillerAI from another application**](docs/integration.md).
+
 ## Options
 
 | Flag | Default | What it does |
@@ -1033,7 +1101,8 @@ steps in order. `library` has `list`, `show`, `export`, `delete` and
 produced into it, and every command that touches it takes `--library PATH`.
 
 `users` has `list`, `add`, `passwd`, `role`, `disable`, `enable` and
-`delete`; `db` has `status` and `import`. Both take `--database URL`
+`delete`; `tokens` has `list`, `add` and `revoke`; `db` has `status` and
+`import`. All three take `--database URL`
 (`sqlite://<path>`, or `$FILLERAI_DATABASE_URL`) and `--library PATH` for
 the directory the default database sits in. `add` and `passwd` generate a
 password and show it once when none is given, and that password has to be
@@ -1052,10 +1121,14 @@ them, `--ask`/`--seeds` and `--threshold` as above, `--seed` to make the
 generated forms reproducible, `--show` to print the first form field by
 field, and `-o` for the full report as JSON.
 
+`tokens add <user>` prints the credential once and never again; `--days`
+expires it, `--model` pins it to one model in that account's library.
+
 `serve` takes `--port` (default 8000), `--host` (default `127.0.0.1`),
 `--open` to launch a browser, `-v` to log each request, `--library PATH` for
 where the UI keeps what it produces, `--database URL` for where the shared
-data lives, and `--no-auth` for no login and no accounts — one library, for
+data lives, `--cors-origin ORIGIN` (repeatable) to let a browser application
+on another origin call `/v1`, and `--no-auth` for no login and no accounts — one library, for
 one person on one machine. `--no-auth` is refused anywhere but localhost:
 without accounts everyone who can reach the port is signed in, and a printed
 warning is the wrong answer to that, because the person who needs to read it
@@ -1446,6 +1519,12 @@ argument for what it is not worth, both under
 ---
 
 ## Further reading
+
+[**Calling FillerAI from another application**](docs/integration.md)
+— the `/v1` REST service and the JavaScript client: every endpoint and what it
+answers, how an API token works and why it is not the UI's cookie, when a
+browser on another origin is let in and when it is not, and how to bind a
+model to a form in plain JavaScript or in React.
 
 [**Training, serving, and what happens at 20,000 records**](docs/training-and-scale.md)
 — what a training run does stage by stage and what each stage costs, what it

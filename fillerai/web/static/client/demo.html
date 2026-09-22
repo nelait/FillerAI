@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FillerAI integration demo</title>
+<style>
+  :root {
+    --ink: #15181d; --dim: #5d6673; --line: #dde2ea; --bg: #f6f8fb;
+    --card: #ffffff; --accent: #2f6df6; --good: #0d8a52; --warn: #a8630a;
+    --fill: #eef4ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lede { color: var(--dim); margin: 0 0 20px; max-width: 70ch; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 16px;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+  input, select, button {
+    font: inherit; padding: 7px 9px; border: 1px solid var(--line);
+    border-radius: 6px; background: #fff; color: inherit;
+  }
+  input, select { min-width: 200px; }
+  button {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+    cursor: pointer;
+  }
+  button.quiet { background: #fff; color: var(--ink); border-color: var(--line); }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 12px;
+  }
+  .field input, .field select { width: 100%; min-width: 0; }
+  .field .why { font-size: 11px; color: var(--dim); margin-top: 3px; min-height: 14px; }
+  .fillerai-filled { background: var(--fill); border-color: #b9cdfb; }
+  .ask { border-left: 3px solid var(--accent); padding-left: 8px; }
+  .tally { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; }
+  .tally b { font-size: 20px; display: block; }
+  .tally span { font-size: 12px; color: var(--dim); }
+  .error { color: #b02033; }
+  .note { font-size: 12px; color: var(--dim); }
+  code { background: #eef1f6; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FillerAI, from somebody else's application</h1>
+  <p class="lede">
+    This page is not part of the FillerAI UI. It is a plain HTML page that
+    imports <code>fillerai.js</code> and talks to the <code>/v1</code> service
+    with an API token, exactly as a React application would. It draws the form
+    from what the service says the model's fields are, then fills them in as
+    you type.
+  </p>
+
+  <div class="card">
+    <h2>Connect</h2>
+    <div class="row">
+      <div>
+        <label for="base">Service</label>
+        <input id="base" value="">
+      </div>
+      <div>
+        <label for="token">API token <span class="note">(fillerai tokens add &lt;user&gt;)</span></label>
+        <input id="token" placeholder="flr_..." style="min-width: 320px">
+      </div>
+      <button id="connect">Connect</button>
+    </div>
+    <p id="status" class="note" style="margin: 10px 0 0"></p>
+  </div>
+
+  <div class="card" id="pick" hidden>
+    <h2>Model</h2>
+    <div class="row">
+      <div>
+        <label for="model">Trained model</label>
+        <select id="model"></select>
+      </div>
+      <div>
+        <label for="threshold">Confidence to accept</label>
+        <input id="threshold" type="number" min="0" max="1" step="0.05" value="0.7">
+      </div>
+      <button id="load">Draw the form</button>
+      <button id="clear" class="quiet" type="button">Clear</button>
+    </div>
+  </div>
+
+  <div class="card" id="panel" hidden>
+    <h2 id="formTitle">Form</h2>
+    <p class="note" id="askNote"></p>
+    <form id="form" autocomplete="off"><div class="grid" id="fields"></div></form>
+    <div class="tally">
+      <div><b id="nTyped">0</b><span>typed by you</span></div>
+      <div><b id="nFilled">0</b><span>filled by the model</span></div>
+      <div><b id="nLeft">0</b><span>still empty</span></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { FillerAI } from "./fillerai.js";
+
+const $ = (id) => document.getElementById(id);
+$("base").value = location.origin;
+
+let client = null;
+let binder = null;
+let described = null;
+
+function say(text, bad = false) {
+  $("status").textContent = text;
+  $("status").className = bad ? "note error" : "note";
+}
+
+$("connect").addEventListener("click", async () => {
+  client = new FillerAI({ baseUrl: $("base").value, token: $("token").value.trim() });
+  try {
+    const health = await client.health();
+    const { models } = await client.models();
+    if (!models.length) {
+      say(`Connected to FillerAI ${health.version}, but this token's library `
+          + "has no trained models in it yet.", true);
+      return;
+    }
+    $("model").innerHTML = models
+      .map((m) => `<option value="${m.id}">${m.form} &mdash; ${m.name}`
+                + ` (${m.algorithm}, ${m.trained_on} records)</option>`)
+      .join("");
+    $("pick").hidden = false;
+    say(`Connected to FillerAI ${health.version}. ${models.length} model(s) available.`);
+  } catch (error) {
+    say(error.message, true);
+  }
+});
+
+$("load").addEventListener("click", async () => {
+  if (binder) binder.stop();
+  try {
+    described = await client.model($("model").value);
+  } catch (error) {
+    say(error.message, true);
+    return;
+  }
+  drawForm(described);
+  binder = await client.bind($("form"), described.model.id, {
+    threshold: Number($("threshold").value),
+    onSuggest: showWhy,
+    onError: (error) => say(error.message, true),
+  });
+  $("panel").hidden = false;
+  say(`${described.model.form}: ${described.fields.length} fields, `
+      + `${described.model.algorithm}, trained on ${described.model.trained_on} records.`);
+});
+
+$("clear").addEventListener("click", () => {
+  if (!binder) return;
+  $("form").reset();
+  binder.reset();
+  document.querySelectorAll(".why").forEach((el) => (el.textContent = ""));
+  count();
+});
+
+function drawForm(described) {
+  const ask = new Set(described.ask_first || []);
+  $("formTitle").textContent = described.model.form;
+  $("askNote").textContent = ask.size
+    ? `The service suggests asking for these first: ${[...ask].join(", ")}.`
+    : "";
+  $("fields").innerHTML = described.fields.map((f) => {
+    const control = (f.options && f.options.length)
+      ? `<select name="${f.name}"><option value=""></option>`
+        + f.options.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("")
+        + "</select>"
+      : `<input name="${f.name}" placeholder="${esc(f.placeholder || "")}">`;
+    return `<div class="field ${ask.has(f.name) ? "ask" : ""}">`
+         + `<label for="${f.name}">${esc(f.label)}`
+         + `<span class="note"> &middot; ${f.how}</span></label>`
+         + control
+         + `<div class="why" data-for="${f.name}"></div></div>`;
+  }).join("");
+}
+
+function showWhy(answer) {
+  const byField = new Map(answer.suggestions.map((s) => [s.field, s]));
+  document.querySelectorAll(".why").forEach((el) => {
+    const found = byField.get(el.dataset.for);
+    if (!found || !found.accepted) { el.textContent = ""; return; }
+    const pct = Math.round(found.confidence * 100);
+    el.textContent = `${pct}% · ${(found.because || [])[0] || found.basis}`;
+  });
+  count();
+}
+
+function count() {
+  if (!binder) return;
+  $("nTyped").textContent = binder.typed.size;
+  $("nFilled").textContent = binder.suggested.size;
+  $("nLeft").textContent = described.fields.length - binder.typed.size - binder.suggested.size;
+}
+
+function esc(text) {
+  return String(text == null ? "" : text).replace(/[&<>"]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+</script>
+</body>
+</html>

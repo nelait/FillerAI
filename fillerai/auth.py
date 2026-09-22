@@ -8,7 +8,9 @@ this, and who is allowed to hand out accounts.
 The answers here are deliberately ordinary. A user has a name, a role, and a
 password hashed with something slow. A login creates a row; the browser gets
 a cookie naming that row and nothing else. An admin can make accounts and
-turn them off. There is nothing clever, and that is the point: the clever
+turn them off. Credentials for an *application* are a different thing with
+different rules and live in :mod:`fillerai.tokens`; what they share with an
+account is that turning the account off turns them off too. There is nothing clever, and that is the point: the clever
 part of this project is the form model, and an authentication layer that
 surprises anybody has already failed.
 
@@ -360,6 +362,10 @@ class Auth:
             "WHERE id = ?", (1 if active else 0, user_id))
         if not active:
             self.db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            # An API token outlives a browser, so turning an account off has
+            # to reach them as well or the account is only half off.
+            self.db.execute(
+                "UPDATE api_tokens SET revoked = 1 WHERE user_id = ?", (user_id,))
         user.active = active
         return user
 
@@ -385,6 +391,7 @@ class Auth:
             batch.execute("DELETE FROM payloads WHERE owner = ?", (user_id,))
             batch.execute("DELETE FROM entries WHERE owner = ?", (user_id,))
             batch.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            batch.execute("DELETE FROM api_tokens WHERE user_id = ?", (user_id,))
             batch.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
     def _guard_last_admin(self, user: User, verb: str) -> None:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fillerai"
-version = "0.10.1"
+version = "0.11.0"
 description = "Synthetic sample data, autofill and simulation for dense web forms"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,5 +28,8 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-# The UI is served from disk, so its assets have to ship with the package.
-"fillerai.web" = ["static/*"]
+# The UI is served from disk, so its assets have to ship with the package -
+# and so does the JavaScript client, since the whole point of serving it at
+# /client/fillerai.js is that an application can fetch it from the running
+# service rather than vendoring a copy that drifts.
+"fillerai.web" = ["static/*", "static/client/*"]
