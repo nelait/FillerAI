@@ -469,6 +469,53 @@
           </div>
         </div>
 
+        <!-- Credentials for an application rather than a browser. Hidden
+             when there is no database to keep them in, which is the
+             single-user tool. -->
+        <div class="card" id="tokenCard" hidden>
+          <h3>API tokens <span class="pill" id="tokenPill">0</span></h3>
+          <p class="sub">A token lets another application ask your trained
+             models what to put in a form, over the
+             <code>/v1</code> service. It reads your library and nobody
+             else's, and it is not a password: revoking one changes nothing
+             about how you sign in.</p>
+
+          <div class="controls">
+            <label class="field"><em>What is it for</em>
+              <input type="text" id="tokenName" spellcheck="false"
+                     placeholder="claims desk, staging, ..."></label>
+            <label class="field"><em>Expires in</em>
+              <input type="number" id="tokenDays" min="1" max="3650"
+                     placeholder="never"></label>
+            <label class="field"><em>Limited to</em>
+              <select id="tokenModel">
+                <option value="">any model in my library</option>
+              </select></label>
+            <button class="btn btn-primary" id="tokenGo">Issue a token</button>
+          </div>
+
+          <div id="tokenSecret" class="status ok" hidden></div>
+
+          <div class="table-wrap">
+            <table class="grid dense">
+              <thead><tr>
+                <th>What for</th><th>Token</th><th>Last used</th>
+                <th>Limits</th><th></th>
+              </tr></thead>
+              <tbody id="tokenRows"></tbody>
+            </table>
+          </div>
+
+          <p class="muted">Quick start:
+             <code>curl -H "Authorization: Bearer flr_..."
+             <span id="tokenBase">http://localhost:8000</span>/v1/models</code>.
+             For a browser application there is a JavaScript client at
+             <a id="tokenClient" href="/client/fillerai.js">/client/fillerai.js</a>
+             and a working page at <a id="tokenDemo" href="/client/"
+             target="_blank" rel="noopener">/client/</a>.</p>
+          <div id="tokenStatus" class="status" hidden></div>
+        </div>
+
         <div class="card" id="ownCard">
           <h3>Change your password</h3>
           <p class="sub">Changing it signs out every other browser this account

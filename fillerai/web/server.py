@@ -9,6 +9,14 @@ The API is deliberately thin. Every endpoint is a direct call into the same
 functions ``fillerai.cli`` uses, which is what keeps the UI and the CLI from
 drifting apart as the later phases land.
 
+**There are two HTTP surfaces here, and they are not the same thing.**
+``/api`` is the UI talking to its own server: a session cookie, a CSRF
+header, one POST per button. ``/v1`` is the integration API in
+:mod:`fillerai.web.rest`, for somebody else's application: bearer tokens,
+no cookies, and a version number that has to change before it does. This
+module routes both and shares nothing between them but the library
+underneath.
+
 **Accounts are optional and on by default.** ``fillerai serve`` opens a
 database, makes an administrator if there is nobody, and asks for a login;
 ``--no-auth`` skips all of it and is the single-user tool this started as.
@@ -51,14 +59,22 @@ from ..simulate.effort import DEFAULT_EFFORT
 from ..simulate.form import layout as form_layout
 from ..simulate.run import run as simulate, sweep as simulate_many
 from ..store import KINDS, Store, StoreError
+from ..tokens import MAX_NAME as MAX_TOKEN_NAME, TokenError, Tokens
 from ..train import algos, script as script_writer
 from ..train.evaluate import evaluate, suggest_seed_fields
 from ..train.model import ACCEPT_ABOVE, AutofillModel, TrainOptions, split_records, train
 from ..train.trace import Trace
+from . import rest
 from .keyring import SINGLE_USER, Keyring
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
+#: The JavaScript client and its demo page. Inside the package rather than
+#: beside the repository, because an application is meant to fetch the client
+#: from the server it is going to talk to - which only works if a pip install
+#: carries it. Served at /client/, which is the documented path; /static/ can
+#: reach the same files and nothing says so.
+CLIENT_DIR = STATIC_DIR / "client"
 
 # A local tool still needs limits: a runaway request should fail cleanly
 # rather than exhaust the process.
@@ -114,6 +130,10 @@ KEYRING = Keyring()
 #: attached; a token another origin cannot read is what stops that. Sent by
 #: the UI on every call, which is why it is a header and not a form field.
 CSRF_HEADER = "X-FillerAI-Token"
+
+#: Origins allowed to call the ``/v1`` integration API from a browser, or
+#: None for "nobody said, so work it out". See :func:`allowed_origins`.
+CORS_ALLOW: tuple[str, ...] | None = None
 
 #: Endpoints reachable without signing in. Everything else needs a session
 #: whenever accounts are on.
@@ -1073,6 +1093,10 @@ def api_library_delete(payload: dict[str, Any]) -> dict[str, Any]:
         removed = library().delete(entry_id, cascade=bool(payload.get("cascade")))
     except StoreError as error:
         raise ApiError(str(error)) from error
+    # The integration API keeps models loaded between calls. A deleted entry
+    # that is still being answered for would be the worst kind of stale.
+    for gone in removed:
+        rest.forget(gone)
     return {"removed": removed}
 
 
@@ -1550,6 +1574,187 @@ def api_llm_rules_apply(payload: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# ----------------------------------------------------------------------
+# API tokens, and the integration surface they open
+# ----------------------------------------------------------------------
+
+
+def tokens() -> Tokens:
+    """The token store, or the reason there isn't one.
+
+    A token names an account whose library it reads, so without accounts
+    there is nothing for one to be. That is not a gap: running with
+    ``--no-auth`` is the single-user tool on loopback, where ``/v1`` answers
+    without a credential because everything else already does.
+    """
+    if AUTH is None or DATABASE is None:
+        raise ApiError(
+            "API tokens belong to an account, and this server is running "
+            "without them - the /v1 service answers this machine without a "
+            "token. Start it with accounts on to issue one.", status=409)
+    return Tokens(DATABASE)
+
+
+def api_tokens(_: dict[str, Any]) -> dict[str, Any]:
+    """Every token this account has issued. Never a secret: there are none
+    stored to return."""
+    store = tokens()
+    user = require_user()
+    return {"tokens": [t.to_dict() for t in store.list(user.id)],
+            "api": rest.VERSION,
+            "cors": list(allowed_origins())}
+
+
+def api_token_create(payload: dict[str, Any]) -> dict[str, Any]:
+    """Issue one, and hand back the secret this once.
+
+    The reply is the only time the string exists outside the caller's
+    machine, which is said here as well as in the UI, because somebody will
+    close the panel before copying it.
+    """
+    store = tokens()
+    user = require_user()
+    name = str(payload.get("name") or "").strip()[:MAX_TOKEN_NAME]
+
+    days = payload.get("days")
+    if days in ("", None):
+        days = None
+    else:
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            raise ApiError("an expiry is a number of days") from None
+        if not 1 <= days <= 3650:
+            raise ApiError("an expiry is between 1 and 3650 days")
+
+    model_id = str(payload.get("model_id") or "").strip() or None
+    if model_id and not library().has(model_id):
+        raise ApiError(f"there is nothing in the library called {model_id}",
+                       status=404)
+
+    try:
+        record, secret = store.issue(user.id, name, days=days, model_id=model_id)
+    except TokenError as error:
+        raise ApiError(error.message, status=error.status) from error
+    return {"token": record.to_dict(), "secret": secret,
+            "shown_once": True}
+
+
+def api_token_revoke(payload: dict[str, Any]) -> dict[str, Any]:
+    """Turn one off. Somebody else's token is not yours to turn off."""
+    store = tokens()
+    user = require_user()
+    token_id = str(_require(payload, "id"))
+    try:
+        record = store.get(token_id)
+    except TokenError as error:
+        raise ApiError(error.message, status=error.status) from error
+    if record.user_id != user.id and not user.is_admin:
+        raise ApiError("that token belongs to somebody else", status=403)
+    store.revoke(token_id)
+    return {"revoked": token_id, "tokens": [t.to_dict()
+                                            for t in store.list(user.id)]}
+
+
+def allowed_origins() -> tuple[str, ...]:
+    """Which browser origins may call ``/v1``.
+
+    The default depends on whether a token is required, and the difference
+    matters. With accounts on, ``*`` is safe and useful: the credential is a
+    bearer token the calling page had to be given, never a cookie the browser
+    attaches by itself, so a page that has not been given one gets a 401
+    whatever its origin. With accounts *off* there is no credential at all,
+    and ``*`` would mean any page in the user's browser could read their
+    library - so cross-origin is off entirely until somebody names an origin
+    with ``--cors-origin``.
+    """
+    if CORS_ALLOW is not None:
+        return CORS_ALLOW
+    return ("*",) if AUTH is not None else ()
+
+
+def cors_headers(origin: str) -> list[tuple[str, str]]:
+    """The CORS headers for this origin, which may be none at all.
+
+    Credentials are never allowed. That is not a limitation to be lifted
+    later: it is what keeps ``Access-Control-Allow-Origin: *`` honest, since
+    a browser will not send cookies to a surface that does not ask for them.
+    """
+    allowed = allowed_origins()
+    if not allowed:
+        return []
+    if "*" in allowed:
+        return [("Access-Control-Allow-Origin", "*")]
+    if origin and origin in allowed:
+        return [("Access-Control-Allow-Origin", origin), ("Vary", "Origin")]
+    return [("Vary", "Origin")]
+
+
+def rest_caller(authorization: str) -> rest.Caller:
+    """Who is making an integration request, and whose library they get.
+
+    The session cookie is deliberately not consulted. ``/v1`` takes a bearer
+    token or, when accounts are off, takes the one library this process has -
+    and nothing in between.
+    """
+    if AUTH is None:
+        return rest.Caller(store=library())
+
+    presented = rest.bearer(authorization)
+    if not presented:
+        raise rest.RestError(
+            "this endpoint needs an API token: send Authorization: Bearer "
+            "flr_...", status=401, code="no_token")
+    try:
+        record = Tokens(DATABASE).verify(presented)
+    except TokenError as error:
+        raise rest.RestError(error.message, status=error.status,
+                             code="bad_token") from error
+
+    try:
+        owner = AUTH.get(record.user_id)
+    except AuthError as error:
+        raise rest.RestError("that token's account is gone", status=401,
+                             code="bad_token") from error
+    if not owner.active:
+        raise rest.RestError("that token's account is turned off", status=403,
+                             code="account_off")
+    return rest.Caller(store=DatabaseStore(DATABASE, owner=owner.id),
+                       token=record)
+
+
+def rest_dispatch(method: str, path: str, body: dict[str, Any],
+                  authorization: str) -> rest.Response:
+    """Run one ``/v1`` request, or say why not, without raising."""
+    try:
+        found = rest.match(method, path)
+        if found is None:
+            return rest.Response(404, {"error": f"no endpoint at {path}",
+                                       "code": "not_found"})
+        endpoint, params = found
+        caller = rest_caller(authorization) if endpoint.needs_token else None
+        answer = rest.Response(200, endpoint.handler(caller, params, body))
+        # Stamped after the call, not before: "last used" should mean the
+        # token did something, not that somebody probed an endpoint it has no
+        # right to. A failed stamp is never worth failing the request over.
+        if caller is not None and caller.token is not None:
+            try:
+                Tokens(DATABASE).touch(caller.token.id)
+            except Exception:  # noqa: BLE001
+                pass
+        return answer
+    except rest.RestError as error:
+        return rest.Response(error.status, {"error": error.message,
+                                            "code": error.code})
+    except ApiError as error:
+        return rest.Response(error.status, {"error": error.message,
+                                            "code": "bad_request"})
+    except Exception as error:  # noqa: BLE001 - one bad call must not end the server
+        traceback.print_exc()
+        return rest.Response(500, {"error": f"unexpected failure: {error}",
+                                   "code": "server_error"})
+
+
 @dataclass(frozen=True)
 class Route:
     """An endpoint and who is allowed to reach it."""
@@ -1606,6 +1811,9 @@ ROUTES: dict[str, Route] = {
     "/api/llm/rules/estimate": Route(api_llm_rules_estimate),
     "/api/llm/rules/propose": Route(api_llm_rules_propose),
     "/api/llm/rules/apply": Route(api_llm_rules_apply),
+    "/api/tokens": Route(api_tokens),
+    "/api/tokens/create": Route(api_token_create),
+    "/api/tokens/revoke": Route(api_token_revoke),
 }
 
 
@@ -1731,12 +1939,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send(302, b"", "text/plain; charset=utf-8",
                    [("Location", where)] + self._cookie_headers())
 
-    def _static(self, path: str) -> None:
-        relative = path.lstrip("/") or "index.html"
-        target = (STATIC_DIR / relative).resolve()
-        # Resolve first, then confirm the result is still inside the static
+    def _static(self, path: str, root: Path = STATIC_DIR,
+                default: str = "index.html") -> None:
+        relative = path.lstrip("/") or default
+        target = (root / relative).resolve()
+        # Resolve first, then confirm the result is still inside the served
         # directory, so "../" cannot escape it.
-        if not target.is_file() or STATIC_DIR.resolve() not in target.parents:
+        if not target.is_file() or root.resolve() not in target.parents:
             self._send(404, b"Not found", "text/plain; charset=utf-8")
             return
         content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
@@ -1744,10 +1953,85 @@ class Handler(BaseHTTPRequestHandler):
             content_type += "; charset=utf-8"
         self._send(200, target.read_bytes(), content_type)
 
+    # -- the integration surface ----------------------------------------
+
+    def _rest(self, method: str) -> None:
+        """Handle a ``/v1`` request: bearer tokens, CORS, no cookie at all.
+
+        A fresh empty context is installed first, so that nothing underneath
+        can accidentally read a signed-in user off this request. Who the
+        caller is comes from the Authorization header or from nowhere.
+        """
+        _CONTEXT.set(Context())
+        path = self.path.split("?", 1)[0]
+        extra = cors_headers(self.headers.get("Origin") or "")
+
+        body: dict[str, Any] = {}
+        if method == "POST":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                self._send_rest(400, {"error": "bad Content-Length",
+                                      "code": "bad_request"}, extra)
+                return
+            if length > MAX_BODY_BYTES:
+                self._drain(min(length, DRAIN_LIMIT))
+                self._send_rest(413, {"error": "that request is too large",
+                                      "code": "too_large"}, extra)
+                self.close_connection = True
+                return
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8") or "{}")
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_rest(400, {"error": f"request body is not valid "
+                                               f"JSON: {error}",
+                                      "code": "bad_json"}, extra)
+                return
+            if not isinstance(body, dict):
+                self._send_rest(400, {"error": "request body must be a JSON object",
+                                      "code": "bad_json"}, extra)
+                return
+
+        answer = rest_dispatch(method, path, body,
+                               self.headers.get("Authorization") or "")
+        self._send_rest(answer.status, answer.body, extra + answer.headers)
+
+    def _send_rest(self, status: int, body: dict[str, Any],
+                   extra: list[tuple[str, str]]) -> None:
+        raw = json.dumps(body, ensure_ascii=False, default=str).encode("utf-8")
+        self._send(status, raw, "application/json; charset=utf-8", extra)
+
+    def _preflight(self) -> None:
+        """Answer the OPTIONS a browser sends before a cross-origin call.
+
+        Only for ``/v1``. The UI's own endpoints are same-origin by
+        construction and have no business answering a preflight.
+        """
+        extra = cors_headers(self.headers.get("Origin") or "")
+        if not extra or not any(name == "Access-Control-Allow-Origin"
+                                for name, _ in extra):
+            # Nothing is allowed from here. Saying so plainly is better than
+            # a 200 the browser then refuses to act on.
+            self._send(403, b"", "text/plain; charset=utf-8", extra)
+            return
+        self._send(204, b"", "text/plain; charset=utf-8", extra + [
+            ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+            ("Access-Control-Allow-Headers", "Authorization, Content-Type"),
+            ("Access-Control-Max-Age", "600"),
+        ])
+
     # -- verbs ----------------------------------------------------------
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        # The integration API first, and without signing anybody in: it is a
+        # different surface with a different credential, and letting a cookie
+        # reach it would undo the reason it has one.
+        if path == "/v1" or path.startswith(rest.PREFIX):
+            self._rest("GET")
+            return
+
         holder = self._sign_in()
         signed_in = AUTH is None or holder.user is not None
 
@@ -1767,6 +2051,11 @@ class Handler(BaseHTTPRequestHandler):
             # Stylesheet, script and the login page's own assets: served
             # signed out, because the login page is made of them.
             self._static(path[len("/static/"):])
+        elif path == "/client" or path.startswith("/client/"):
+            # The JavaScript client and its demo page. Served signed out and
+            # to anyone, because they are inert: the client is a wrapper
+            # around fetch, and everything it wraps needs a token.
+            self._static(path[len("/client"):], root=CLIENT_DIR, default="demo.html")
         elif path == "/api/meta":
             self._send_json(200, api_meta({}))
         else:
@@ -1774,8 +2063,19 @@ class Handler(BaseHTTPRequestHandler):
 
     do_HEAD = do_GET  # noqa: N815
 
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        if path == "/v1" or path.startswith(rest.PREFIX):
+            self._preflight()
+            return
+        self._send(404, b"", "text/plain; charset=utf-8")
+
     def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        if path == "/v1" or path.startswith(rest.PREFIX):
+            self._rest("POST")
+            return
+
         route = ROUTES.get(path)
         if route is None:
             self._send_json(404, {"error": f"no endpoint at {path}"})
@@ -1854,6 +2154,8 @@ def close_database() -> None:
     if DATABASE is not None:
         DATABASE.close()
     DATABASE, AUTH = None, None
+    # Models loaded out of that database belong to it, not to the process.
+    rest.forget()
 
 
 def _first_run(auth: Auth) -> None:
@@ -1919,10 +2221,13 @@ def _is_loopback(host: str) -> bool:
 
 def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
           verbose: bool = False, library_path: str | None = None,
-          database: str | None = None, accounts: bool = True) -> int:
-    global LIBRARY
+          database: str | None = None, accounts: bool = True,
+          cors_origins: list[str] | None = None) -> int:
+    global LIBRARY, CORS_ALLOW
 
     Handler.quiet = not verbose
+    if cors_origins is not None:
+        CORS_ALLOW = tuple(o.strip() for o in cors_origins if o.strip())
 
     # Without accounts, everyone who can reach the port is signed in, so the
     # port had better only be reachable from this machine. A printed warning
@@ -1957,6 +2262,10 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
         print("  accounts: off - anyone who can reach this port is signed in")
     else:
         print(f"  accounts: on, {AUTH.count()} user(s)")
+    origins = allowed_origins()
+    print(f"  integration API: {url}v1  "
+          f"({'browsers: ' + ', '.join(origins) if origins else 'same origin only'})")
+    print(f"  JavaScript client: {url}client/fillerai.js")
     print("  press Ctrl-C to stop")
 
     if open_browser:

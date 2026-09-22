@@ -1769,7 +1769,7 @@ function renderAccount() {
   // Without accounts there is no password to change and nobody to manage;
   // the language-model card above stays, because it is not an account thing.
   $('ownCard').hidden = !user;
-  if (!user) return;
+  if (!user) { $('tokenCard').hidden = true; return; }
   const initials = (user.display_name || user.username).trim()
     .split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase();
   $('whoami').innerHTML =
@@ -1919,6 +1919,7 @@ $('llmForget').addEventListener('click', () => withBusy($('llmForget'), 'Forgett
 function openSettings() {
   showPanel('account');
   loadLlm();
+  loadTokens();
   // An administrator opening this panel expects the user list in it, and an
   // empty table reads as broken rather than as not-asked-for yet.
   if (state.user && state.user.role === 'admin') {
@@ -1928,6 +1929,101 @@ function openSettings() {
 }
 
 $('openSettings').addEventListener('click', openSettings);
+
+// ------------------------------------------------------- API tokens
+//
+// The credential another application authenticates with. Everything about
+// this card follows from one fact: the secret exists exactly once, in the
+// reply to the call that made it. It is never fetched, never re-shown, and
+// the row in the table below is only a record that it was issued.
+
+async function loadTokens() {
+  const card = $('tokenCard');
+  // No accounts means no database to keep tokens in, and the /v1 service is
+  // then open to this machine without one. Nothing to offer.
+  if (!state.user) { card.hidden = true; return; }
+  let result;
+  try {
+    result = await api('/api/tokens');
+  } catch (error) {
+    // A server started with --no-auth but no database says so rather than
+    // failing; either way there is no card to draw.
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+  $('tokenBase').textContent = window.location.origin;
+  renderTokens(result.tokens || []);
+  fillTokenModels();
+}
+
+function renderTokens(tokens) {
+  $('tokenPill').textContent = String(tokens.length);
+  const rows = $('tokenRows');
+  if (!tokens.length) {
+    rows.innerHTML = '<tr><td colspan="5" class="muted">'
+      + 'none yet - issue one above and copy it straight into the application'
+      + '</td></tr>';
+    return;
+  }
+  rows.innerHTML = tokens.map((token) => {
+    const limits = [];
+    if (token.model_id) limits.push('one model');
+    if (token.expires) limits.push(token.expired ? 'expired' : `until ${short(token.expires)}`);
+    return '<tr>'
+      + `<td>${escapeHtml(token.name)}</td>`
+      + `<td><code>${escapeHtml(token.prefix)}...</code></td>`
+      + `<td>${token.last_used ? short(token.last_used) : '<span class="muted">never</span>'}</td>`
+      + `<td>${limits.length ? escapeHtml(limits.join(', ')) : '<span class="muted">none</span>'}</td>`
+      + `<td class="right"><button class="btn btn-ghost small" data-revoke="${escapeHtml(token.id)}">Revoke</button></td>`
+      + '</tr>';
+  }).join('');
+}
+
+function short(stamp) {
+  return escapeHtml(String(stamp).replace('T', ' ').slice(0, 16));
+}
+
+function fillTokenModels() {
+  // Whatever the Library panel has already listed. A token limited to one
+  // model is the right shape for an application embedded in one form, and
+  // picking it from a list beats pasting an id.
+  const picker = $('tokenModel');
+  const chosen = picker.value;
+  api('/api/library', { kind: 'model', limit: 100 }).then((result) => {
+    picker.innerHTML = '<option value="">any model in my library</option>'
+      + (result.entries || []).map((entry) =>
+        `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`).join('');
+    picker.value = chosen;
+  }).catch(() => {});
+}
+
+$('tokenGo').addEventListener('click', () => withBusy($('tokenGo'), 'Issuing...', async () => {
+  const result = await api('/api/tokens/create', {
+    name: $('tokenName').value,
+    days: $('tokenDays').value,
+    model_id: $('tokenModel').value,
+  });
+  const shown = $('tokenSecret');
+  shown.hidden = false;
+  shown.innerHTML = '<strong>Copy this now.</strong> It is stored as a hash, '
+    + 'so this is the only time it can be shown.<br>'
+    + `<code class="token">${escapeHtml(result.secret)}</code>`;
+  $('tokenName').value = '';
+  $('tokenDays').value = '';
+  await loadTokens();
+}));
+
+$('tokenRows').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-revoke]');
+  if (!button) return;
+  const id = button.getAttribute('data-revoke');
+  withBusy(button, 'Revoking...', async () => {
+    const result = await api('/api/tokens/revoke', { id });
+    renderTokens(result.tokens || []);
+    toast('revoked; anything using it stops working now');
+  });
+});
 
 // ------------------------------------------------------ proposing rules
 

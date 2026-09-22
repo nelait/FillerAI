@@ -24,6 +24,7 @@ from .schema import FormSchema
 from .simulate.effort import DEFAULT_EFFORT, spell_out
 from .simulate.run import run as simulate_form, sweep as simulate_forms
 from .store import DEFAULT_DIRNAME, HOME_VARIABLE, KINDS, Store, StoreError
+from .tokens import TokenError, Tokens
 from .train import algos, script as script_writer
 from .train.evaluate import evaluate, suggest_seed_fields
 from .train.model import (
@@ -201,7 +202,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     return serve(host=args.host, port=args.port, open_browser=args.open,
                  verbose=args.verbose, library_path=args.library,
-                 database=args.database, accounts=not args.no_auth)
+                 database=args.database, accounts=not args.no_auth,
+                 cors_origins=args.cors_origin)
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -759,6 +761,92 @@ _USERS = {
 }
 
 
+def cmd_tokens(args: argparse.Namespace) -> int:
+    """API tokens: the credential an outside application authenticates with."""
+    try:
+        database = _database(args)
+    except DatabaseError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    auth = Auth(database)
+    store = Tokens(database)
+    try:
+        return _TOKENS[args.action](auth, store, args)
+    except (AuthError, TokenError) as error:
+        print(error.message, file=sys.stderr)
+        return 1
+
+
+def _account(auth: Auth, username: str):
+    user = auth.find(username)
+    if user is None:
+        raise AuthError(f"there is no user called {username!r}")
+    return user
+
+
+def _tokens_list(auth: Auth, store: Tokens, args: argparse.Namespace) -> int:
+    owner = _account(auth, args.username).id if args.username else None
+    issued = store.list(owner, include_revoked=args.all)
+    if not issued:
+        print("no API tokens; 'fillerai tokens add <user>' issues one",
+              file=sys.stderr)
+        return 0
+    names = {u.id: u.username for u in auth.users()}
+    width = max(len(t.name) for t in issued)
+    for token in issued:
+        state = "  (revoked)" if token.revoked else (
+            "  (expired)" if token.expired() else "")
+        scope = f"  model {token.model_id}" if token.model_id else ""
+        used = token.last_used or "never used"
+        print(f"  {token.name:<{width}}  {token.prefix}...  "
+              f"{names.get(token.user_id, token.user_id)}  {used}{scope}{state}")
+    print(f"\n  {len(issued)} token(s)", file=sys.stderr)
+    return 0
+
+
+def _tokens_add(auth: Auth, store: Tokens, args: argparse.Namespace) -> int:
+    user = _account(auth, args.username)
+    record, secret = store.issue(user.id, args.name or "", days=args.days,
+                                 model_id=args.model)
+    print(f"  issued {record.name!r} for {user.username}")
+    if record.expires:
+        print(f"  expires {record.expires}")
+    if record.model_id:
+        print(f"  limited to model {record.model_id}")
+    print("")
+    print(f"  {secret}")
+    print("")
+    print("  That is the only time it will be shown. It is stored as a hash,",
+          file=sys.stderr)
+    print("  so a lost token is reissued rather than recovered.", file=sys.stderr)
+    return 0
+
+
+def _tokens_revoke(auth: Auth, store: Tokens, args: argparse.Namespace) -> int:
+    wanted = str(args.token).strip()
+    # Either the id printed in the listing, or the whole prefix, or the name -
+    # whichever the person has in front of them.
+    candidates = [t for t in store.list(include_revoked=False)
+                  if wanted in (t.id, t.prefix, t.name)]
+    if not candidates:
+        print(f"no live token called {wanted!r}", file=sys.stderr)
+        return 1
+    if len(candidates) > 1:
+        print(f"{wanted!r} names {len(candidates)} tokens; use the "
+              f"{candidates[0].prefix} form instead", file=sys.stderr)
+        return 1
+    store.revoke(candidates[0].id)
+    print(f"  revoked {candidates[0].name!r} ({candidates[0].prefix}...)")
+    return 0
+
+
+_TOKENS = {
+    "list": _tokens_list,
+    "add": _tokens_add,
+    "revoke": _tokens_revoke,
+}
+
+
 _HOW_WORDS = {
     "rule": "a rule",
     "learned": "other fields",
@@ -1005,6 +1093,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--database", metavar="URL",
                        help=f"sqlite://<path> (default: the library directory's "
                             f"{DB_FILENAME}), or ${DB_VARIABLE}")
+    serve.add_argument("--cors-origin", metavar="ORIGIN", action="append",
+                       help="let a browser app on this origin call the /v1 "
+                            "integration API (repeatable; '*' for any). With "
+                            "accounts on the default is already '*', since a "
+                            "bearer token is needed either way")
     serve.add_argument("--no-auth", action="store_true",
                        help="no login and no accounts: one library, for one "
                             "person on one machine. Localhost only, since "
@@ -1224,6 +1317,31 @@ def build_parser() -> argparse.ArgumentParser:
                           help="confirm that their library goes too")
 
     users.set_defaults(func=cmd_users)
+
+    # -- credentials for an application, as opposed to a person -----------
+
+    keys = subparsers.add_parser(
+        "tokens", help="API tokens for applications calling the /v1 service")
+    _add_database_flags(keys)
+    issued = keys.add_subparsers(dest="action", required=True)
+
+    shown = issued.add_parser("list", help="every live token")
+    shown.add_argument("username", nargs="?", help="only this account's")
+    shown.add_argument("--all", action="store_true",
+                       help="include revoked and expired ones")
+
+    made = issued.add_parser("add", help="issue one, shown once")
+    made.add_argument("username", help="the account whose library it reads")
+    made.add_argument("--name", help="what this token is for, for the listing")
+    made.add_argument("--days", type=int,
+                      help="expire it after this many days (default: never)")
+    made.add_argument("--model", metavar="ID",
+                      help="limit it to one model in that library")
+
+    killed = issued.add_parser("revoke", help="turn one off for good")
+    killed.add_argument("token", help="its id, its flr_... prefix, or its name")
+
+    keys.set_defaults(func=cmd_tokens)
 
     # -- the database itself ---------------------------------------------
 

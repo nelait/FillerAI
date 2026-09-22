@@ -778,3 +778,14 @@ body.signin { background: var(--bg); }
 .rule .tag { float: right; }
 .rule p { margin: 4px 0 0; }
 .rule .mono { font-family: var(--mono); font-size: 11.5px; }
+
+/* The one place a credential is ever shown: big enough to read back
+   character by character, and selectable in one gesture. */
+code.token {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  word-break: break-all;
+  user-select: all;
+}

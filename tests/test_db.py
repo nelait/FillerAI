@@ -22,20 +22,26 @@ from fillerai.db import (
     Database,
     DatabaseError,
     SQLiteDatabase,
+    MIGRATIONS,
     connect,
     default_url,
     dumps,
     loads,
 )
 
+#: What a freshly created database should be at. Read off the steps rather
+#: than written down, so adding one is not also editing these tests.
+LATEST = MIGRATIONS[-1][0]
+
 
 class TestConnecting(unittest.TestCase):
     def test_a_memory_database_is_ready_to_use(self):
         db = connect("sqlite://:memory:")
         self.addCleanup(db.dispose)
-        self.assertEqual(db.version, 1)
+        self.assertEqual(db.version, LATEST)
         self.assertIn("users", db.tables())
         self.assertIn("entries", db.tables())
+        self.assertIn("api_tokens", db.tables())
 
     def test_a_file_database_is_created_where_it_was_asked_for(self):
         folder = tempfile.mkdtemp()
@@ -86,9 +92,33 @@ class TestMigrations(unittest.TestCase):
 
         db = connect(f"sqlite://{path}")
         self.addCleanup(db.close)
-        self.assertEqual(db.version, 1)
+        self.assertEqual(db.version, LATEST)
         self.assertIn("unrelated", db.tables())
         self.assertIn("users", db.tables())
+
+
+    def test_a_database_from_before_api_tokens_gains_them(self):
+        # The case that actually happens: somebody's database was made by the
+        # build before this one, and starting the new build has to be enough.
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+        path = Path(folder) / "older.db"
+
+        first, statements = MIGRATIONS[0]
+        bare = SQLiteDatabase(path)
+        bare.execute("CREATE TABLE IF NOT EXISTS schema_version ("
+                     "version INTEGER PRIMARY KEY, applied TEXT NOT NULL)")
+        for statement in statements:
+            bare.execute(statement)
+        bare.execute("INSERT INTO schema_version (version, applied) "
+                     "VALUES (?, 'then')", (first,))
+        self.assertNotIn("api_tokens", bare.tables())
+        bare.close()
+
+        db = connect(f"sqlite://{path}")
+        self.addCleanup(db.close)
+        self.assertEqual(db.version, LATEST)
+        self.assertIn("api_tokens", db.tables())
 
 
 class TestStatements(unittest.TestCase):
