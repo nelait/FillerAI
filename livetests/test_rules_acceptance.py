@@ -8,6 +8,9 @@ to spend it::
 
     FILLERAI_LLM_LIVE=1 FILLERAI_LLM_KEY=sk-... python -m unittest discover -s livetests
 
+It runs against whichever service the environment points at, so the gate can
+be put to both by exporting one key or the other.
+
 The gate is the one written down in ``docs/llm-implementation-plan.md`` before
 any of this was built, which is the point of writing it down first.
 
@@ -66,9 +69,13 @@ class TestProposedRulesAreWorthHaving(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from fillerai.llm import rules as llm_rules
+        from fillerai.llm.config import Settings
 
+        settings = Settings.resolve("rules")
+        print(f"  asking {settings.api.label}'s {settings.model} "
+              f"({settings.provider_reason})")
         cls.schema = fillerai.extract_html(FORM)
-        cls.proposals = llm_rules.propose(cls.schema)
+        cls.proposals = llm_rules.propose(cls.schema, settings=settings)
         cls.ruled = llm_rules._with_rules(cls.schema, cls.proposals.kept)
 
     def test_the_model_proposed_something_that_survived_the_checks(self):

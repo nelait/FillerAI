@@ -689,7 +689,10 @@ input[type="search"] { width: 200px; }
 
 /* ------------------------------------------------------- accounts */
 
+/* `display` beats the hidden attribute, so say so: without accounts the
+   whole group is meant to be gone, not an empty circle beside Sign out. */
 .account { display: flex; align-items: center; gap: 8px; }
+.account[hidden] { display: none; }
 
 .whoami {
   display: inline-flex; align-items: center; gap: 7px;
@@ -760,3 +763,18 @@ body.signin { background: var(--bg); }
 
 .btn.wide { width: 100%; justify-content: center; margin-top: 6px; }
 .signin-foot { margin: 14px 0 0; text-align: center; }
+
+/* One proposed rule, on the Schema step. Laid out so the tick box and the
+   field name read as one line and the reasoning sits under them, because the
+   decision being made is "do I believe this", not "what are its values". */
+.rule {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  background: var(--surface);
+}
+.rule .check { font-size: 13px; color: var(--text); }
+.rule .tag { float: right; }
+.rule p { margin: 4px 0 0; }
+.rule .mono { font-family: var(--mono); font-size: 11.5px; }

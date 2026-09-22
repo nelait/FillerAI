@@ -35,6 +35,9 @@
       <span class="num">6</span> Library
     </button>
   </nav>
+  <!-- Always here: the language-model settings live behind it, and those
+       are not an account feature. -->
+  <button class="btn btn-ghost small" id="openSettings" title="Settings">Settings</button>
   <!-- Only rendered when the server is running with accounts. -->
   <div class="account" id="account" hidden>
     <button class="whoami" id="whoami" title="Your account"></button>
@@ -99,8 +102,32 @@
       <input type="search" id="filter" placeholder="Filter fields" aria-label="Filter fields">
       <label class="check"><input type="checkbox" id="onlyReview"> Only ones to review</label>
       <span class="spacer"></span>
+      <button class="btn btn-ghost" id="proposeRules">Propose rules</button>
       <button class="btn btn-ghost" id="downloadSchema">Download schema</button>
       <button class="btn btn-primary" id="toGenerate">Generate data</button>
+    </div>
+
+    <!-- Hidden until somebody asks. A model proposing business rules is a
+         guess, so the whole card is built around choosing which to believe
+         rather than around applying them. -->
+    <div class="card" id="rulesCard" hidden>
+      <h3>Rules a model proposed for this form</h3>
+      <p class="sub">A rule says one field's value follows from another's, and
+         it is what makes generated records hang together instead of being
+         noise. These are guesses from the field list alone: each one below
+         survived this project's own checks, but only you know whether it is
+         what your form really enforces.</p>
+      <div id="rulesCost" class="muted"></div>
+      <div id="rulesStatus" class="status" hidden></div>
+      <div id="rulesKept"></div>
+      <details id="rulesDroppedWrap" hidden>
+        <summary class="muted" id="rulesDroppedCount"></summary>
+        <div id="rulesDropped"></div>
+      </details>
+      <div class="actions">
+        <button class="btn btn-primary" id="rulesApply" disabled>Apply the ticked rules</button>
+        <button class="btn btn-ghost small" id="rulesClose">Close</button>
+      </div>
     </div>
 
     <div class="table-wrap">
@@ -401,14 +428,48 @@
   <!-- ============================ Account =========================== -->
   <section class="panel" id="panel-account" role="tabpanel">
     <div class="panel-head">
-      <h2>Your account</h2>
-      <p class="sub">Who you are signed in as, and - if you are an
-         administrator - everybody else.</p>
+      <h2>Settings</h2>
+      <p class="sub">The optional language-model features, your account, and -
+         if you are an administrator - everybody else's.</p>
     </div>
 
     <div class="row">
       <div class="col">
-        <div class="card">
+        <!-- Optional, off until a key is put in, and the only part of
+             FillerAI that talks to a network at all. -->
+        <div class="card" id="llmCard">
+          <h3>Language model <span class="pill" id="llmPill">off</span></h3>
+          <p class="sub">Only one feature uses this today: asking a model to
+             propose the rules a form declares about itself, on the Schema
+             step. Nothing else here needs it, and no generated record is ever
+             sent - what goes out is field names, labels and option lists.</p>
+
+          <div id="llmStatus" class="status" hidden></div>
+          <ul class="assumptions" id="llmFacts"></ul>
+
+          <div class="controls tight" id="llmKeys"></div>
+
+          <p class="muted">A key typed here is held in this server's memory and
+             written nowhere - not to the database, not to the library, not to
+             a log - so it is forgotten when the server restarts. For one that
+             lasts, export <code>ANTHROPIC_API_KEY</code> or
+             <code>OPENAI_API_KEY</code> before starting it.</p>
+
+          <div class="controls tight">
+            <label class="field"><em>Use</em>
+              <select id="llmProvider">
+                <option value="">Decide from my keys</option>
+              </select></label>
+            <label class="field"><em>Model</em>
+              <input type="text" id="llmModel" spellcheck="false"
+                     placeholder="leave empty for the default"></label>
+            <button class="btn btn-ghost" id="llmSave">Save</button>
+            <span class="spacer"></span>
+            <button class="btn btn-ghost small" id="llmForget">Forget my keys</button>
+          </div>
+        </div>
+
+        <div class="card" id="ownCard">
           <h3>Change your password</h3>
           <p class="sub">Changing it signs out every other browser this account
              is open in, which is usually the reason for changing it.</p>

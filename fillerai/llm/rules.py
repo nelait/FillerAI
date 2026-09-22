@@ -231,10 +231,12 @@ def _shapes(problems: list[str]) -> set[str]:
     return {_RECORD_PREFIX.sub("", problem) for problem in problems}
 
 
-def _with_rules(schema: FormSchema, proposals: list[Proposal]) -> FormSchema:
+def with_rules(schema: FormSchema, proposals: list[Proposal]) -> FormSchema:
     """The same form, with these rules declared on it.
 
-    A copy, because a caller's schema is not this module's to change.
+    A copy, because a caller's schema is not this module's to change. Public
+    because the web UI applies rules to a schema rather than to a spec
+    document, which is what :func:`apply` is for.
     """
     rules = {p.field: p.derived for p in proposals}
     clone = FormSchema.from_dict(schema.to_dict())
@@ -242,6 +244,10 @@ def _with_rules(schema: FormSchema, proposals: list[Proposal]) -> FormSchema:
         if field.name in rules:
             field.derived = rules[field.name]
     return clone
+
+
+#: The old private name, kept because the tests and the live gate use it.
+_with_rules = with_rules
 
 
 def _structural(schema: FormSchema, proposal: Proposal) -> str | None:

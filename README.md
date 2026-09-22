@@ -1341,8 +1341,16 @@ reads a form's field list and proposes the business rules it declares about
 itself, because [writing those by hand](#learning-to-fill-the-form) is what
 27 rules on the quote form and 31 on onboarding cost somebody.
 
+**Or do it in the UI.** `Settings`, top right, takes a key for either service
+and says which one the next run will use; `Propose rules` on the Schema step
+asks, shows what survived the checks with its reasoning, and applies only the
+ones you tick. A key typed there is held in the server's memory and written
+nowhere - not to the database, not to the library, not to a log - so it is
+forgotten when the server stops. The environment variables below are for one
+that lasts.
+
 ```bash
-# What is configured, and whether a key is set. Prints no key.
+# Which service and model, and whether a key is set. Prints no key.
 python -m fillerai llm status
 
 # What it would cost, sending nothing.
@@ -1355,10 +1363,28 @@ python -m fillerai propose-rules examples/claims_intake.html -o rules.json
 python -m fillerai apply-rules form.fields.json rules.json -o merged.json
 ```
 
-It needs `FILLERAI_LLM_KEY` (or `ANTHROPIC_API_KEY`) and nothing else needs
-either. **No records are ever sent** — the input is field names, labels and
-option lists, which is the part of a form that lives in the business manual
-rather than in anybody's submitted record.
+It needs a key and nothing else does. **No records are ever sent** — the
+input is field names, labels and option lists, which is the part of a form
+that lives in the business manual rather than in anybody's submitted record.
+
+**Either service will do.** Export `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+and the command works out which one you meant; `FILLERAI_LLM_KEY` holds a key
+for whichever is chosen. Say it outright with `FILLERAI_LLM_PROVIDER`
+(`anthropic` or `openai`), `--provider`, or just a model name — `--model
+gpt-5` is enough. `llm status` prints which service it settled on and what
+decided it, which matters on a machine with an old key still exported:
+
+```
+  provider   OpenAI ($OPENAI_API_KEY is set)
+  rules      gpt-5                key set (…1234)
+  typing     gpt-5-mini           key set (…1234)
+  transport  urllib (standard library)
+```
+
+Defaults are per task and per provider — `claude-opus-5`/`claude-sonnet-5` or
+`gpt-5`/`gpt-5-mini` — because proposing a form's rules and reading a label
+are not the same problem. `FILLERAI_LLM_BASE_URL` points the whole thing at a
+gateway or a private deployment instead.
 
 **A proposed rule is a proposal.** Before it reaches the report it goes
 through the spec parser the rest of the project uses, a check that every name
@@ -1391,8 +1417,9 @@ scope, and `tests/test_llm_fence.py` fails if that ever stops being true. One
 import in the wrong place would turn an optional feature into a mandatory one
 for every command, and "nothing here talks to a network" is the promise that
 lets this run where the real form lives. The client itself is still
-`urllib.request` and `json`, so `dependencies` is still `[]`; the `anthropic`
-SDK is used if it happens to be installed and required by nothing.
+`urllib.request` and `json` for both services, so `dependencies` is still
+`[]`; a first-party SDK (`anthropic` or `openai`) is used if it happens to be
+installed *and* matches the service in use, and required by nothing.
 
 There is a plan for what else a model could be worth here, and a measured
 argument for what it is not worth, both under
