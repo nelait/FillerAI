@@ -234,7 +234,7 @@ its check and is dropped. A rule is never proposed across a group boundary,
 so the spouse's surname cannot end up on the applicant's first name.
 
 **What other fields imply.** This is [the selectable part](#choosing-how-it-learns) —
-five algorithms, all in plain Python. The default counts how each field's
+six algorithms, all in plain Python. The default counts how each field's
 values co-occur with each other field's and lets the worthwhile predictors
 vote, each weighted by how much it has been shown to help and by how many
 records back the particular bucket being read.
@@ -710,7 +710,7 @@ Five stages across the top, and a library beside them:
 3. **Generate** — count, seed, blank rate and the identifier safety switch,
    then a live preview and CSV/JSON/NDJSON export. Records are checked before
    you see them, and any problem is listed rather than hidden.
-4. **Train** — pick how it learns from the five algorithms, with that
+4. **Train** — pick how it learns from the six algorithms, with that
    algorithm's own settings and its own account of what it is about to do
    beside the picker. **Show the script** prints the Python that would
    reproduce the run before you start it; **Train** runs it and streams the
@@ -1216,6 +1216,7 @@ fillerai/
   db.py                the database, and the interface a backend meets
   dbstore.py           the same library in the database, with an owner
   auth.py              users, passwords, roles and sessions
+  tokens.py            bearer credentials for an application, as opposed to a person
   extract/
     dom.py             a minimal DOM over html.parser
     html_form.py       HTML -> schema
@@ -1246,10 +1247,22 @@ fillerai/
     form.py            schema -> a form a browser can draw
     effort.py          what filling a field costs, and every assumption behind it
     run.py             the run loop: the board, the saving, the score
+  llm/                 the optional language-model features, behind an import
+                       fence nothing in the core is allowed to cross
+    providers.py       the two wire formats, and everything that differs
+    config.py          where the key and the model come from
+    transport.py       the only module here that opens a socket
+    client.py          building a request, reading a reply; no network
+    prompts.py         what gets asked, and the shape of the answer
+    cost.py            what a call will cost, said before it is made
+    rules.py           proposing a form's own rules, and disbelieving them
   web/
     server.py          the local HTTP API, one function per endpoint
+    rest.py            the /v1 integration API: bearer tokens, no cookies
+    keyring.py         API keys typed into the UI, held in memory and nowhere else
     static/            index.html, app.js, styles.css - no build step
                        login.html, login.js - the one page served signed out
+    static/client/     fillerai.js, demo.html - the dependency-free browser client
 examples/
   claims_intake.html                  45 fields, 4 screens
   patient_registration.fields.json    21 fields, written as a spec
@@ -1270,6 +1283,24 @@ tests/
   test_simulate.py     the form, the effort model, the run loop
   test_web.py          every endpoint, over a real socket
   test_web_auth.py     the same server with accounts on: the door, not the stages
+  test_web_llm.py      the key box and the propose-rules panel
+  test_rest.py         the /v1 surface: tokens, CORS, and every refusal
+  test_tokens.py       issuing, verifying and revoking an application's credential
+  test_combine.py      the fitted vote weights, and their refusal to be kept unless
+                       they beat the hand-picked ones
+  test_llm_fence.py    that nothing in the core imports fillerai.llm
+  test_llm_client.py   building a request and reading a reply, offline
+  test_llm_providers.py the same proposals through both wire formats
+  test_llm_rules.py    the validation gate, branch by branch
+  test_llm_batching.py the output budget, and splitting a large form
+livetests/
+  test_rules_acceptance.py  the gate that costs money; skipped unless opted in
+docs/
+  README.md            an index of everything below
+  architecture.md      the components, the boundaries, and the invariants
+  process.md           the same system as a sequence of things you do
+  assumptions.md       everything taken as given, and what breaks if it is not
+  pending.md           what is missing, what is broken, what is deliberate
 ```
 
 ## Tests
@@ -1278,7 +1309,7 @@ tests/
 python -m unittest discover -s tests -v
 ```
 
-515 tests, no dependencies. They cover malformed markup, each inference rule,
+772 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real
@@ -1359,13 +1390,13 @@ keeping for what they say about the sharp edges:
 ## What comes next
 
 Six phases in, the machinery is complete: a form is read, data is invented
-for it, a model is fitted by whichever of five algorithms suits it, the run
+for it, a model is fitted by whichever of six algorithms suits it, the run
 is watched and kept, the whole thing is played back with a number on what it
 saved, and all of it now belongs to somebody who had to sign in. What the simulate stage says about that number is still the
 honest place to pick up.
 
 **Real history is the missing input, and it is now the binding one.** With
-five algorithms to choose between, the choice barely matters on generated
+six algorithms to choose between, the choice barely matters on generated
 data — they land within a few points of each other because there is only so
 much for any of them to find. A decision tree that can represent "family
 policy *and* dependent claimant means child" has nothing to represent when
@@ -1519,6 +1550,32 @@ argument for what it is not worth, both under
 ---
 
 ## Further reading
+
+Everything below is indexed in [**docs/**](docs/README.md).
+
+[**Architecture**](docs/architecture.md)
+— what the pieces are, which way they point, and the boundaries that are not
+allowed to move: the schema contract every stage shares, the four stages, the
+library and its two implementations, the storage interface, the two HTTP
+surfaces, the import fence around the optional language-model features, and
+the invariants a change should not quietly break.
+
+[**The process, end to end**](docs/process.md)
+— the same system arranged by what you do rather than by component: every
+command and what each option is for, how to choose an engine, what the reports
+mean, what the process is worth measured on five example forms, and the
+development process around it.
+
+[**Assumptions**](docs/assumptions.md)
+— everything this takes as given, grouped by what it is about, each with where
+it lives and what breaks if it is false. Including the five constants in
+`fillerai/simulate/effort.py` that produce every saving this project reports,
+none of which has been measured with a stopwatch.
+
+[**Pending and known items**](docs/pending.md)
+— what is missing, what is known to be broken, and what was deliberately not
+built, each with its evidence and what it would take. Read this before picking
+up work.
 
 [**Calling FillerAI from another application**](docs/integration.md)
 — the `/v1` REST service and the JavaScript client: every endpoint and what it
