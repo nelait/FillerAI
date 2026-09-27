@@ -40,7 +40,7 @@ from .train.evaluate import Report, evaluate, suggest_seed_fields
 from .train.model import AutofillModel, Prediction, TrainOptions, train as _train
 from .train.trace import Trace
 
-__version__ = "0.14.2"
+__version__ = "0.14.3"
 
 __all__ = [
     "SCHEMA_VERSION",

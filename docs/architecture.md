@@ -4,7 +4,7 @@ What the pieces are, which way they point, and the boundaries that are not
 allowed to move. The README is the tour; this is the map you want open when
 you are changing something and need to know what else it touches.
 
-Everything here was checked against the code at version 0.14.2.
+Everything here was checked against the code at version 0.14.3.
 
 ---
 
@@ -523,7 +523,7 @@ fillerai/
     static/client/     fillerai.js, demo.html, chat.html,
                        fillerai-chat.css - the browser client
 examples/              one HTML form and four field specs
-tests/                 861 tests, offline, no dependencies
+tests/                 864 tests, offline, no dependencies
 livetests/             the LLM acceptance gate; needs a key and an opt-in
 docs/                  this directory
 ```

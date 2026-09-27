@@ -176,6 +176,17 @@ class TestReading(unittest.TestCase):
         reading = understand.read(BOTH, active, text, **kwargs)
         return understand.decide(reading.scores)[0], understand.plain(reading.values)
 
+    def test_naming_the_template_is_not_a_value(self):
+        # "request" is not a document type, and "change" is not a street.
+        for text, key in (("document request", "document_request"),
+                          ("address change", "address_change")):
+            with self.subTest(text):
+                reading = understand.read(BOTH, None, text)
+                self.assertEqual(understand.decide(reading.scores)[0], key)
+                self.assertEqual((reading.values, reading.problems), ({}, []))
+        _, values = self.read("please change my address to 12 Oak St")
+        self.assertEqual(values["street_address"], "12 Oak St")
+
     def test_the_phrase_from_the_ask(self):
         key, values = self.read(THE_ASK)
         self.assertEqual(key, "address_change")
@@ -252,6 +263,17 @@ class TestReading(unittest.TestCase):
 
 
 class TestTheTurn(unittest.TestCase):
+    def test_naming_a_change_asks_what_to_change(self):
+        # Everything on file is complete, but nothing has changed yet: there
+        # is nothing to submit, so the chat asks rather than offering it.
+        chat = Conversation()
+        reply = chat.say("address change")
+        self.assertEqual(reply["intent"]["template"], "address_change")
+        self.assertIn("What would you like to change?", chat.text())
+        self.assertNotIn("submit", chat.actions())
+        reply = chat.say("my new city is Irvine")
+        self.assertEqual(reply["form"]["changes"]["city"]["after"], "Irvine")
+
     def test_the_ask_end_to_end(self):
         """§3: template, values, before/after, and the question that is left."""
         chat = Conversation()

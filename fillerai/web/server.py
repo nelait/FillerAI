@@ -1841,7 +1841,12 @@ def api_bot_template(payload: dict[str, Any]) -> dict[str, Any]:
     key = str(_require(payload, "key"))
     found = bot_templates.find(library(), key)
     if found is None:
-        raise ApiError(f"there is no template called {key!r}", status=404)
+        # The try-it chat can land on a starter that is not in the library
+        # yet; the sample form still needs its fields.
+        starter = bot_templates.starters().get(key)
+        if starter is None:
+            raise ApiError(f"there is no template called {key!r}", status=404)
+        return {"template": starter.to_dict(), "entry_id": None, "starter": True}
     return {"template": found.to_dict(), "entry_id": found.entry_id}
 
 
@@ -1903,9 +1908,15 @@ def api_bot_turn(payload: dict[str, Any]) -> dict[str, Any]:
     store = library()
     caller = rest.Caller(store=store)
     who = _who()
+    # The starters the panel offers count too, so asking the chat for
+    # "document request" works before anybody has added one; the page adds
+    # it to the library when the chat picks it.
+    saved = bot_templates.listed(store)
+    have = {t.key for t in saved}
+    available = saved + [t for k, t in bot_templates.starters().items() if k not in have]
     try:
         return botrest.run_turn(
-            store, bot_templates.listed(store), payload,
+            store, available, payload,
             load_model=lambda model_id: rest.load(caller, model_id)[0],
             reader=_bot_reader(who))
     except rest.RestError as error:

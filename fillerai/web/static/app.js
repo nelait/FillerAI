@@ -2314,7 +2314,7 @@ async function loadBots(select) {
       await openBot(key);
     } else if (!result.templates.length) {
       $('botEditor').hidden = true;
-      botSay('No templates yet. Add a starter, start from a schema, or make a new one.');
+      botSay('No templates yet. Add a starter, start from a schema, make a new one, or ask the chat for one.');
     }
     startBotChat();
   } catch (error) {
@@ -2632,12 +2632,25 @@ function botChatFollows(template) {
   bots.widget.reset();
 }
 
-function botPickFollowsChat(reply) {
+async function botPickFollowsChat(reply) {
   const key = reply.intent && reply.intent.template;
-  if (!key || key === bots.chatOn || !$('botPick').querySelector(`option[value="${CSS.escape(key)}"]`)) return;
+  if (!key || key === bots.chatOn) return;
   bots.chatOn = key;
-  $('botPick').value = key;
-  openBot(key).catch((e) => botSay(e.message, true));
+  try {
+    if (!bots.list.some((t) => t.key === key)) {
+      // The chat picked a starter this library doesn't have yet: add it, so
+      // the list and the editor can show it as well as the form.
+      if (!bots.starters.some((t) => t.key === key)) return;
+      await api('/api/bot/starter', { key });
+      toast('starter added');
+      await loadBots(key);
+      return;
+    }
+    $('botPick').value = key;
+    await openBot(key);
+  } catch (error) {
+    botSay(error.message, true);
+  }
 }
 
 $('botFormClear').addEventListener('click', () => {

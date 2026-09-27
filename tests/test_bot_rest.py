@@ -206,9 +206,25 @@ class TestTheUiTryItChat(unittest.TestCase):
                                             "schema_id": entry.id})
         self.assertEqual(server_module.LIBRARY.get(saved["entry_id"]).parent, entry.id)
 
+    def test_the_try_it_chat_can_start_on_a_starter_not_yet_added(self):
+        # An empty library: the chat still knows the starters the panel
+        # offers, and the form can get the fields of the one it picks.
+        self.assertEqual(server_module.api_bot_templates({})["templates"], [])
+        reply = server_module.api_bot_turn({"input": {"type": "text",
+                                                      "text": "document request"}})
+        self.assertEqual(reply["intent"]["template"], "document_request")
+        self.assertNotIn("couldn't use", reply["messages"][0]["text"])
+        shown = server_module.api_bot_template({"key": "document_request"})
+        self.assertTrue(shown["starter"])
+        self.assertIsNone(shown["entry_id"])
+        # Nothing was saved by talking about it.
+        self.assertEqual(server_module.api_bot_templates({})["templates"], [])
+        with self.assertRaises(server_module.ApiError):
+            server_module.api_bot_template({"key": "no_such_thing"})
+
     def test_refusals_come_back_as_ui_errors(self):
         with self.assertRaises(server_module.ApiError):
-            server_module.api_bot_turn({"input": {"type": "text", "text": "hi"}})
+            server_module.api_bot_turn({"input": {"type": "shout", "text": "hi"}})
         with self.assertRaises(server_module.ApiError):
             server_module.api_bot_save({"template": {"key": "x"}})
 

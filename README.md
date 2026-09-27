@@ -1374,7 +1374,7 @@ docs/
 python -m unittest discover -s tests -v
 ```
 
-861 tests, no dependencies. They cover malformed markup, each inference rule,
+864 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real
