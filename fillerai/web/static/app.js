@@ -2770,6 +2770,11 @@ $('botDownload').addEventListener('click', () => {
     renderAccount();
     state.semanticTypes = meta.semantic_types;
     $('version').textContent = `v${meta.version}`;
+    if (meta.sample_app_port) {
+      // Same host the UI was reached on, so it works from another machine too.
+      $('sampleAppLink').href = `${location.protocol}//${location.hostname}:${meta.sample_app_port}/`;
+      $('sampleAppLink').hidden = false;
+    }
     setAlgorithms(meta.algorithms, meta.default_algorithm);
     $('libWhere').textContent = meta.library || '';
     // Installed away from the repository there are no bundled examples, which

@@ -205,7 +205,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                  database=args.database, accounts=not args.no_auth,
                  cors_origins=args.cors_origin,
                  bot_llm=True if args.bot_llm else None,
-                 bot_transcribe=True if args.bot_transcribe else None)
+                 bot_transcribe=True if args.bot_transcribe else None,
+                 sample_app=not args.no_sample_app, sample_port=args.sample_port,
+                 sample_user=args.sample_user)
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -1206,6 +1208,14 @@ def build_parser() -> argparse.ArgumentParser:
                             "$FILLERAI_BOT_TRANSCRIBE=1), for where the browser's own "
                             "speech service is blocked. Off by default: it sends voices "
                             "to OpenAI")
+    serve.add_argument("--no-sample-app", action="store_true",
+                       help="don't start the sample application (Northwind Mutual) "
+                            "that normally runs next to the UI")
+    serve.add_argument("--sample-port", type=int, default=8100,
+                       help="the sample application's port (default: %(default)s)")
+    serve.add_argument("--sample-user", metavar="USERNAME",
+                       help="whose bot templates the sample application shows "
+                            "(default: the first administrator)")
     serve.set_defaults(func=cmd_serve)
 
     trainer = subparsers.add_parser(

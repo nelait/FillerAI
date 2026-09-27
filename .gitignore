@@ -15,4 +15,4 @@ build/
 *.db-shm
 
 # The sample application's customer record, made on first run.
-examples/sample_app/portal-data.json
+portal-data.json

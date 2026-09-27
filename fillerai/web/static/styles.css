@@ -693,6 +693,8 @@ input[type="search"] { width: 200px; }
    whole group is meant to be gone, not an empty circle beside Sign out. */
 .account { display: flex; align-items: center; gap: 8px; }
 .account[hidden] { display: none; }
+#sampleAppLink { text-decoration: none; white-space: nowrap; }
+#sampleAppLink[hidden] { display: none; }
 
 .whoami {
   display: inline-flex; align-items: center; gap: 7px;
