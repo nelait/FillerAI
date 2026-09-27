@@ -430,6 +430,7 @@ export class BotChat {
     /** The last reply, for anything that wants to redraw from it. */
     this.last = null;
     this._queue = Promise.resolve();
+    this._epoch = 0;
   }
 
   /** Something the person typed. */
@@ -452,8 +453,13 @@ export class BotChat {
     return this.send({ type: "event", event, detail });
   }
 
-  /** Forget the conversation; the next input starts a new one. */
+  /**
+   * Forget the conversation; the next input starts a new one. A turn already
+   * on its way when this is called is let finish but its reply is dropped,
+   * so it cannot bring the old conversation back.
+   */
   reset() {
+    this._epoch += 1;
     this.state = null;
     this.last = null;
   }
@@ -478,13 +484,17 @@ export class BotChat {
     if (current) context.current = current;
     if (this.templates) context.templates = this.templates;
     if (this.startOn && !this.state) context.template = this.startOn;
+    const epoch = this._epoch;
     let reply;
     try {
       reply = await this._send({ input, state: this.state, context });
     } catch (error) {
-      if (this.onError) this.onError(error, input);
+      if (epoch === this._epoch && this.onError) this.onError(error, input);
       throw error;
     }
+    // Reset while this turn was out: the reply belongs to a conversation
+    // that no longer exists. Its effect is dropped with it.
+    if (epoch !== this._epoch) return { ...reply, effect: null, stale: true };
     this.state = reply.state;
     this.last = reply;
     if (this.onReply) this.onReply(reply, input);
@@ -589,13 +599,20 @@ export class ChatWidget {
    * @param {string} [options.placeholder]
    * @param {boolean} [options.speech] Offer the microphone when supported.
    * @param {boolean} [options.speakReplies] Read replies aloud after speech input.
+   * @param {string} [options.title] A heading over the chat; with `resettable`
+   *   it carries the reset button.
+   * @param {boolean} [options.resettable] Offer a "New chat" button.
+   * @param {function} [options.onReset] Called after the chat was reset.
    */
   constructor(root, chat, { greeting = "Hi! What can I help you with?",
                             placeholder = "Type a message", speech = true,
-                            speakReplies = true } = {}) {
+                            speakReplies = true, title = "",
+                            resettable = true, onReset = null } = {}) {
     this.root = root;
     this.chat = chat;
     this.speakReplies = speakReplies;
+    this.greeting = greeting;
+    this.onReset = onReset;
     this._lastVia = "typed";
     const outerReply = chat.onReply;
     chat.onReply = (reply, input) => {
@@ -610,6 +627,18 @@ export class ChatWidget {
 
     root.classList.add("fai-chat");
     root.innerHTML = "";
+    if (title || resettable) {
+      const head = el("div", "fai-head");
+      head.append(el("span", "fai-title", title));
+      if (resettable) {
+        const fresh = el("button", "fai-reset", "New chat");
+        fresh.type = "button";
+        fresh.title = "Forget this conversation and start again";
+        fresh.addEventListener("click", () => this.reset());
+        head.append(fresh);
+      }
+      root.append(head);
+    }
     this.log = el("div", "fai-log");
     this.log.setAttribute("role", "log");
     this.log.setAttribute("aria-live", "polite");
@@ -657,6 +686,20 @@ export class ChatWidget {
     }
 
     if (greeting) this._line("bot", greeting);
+  }
+
+  /** Start over: the conversation, the log, the suggestions and the microphone. */
+  reset() {
+    if (this.speech) this.speech.stop();
+    if (typeof globalThis.speechSynthesis !== "undefined") globalThis.speechSynthesis.cancel();
+    this.chat.reset();
+    this.log.innerHTML = "";
+    this.actions.innerHTML = "";
+    this._offered = [];
+    this.input.value = "";
+    if (this.greeting) this._line("bot", this.greeting);
+    this.input.focus();
+    if (this.onReset) this.onReset(this);
   }
 
   _you(text, via) {

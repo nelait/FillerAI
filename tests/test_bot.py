@@ -323,6 +323,20 @@ class TestTheTurn(unittest.TestCase):
         self.assertEqual(reply["conversation"]["status"], "handed_off")
         self.assertEqual(chat.report("filled")["conversation"]["status"], "handed_off")
 
+    def test_a_form_submitted_by_hand_after_a_hand_off_closes_the_chat(self):
+        """§3.3: the person finished the handed-over form and submitted it."""
+        chat = Conversation()
+        chat.say("change my address to 12 Main St, Austin, Texas 78701")
+        chat.click("fill_form")
+        chat.report("filled")
+        done = chat.report("submitted", reference="CHG-9")
+        self.assertEqual(done["conversation"]["status"], "done")
+        self.assertIn("Your reference is CHG-9.", chat.text())
+        with self.assertRaises(BotError) as caught:
+            chat.report("submitted", reference="CHG-9")
+        self.assertEqual(caught.exception.code, "stale_action",
+                         "one conversation is submitted once")
+
     def test_the_host_reports_back_after_a_submit(self):
         """§3.3."""
         chat = Conversation()

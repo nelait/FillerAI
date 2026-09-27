@@ -381,7 +381,7 @@ contract: [bot-builder.md](bot-builder.md).
 python -m unittest discover -s tests -q
 ```
 
-840 tests, no dependencies, entirely offline — the LLM tests replay recorded
+847 tests, no dependencies, entirely offline — the LLM tests replay recorded
 exchanges through `RecordedTransport`, which raises on anything unrecorded, so
 a changed prompt fails loudly rather than reaching for the network.
 

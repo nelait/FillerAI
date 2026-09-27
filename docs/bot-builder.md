@@ -11,7 +11,7 @@ already holds, and what the person can do next.
 This page is the contract between the chat window and the bot service. It was
 written before the code on purpose: the chat window is in someone else's
 product, so the interface is the part that cannot be changed casually later.
-Everything below is checked against the code at version 0.12.0, and each
+Everything below is checked against the code at version 0.13.0, and each
 example reply is what the service actually returns.
 
 ---
@@ -267,7 +267,9 @@ say so in the chat:
 `submitted` ends the conversation (`status: "done"`, the template's
 `done_message` plus the reference if one was given). `submit_failed` with
 `detail.message` puts it back to `ready` so the person can try again or fill
-the form instead. `filled` is optional, and only confirms a hand-off. A host
+the form instead. `filled` is optional, and only confirms a hand-off. After a
+`fill_form` hand-off the host may also send `submitted` once the person has
+submitted the form by hand, and the chat closes with the same message. A host
 that never reports is fine: the conversation simply ends at the effect.
 
 ---
@@ -406,7 +408,14 @@ const chat = new BotChat(null, {
   actions and the text box with its microphone, and reads a reply aloud when
   the phrase it answers was spoken. It is plain DOM with `fai-` class names;
   `/client/fillerai-chat.css` is a default look to link or leave out. It is
-  optional: a React app can use `BotChat` alone and draw its own.
+  optional: a React app can use `BotChat` alone and draw its own. Its header
+  carries a `title` and a **New chat** button (`resettable`, on by default):
+  that stops the microphone, clears the log and the suggestions, and calls
+  `chat.reset()`, then the host's `onReset` so it can put its own form back.
+  The log scrolls inside the widget's box and follows the newest message.
+- **`chat.reset()` drops a turn already in flight.** Its reply comes back
+  marked `stale` with no effect, so a slow answer cannot bring the old
+  conversation back or submit anything after the person started over.
 - **`onEffect` runs after the turn has left the queue**, so a handler that
   calls `chat.report()` queues behind it rather than waiting on itself.
 
@@ -414,6 +423,16 @@ const chat = new BotChat(null, {
 address on file and its own form, and the chat window beside it. "Fill the
 form" prefills the page's form; "Submit" changes the address on file and
 reports the reference back.
+
+**`examples/sample_app/`** is the same thing as a separate application, the
+way a real host would be built: its own server on its own port, its own
+customer record and submit rules, and FillerAI reached only over HTTP. Its
+server holds the API token and forwards each turn to `/v1/bot/turn`, adding
+the customer's record as `context.current` itself, so the token never reaches
+the browser and the page cannot claim someone else's address. A submit goes
+through the application's own `/api/address` or `/api/documents`, which can
+refuse it (`submit_failed` goes back to the chat with the reason). See its
+[README](../examples/sample_app/README.md).
 
 ---
 
@@ -424,8 +443,14 @@ Three ways, all writing the same thing to the library.
 - **The Bots tab** in the FillerAI UI: pick a template or add a starter, or
   start from a schema in the library (or the one on the Schema step), edit the
   examples and the fields table, save. The chat beside the editor runs the
-  same turn through `/api/bot/turn`, with a box for what the host would
-  already hold, so a template can be tried before anything is connected.
+  same turn through `/api/bot/turn`, so a template can be tried before
+  anything is connected. Above it a **sample form** shows the template the
+  conversation is on and follows every reply: a value appears the moment it
+  is understood, changed fields are green with what they were, and fields the
+  chat still needs (missing, or outdated by a change) are amber. "Fill the
+  form" hands it over to be submitted by hand; "Submit" writes the values into
+  what the application holds on file (the JSON under the chat), as a host
+  would to its records. **New chat** starts over and puts the form back.
 - **`/v1/templates`** from another program, with an unpinned token.
 - **The command line**: `fillerai bot add file.json` or
   `fillerai bot add --starter address_change`, `fillerai bot list`,
