@@ -1619,7 +1619,23 @@ argument for what it is not worth, both under
 
 ## Further reading
 
-Everything below is indexed in [**docs/**](docs/README.md).
+Everything below is indexed in [**docs/**](docs/README.md), with reading
+paths for someone new, someone changing the code, someone connecting an
+application and someone running it for others.
+
+[**Technical overview**](docs/overview.md)
+— the whole system on a few pages, with diagrams: the parts, how a request
+travels through them, who can do what, and where to read next.
+
+[**Operations**](docs/operations.md) and [**Security**](docs/security.md)
+— installing, configuring, backing up, upgrading and troubleshooting a running
+server; what can leave the machine and under which switch, and what to change
+before anybody else can reach it.
+
+**Reference** — [commands](docs/reference/cli.md),
+[HTTP routes](docs/reference/http-api.md),
+[file and database formats](docs/reference/data-formats.md),
+[modules](docs/reference/modules.md) and a [glossary](docs/glossary.md).
 
 [**Architecture**](docs/architecture.md)
 — what the pieces are, which way they point, and the boundaries that are not

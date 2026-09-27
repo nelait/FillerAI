@@ -4,7 +4,7 @@ What is missing, what is known to be broken, and what was deliberately not
 built. Each entry says what it is, what the evidence is, and what it would
 take — so that picking one up does not start with a re-investigation.
 
-Verified against version 0.11.0 on 2026-09-22; the bot items against 0.12.0 on 2026-09-27. Where something was measured
+Verified against version 0.11.0 on 2026-09-22; the bot items and §2.4 against 0.15.0 on 2026-09-27. Where something was measured
 for this document, the command is given.
 
 **Status key:** 🔴 blocking a claim this project makes · 🟠 a real defect with
@@ -139,7 +139,10 @@ Tustin" well is not. Same missing key as §1.1.
 `SpeechInput` wraps the browser's own recogniser, and the only browser this
 project is checked in is headless and has no microphone. The service side of
 speech (`via: "speech"`, alternatives, no example hints in a spoken question)
-is tested; a person talking into Chrome is not. `--bot-transcribe` (the
+is tested. A person talking into Chrome has now worked once, by hand, on
+2026-09-27, after an early failure turned out to be Chrome listening to a
+different microphone (an iPhone over Continuity), not a fault here; there is
+still no automated check of it. `--bot-transcribe` (the
 recording route, for when Chrome's speech service is blocked) is tested end to
 end with a recorded tone through a stand-in for OpenAI, but has not yet
 transcribed a real voice with a real key.
@@ -218,6 +221,41 @@ believes them. Nothing errors and nothing warns.
 `inspect --evidence` and `--review-below` are the mitigation, and they require
 somebody to look. LLM phase 2 (§1.3) is the designed fix.
 
+### 2.4 🟡 Small inconsistencies found while writing the reference
+
+Each is minor and none loses data; they are listed so nobody re-discovers
+them. Found by reading the code, calling the routes and running the commands
+for [reference/http-api.md](reference/http-api.md) and
+[reference/cli.md](reference/cli.md).
+
+- **`/api/bot/turn` and `/api/bot/transcribe` drop the error `code`.** They
+  turn the `/v1` error into the `/api` shape, so the Bots tab gets the status
+  and the sentence but not `stale_action` and the rest.
+- **`account_off` (403) cannot be reached in practice.** Disabling a user
+  revokes their tokens in the same step, so the token fails first with
+  `401 bad_token`. [integration.md](integration.md) now says so.
+- **The sample application accepts template keys `/v1` does not.** Its check
+  is `^[a-z0-9][a-z0-9_-]{0,63}$`; `/v1` wants `^[a-z][a-z0-9_]{0,63}$`, so a
+  key with a hyphen or a leading digit is forwarded and comes back `404`.
+- **A wrong method answers differently on the two surfaces.** A `GET` on an
+  `/api` POST route gets a plain-text `404`; `/v1` answers
+  `405 method_not_allowed` in JSON.
+- **`/api/auth/me` under `--no-auth` answers `401 sign in first`**, while
+  every other `/api` route works without signing in.
+- **What the CLI saves is not in the server's library straight away.** `bot
+  add`, `library` and `--save` write the file library; with accounts on,
+  `serve` uses the database and copies new file-library entries into the first
+  administrator's library only when it starts.
+- **`check` reads JSON only**, and fails with a traceback on a CSV that
+  `train`, `evaluate` and `simulate --records` would accept.
+- **`train --compare` ignores `-o`, `--save`, `--script`, `--tree` and
+  `--evaluate`** without saying so, and **unknown `--set` keys** are ignored
+  silently too.
+- **`library list -k KIND`** says the library is empty when only the filter
+  matched nothing, and the kind `template` runs into the date column.
+- **A missing input file, or a port already in use for `serve`,** ends in a
+  Python traceback rather than a one-line message.
+
 ---
 
 ## 3. What is deliberately not there
@@ -245,6 +283,9 @@ argued rather than assumed.
   with "add another dependant" has to be flattened into numbered fields, and
   the model will treat them as unrelated columns
   ([assumptions.md](assumptions.md) §2.1).
+- ⚪ **The sample application has no sign-in of its own.** It is a demo;
+  whoever reaches its port is the demo customer
+  ([security.md](security.md) §9).
 - ⚪ **The file library has no owners, search, tags, concurrent writers or
   garbage collection** beyond `prune`. Each would be a good idea in a shared
   service, which is what the database store is for.
