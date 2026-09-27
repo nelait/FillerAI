@@ -76,7 +76,7 @@ Two parts of a `Field` are worth naming separately because the rest of the
 system keys off them.
 
 **`semantic_type`** is what the field *means* — `postal_code`, `claim_number`,
-`diagnosis_code` — as opposed to its data type. There are 50-odd of them in
+`diagnosis_code` — as opposed to its data type. There are 47 of them in
 `SEMANTIC_TYPES`. Generation is driven entirely by this, so supporting a new
 kind of field means a member here plus a renderer in
 `fillerai/generate/render.py`, and nothing else. Each one arrives with a
@@ -260,7 +260,9 @@ follow it down from a source for every model that descends from it. The same
 links read in either direction.
 
 Six kinds, with id prefixes: `source` (`src-`), `schema` (`sch-`), `dataset`
-(`dat-`), `model` (`mdl-`), `script` (`scr-`).
+(`dat-`), `model` (`mdl-`), `script` (`scr-`) and the bot's `template`
+(`tpl-`). The formats of each are in
+[reference/data-formats.md](reference/data-formats.md).
 
 There are **two implementations of the same interface**, and a caller holding
 one cannot tell which it has — same `Entry`, same ids, same method names.
@@ -330,7 +332,7 @@ effect everywhere at once. **The last administrator cannot be removed** — not
 disabled, not demoted, not deleted.
 
 **An application** (`tokens.py`) gets a bearer token, `flr_<id>_<secret>`, with
-32 bytes from `secrets`. The secret is hashed with plain **SHA-256, not
+24 random bytes from `secrets` (32 URL-safe characters). The secret is hashed with plain **SHA-256, not
 scrypt**, and that is a considered difference: a password is a short string a
 person chose, so the hashing cost is the defence; a token's secret is beyond
 guessing and is verified on *every* API call, where 45ms would make the
@@ -513,7 +515,8 @@ fillerai/
   bot/                 template, understand, conversation, starters/
                        - Bot Builder, see bot-builder.md
   llm/                 providers, config, transport, client, prompts,
-                       cost, rules, understand (behind the import fence)
+                       cost, rules, understand, transcribe (behind the
+                       import fence)
   web/
     server.py          the UI's /api, and the routing for both surfaces
     rest.py            the /v1 integration API

@@ -7,7 +7,9 @@ it, where the output lands, and how the work gets from a branch to `main`.
 [architecture.md](architecture.md) is the same system arranged by component.
 This one is arranged by what you do.
 
-Every command below was run against version 0.11.0 while this was written.
+Every command below was run against version 0.11.0 while this was written;
+§9 was brought up to 0.15.0. Every option of every command is in
+[reference/cli.md](reference/cli.md).
 
 ---
 
@@ -370,6 +372,17 @@ python -m fillerai serve --bot-llm                     # optional: a model reads
 The Bots tab does the same with an editor and a try-it chat, and
 `/client/chat.html` is a host page to try the chat widget against. Full
 contract: [bot-builder.md](bot-builder.md).
+
+**To see it inside a separate application**, `serve` also starts the sample
+application, Northwind Mutual, on `http://localhost:8100`, with an API token
+for the first administrator. Its forms are that user's templates, so add the
+starters first; `--no-sample-app` leaves it off. It reaches FillerAI only over
+`/v1`, which makes it the working example of a host application
+(`fillerai/sampleapp/README.md`).
+
+Installing, configuring, backing up and troubleshooting a running server are
+in [operations.md](operations.md); what to change before anyone else can reach
+it is in [security.md](security.md) §10.
 
 ---
 

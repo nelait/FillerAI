@@ -5,7 +5,22 @@ stage looks like when you run it. These are the documents you want open when
 you are changing something, deciding something, or trying to find out what is
 already known.
 
+## Reading paths
+
+| You are… | Read, in order |
+|---|---|
+| new to FillerAI | [overview.md](overview.md), then the [README](../README.md) tour, then [process.md](process.md) |
+| about to change the code | [overview.md](overview.md), [architecture.md](architecture.md), [reference/modules.md](reference/modules.md), [pending.md](pending.md) |
+| connecting another application | [integration.md](integration.md), [bot-builder.md](bot-builder.md), [reference/http-api.md](reference/http-api.md) |
+| running it for other people | [operations.md](operations.md), [security.md](security.md), [reference/cli.md](reference/cli.md) |
+| deciding what to build next | [pending.md](pending.md), [assumptions.md](assumptions.md), the analyses below |
+
 ## Start here
+
+**[overview.md](overview.md)** — the whole system on a few pages: what it is
+for, the parts and how a request travels through them (with diagrams), who
+can do what, the design rules that explain most decisions, and where to read
+next.
 
 **[architecture.md](architecture.md)** — what the pieces are, which way they
 point, and the boundaries that are not allowed to move. The shared schema
@@ -29,7 +44,40 @@ effort constants behind every "X% less work" are §4.
 what was deliberately not built, each with its evidence and what it would take
 to resolve. Read this before picking up work.
 
+## Operating it
+
+**[operations.md](operations.md)** — requirements, installing, starting the
+server and what it prints, every environment variable, where the data is and
+how to back it up, upgrading, the sample application, and a troubleshooting
+table of the problems actually met so far.
+
+**[security.md](security.md)** — what is protected and how, exactly what can
+leave the machine and under which switch, passwords, sessions, tokens and
+keys, the two HTTP surfaces, data at rest, and a checklist for exposing it
+beyond localhost.
+
 ## Reference
+
+Looked up rather than read through. Each is checked against the code at
+0.15.0.
+
+**[reference/cli.md](reference/cli.md)** — every command and subcommand, every
+option with its default, and every environment variable.
+
+**[reference/http-api.md](reference/http-api.md)** — every route on `/api`,
+`/v1` and the sample application: who may call it, what it takes, what it
+answers and how it refuses.
+
+**[reference/data-formats.md](reference/data-formats.md)** — the field schema
+and field spec, datasets, model files, library entries and lineage, the
+database tables and migrations, API tokens, and bot templates.
+
+**[reference/modules.md](reference/modules.md)** — the package module by
+module: what each is responsible for, its main functions, what it imports,
+the Python library API, and which tests cover what.
+
+**[glossary.md](glossary.md)** — the words these documents use with a specific
+meaning.
 
 **[integration.md](integration.md)** — calling FillerAI from another
 application: every `/v1` endpoint and what it answers, how an API token works

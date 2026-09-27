@@ -313,13 +313,21 @@ three rules as `bind()`, in React's own idiom.
 | 401 | `no_token` | No `Authorization: Bearer` header |
 | 401 | `bad_token` | Not a token, revoked, or expired |
 | 403 | `out_of_scope` | The token is pinned to a different model |
-| 403 | `account_off` | The token's account was disabled |
-| 404 | `not_found` | No such model in this library |
+| 403 | `account_off` | The token's account was disabled. In practice a disabled account's tokens are revoked at the same moment, so this arrives as `401 bad_token` |
+| 404 | `not_found` | No such model in this library, or no such path under `/v1` |
 | 400 | `not_a_model` | That id is a schema or a dataset |
 | 400 | `unknown_field` | A field name the model has never seen |
 | 400 | `bad_threshold` | Not a number between 0 and 1 |
 | 405 | `method_not_allowed` | Right path, wrong verb |
-| 413 | `too_large` | Over 500 records, or an 8MB body |
+| 413 | `too_large` | Over 500 records, over 2,000 observed fields, or an 8MB body |
+| 400 | `bad_json` | The body is not JSON, or not a JSON object |
+| 400 | `bad_request` | Any other malformed request, such as a bad `Content-Length` |
+| 500 | `server_error` | A bug; the message says so and the server log has the trace |
+
+The bot endpoints add their own codes (`stale_action`, `unknown_template`,
+`bad_template`, `bad_input`, `bad_state`, `transcription_off`, `transcription_failed`);
+they are listed in [bot-builder.md](bot-builder.md) §6, and every code on
+every route is in [reference/http-api.md](reference/http-api.md).
 
 `FillerAIError` in the JavaScript client carries `status` and `code`, and
 `error.isAuth` is true for the first four.
