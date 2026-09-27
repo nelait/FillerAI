@@ -21,8 +21,9 @@
 
 <main class="wrap">
   <p class="sample-note">A sample application. Everything on this page is its own; only the
-    chat window in the corner talks to FillerAI, through this application's server. There is
-    a form here for every template the FillerAI bot service has, read when the page loads.</p>
+    chat window in the corner talks to FillerAI, through this application's server. There is a
+    form here for every template the FillerAI bot service has, read when the page loads, and
+    the one the chat is talking about is the one that opens.</p>
 
   <div class="layout" id="layout">
     <section class="card" id="details">
@@ -38,6 +39,13 @@
       </table>
     </section>
 
+    <!-- One form per bot template, drawn by app.js when the page loads and
+         shown one at a time. This is what shows while none is open. -->
+    <section class="card wide-card none-open" id="noneOpen" hidden>
+      <h2>What can we help with?</h2>
+      <p class="dim">Tell the assistant what you need, and the form for it opens here as you
+        talk. Or pick one from the menu at the top to fill in yourself.</p>
+    </section>
     <!-- One form per bot template, drawn by app.js when the page loads. -->
     <section class="card wide-card" id="noForms" hidden>
       <h2>No forms yet</h2>

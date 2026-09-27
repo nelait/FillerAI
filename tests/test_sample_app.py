@@ -189,6 +189,11 @@ class TestSampleApp(RestCase):
         status, text = self.app_call("/")
         self.assertEqual(status, 200)
         self.assertNotIn(self.token.encode(), text, "the token never reaches the page")
+        # One form open at a time; this is what shows while none is.
+        self.assertIn(b'id="noneOpen"', text)
+        script = self.app_call("/app.js")[1]
+        self.assertIn(b"card.hidden = true", script)
+        self.assertIn(b"openForm(chatOn)", script)
         self.assertEqual(self.app_call("/../app.py")[0], 404)
 
     def test_server_speech_goes_through_the_application_to_fillerai(self):

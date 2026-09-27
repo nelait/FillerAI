@@ -2,7 +2,7 @@
 
 A made-up insurer's customer portal. It shows a signed-in customer's details
 and their recent requests, a form for **every template the FillerAI bot
-service has**, and a chat window in the corner. The chat is FillerAI's;
+service has**, one at a time, and a chat window in the corner. The chat is FillerAI's;
 everything else belongs to the application.
 
 It is a separate program on its own port. It imports nothing from the rest of
@@ -37,19 +37,22 @@ microphone on `https://` or `http://localhost`.
 
 Add the two starters on FillerAI's Bots tab (or `fillerai bot add --starter
 address_change`), reload the sample application, and there is a form for
-each. Then, in the chat:
+each: a menu item at the top, and no form open until one is asked for. Then,
+in the chat:
 
 - *"please update my city from SFO to Irvine and house no 1429 Silverstein"*
-  fills in the address form as you talk, green where a value changed, with
+  opens the address form and fills it in as you talk, green where a value changed, with
   what it was, and amber where something is still needed. A new city makes
   the old state and ZIP code wrong, so the chat asks for them.
-- *"document request"* in the middle of that moves to the document form.
+- *"document request"* in the middle of that closes it and opens the document
+  form.
 - **Submit** in the chat submits the form through the application's own
   path; **Fill the form for manual submission** leaves it filled for you to
   check and submit.
 
-Every form can also be filled and submitted by hand, like any other
-application's. **New chat** starts over and puts the forms back to what is on
+Every form can also be opened from the menu and filled and submitted by hand,
+like any other application's; the address bar follows (`#form-<template>`),
+so a reload or a shared link opens the same one. **New chat** starts over and puts the forms back to what is on
 file. A template saved on the Bots tab is a form here after a reload.
 
 The customer's record is kept in the library directory, under
