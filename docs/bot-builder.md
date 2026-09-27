@@ -139,10 +139,10 @@ Authorization: Bearer flr_...
 
 Speech is turned into text **in the browser** (the Web Speech API, through
 `SpeechInput` in the client), so the service never receives audio. `via:
-"speech"` changes two things: the reply's text is written to be read aloud
-(no tables in the message itself), and a phrase that sounds like an action is
-only taken as one when it is unmistakable ("submit" alone, not "submit a
-claim for..."). `alternatives` are the recogniser's runners-up; the service
+"speech"` leaves out the typed-only hint ("For example 92618") from a
+question. A phrase is taken as an action only when the whole phrase is one
+("submit" alone, not "submit a claim for..."), whether it was typed or
+spoken. `alternatives` are the recogniser's runners-up; the service
 tries them only when the first reading finds nothing.
 
 A **typed or spoken phrase can also be an action**: "submit", "yes, send it",
@@ -547,6 +547,8 @@ template is usually the whole fix.
   English; a template's own examples and aliases can be any language, but the
   bot's replies are not.
 - **One conversation is one request.** A phrase that asks for two things at
-  once ("change my address and send me an ID card") is read as the first, and
-  the second is asked for after.
+  once is not split: "change my address and send me an ID card" is read as
+  the address change, and "and send me an ID card" is taken as the street
+  address, because "address" is one of the street field's words. The second
+  request is not asked for after. See [pending.md](pending.md) §2.5.
 

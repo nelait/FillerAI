@@ -207,6 +207,10 @@ user's bot templates, so add the starters on the Bots tab or with
 shows another user's templates, `--sample-port` moves it and
 `--no-sample-app` leaves it off.
 
+One form is open at a time: the chat opens the one the conversation is
+about, and the menu at the top opens any of them to fill in and submit by
+hand (`http://localhost:8100/#form-address_change` opens that one directly).
+
 It can run on its own against any FillerAI:
 
 ```sh
@@ -224,6 +228,7 @@ Its own documentation is `fillerai/sampleapp/README.md`.
 | `sample application: not started, port 8100 is taken` | Another program, or another FillerAI, has the port | `--sample-port 8101`, or `--no-sample-app`. The UI still starts. |
 | `sample application: not started, there is no administrator` / `no user` | `--sample-user` names nobody, or the database has no admin | Create the user, or drop `--sample-user`. |
 | The sample application shows no forms | The token's user has no bot templates | Add the starters on the Bots tab, then reload. |
+| The sample application shows no form, only "What can we help with?" | None is open yet; that is the start | Ask for one in the chat, or pick one from the menu at the top. |
 | Nobody can sign in | Lost password | `fillerai users passwd admin` from a shell on the server. |
 | "too many failed attempts; try again in N minute(s)" | 6 wrong passwords | Wait 15 minutes, or set a new password with `users passwd`. |
 | A browser app gets a CORS error from `/v1` | Running `--no-auth`, where no origin is allowed | `--cors-origin https://your-app`, or turn accounts on. |

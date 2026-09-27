@@ -1103,8 +1103,14 @@ Northwind Mutual, the sample customer portal. It is a separate server
 first administrator or the named user. It can also run alone:
 `python -m fillerai.sampleapp --fillerai URL --token flr_...`.
 
-This section reflects version 0.15.0. The sample application is being
+This section reflects version 0.15.1. The sample application is being
 changed, so check the code before relying on the detail.
+
+The page draws one form per template from `/api/templates` when it loads and
+shows one at a time: the one the chat conversation is about, or the one
+picked from the menu to fill and submit by hand. The open form is kept in
+the address as `#form-<template>`, so a reload or a link opens the same one.
+All of this is in the page; it adds no route.
 
 It has no accounts, cookies, CSRF or CORS: it is one demo customer on
 localhost. The token stays on this server and never reaches the browser.
@@ -1114,7 +1120,7 @@ the reply is `502` with `code: unreachable`.
 
 | Method | Path | Does |
 |---|---|---|
-| `GET` | `/` | the portal page (`static/index.html`); other files under `static/` by name |
+| `GET` | `/` | the portal page (`static/index.html`, one form open at a time, `#form-<template>`); other files under `static/` by name |
 | `GET` | `/api/me` | the customer record and past requests, plus `server_speech` and `fillerai_page` |
 | `GET` | `/api/templates` | every FillerAI template in full, as `{templates}`, fetched from `/v1/templates` on each call |
 | `GET` | `/fillerai.js`, `/fillerai-chat.css` | FillerAI's client files, fetched through this server; 502 when FillerAI is down |

@@ -102,7 +102,7 @@ port 8100 as a second, independent program that reaches FillerAI only over
 | Accounts | `auth.py`, `tokens.py` | People sign in with passwords; applications use API tokens. |
 | LLM package | `fillerai/llm/` | Optional. Behind an import fence, off unless deliberately turned on. |
 | JavaScript client | `web/static/client/fillerai.js` | One dependency-free ES module: form binding, `BotChat`, `ChatWidget`, `SpeechInput`. |
-| Sample application | `fillerai/sampleapp/` | A made-up insurer's portal showing the chat and forms working in a separate app. |
+| Sample application | `fillerai/sampleapp/` | A made-up insurer's portal showing the chat and forms working in a separate app; the chat, or its menu, opens one form at a time. |
 
 ## 3. The modelling pipeline
 
@@ -246,4 +246,6 @@ with the test that holds it, is in [architecture.md](architecture.md) §9.
 | install, run, back up or troubleshoot it | [operations.md](operations.md) |
 | know what could go wrong with data and credentials | [security.md](security.md) |
 | know what is assumed, or what is still open | [assumptions.md](assumptions.md), [pending.md](pending.md) |
+| understand or justify the learning methods | [algorithms.md](algorithms.md) |
+| understand how the chat reads a phrase | [nlp-and-chatbot.md](nlp-and-chatbot.md) |
 | look up a word | [glossary.md](glossary.md) |

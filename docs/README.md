@@ -10,6 +10,7 @@ already known.
 | You are… | Read, in order |
 |---|---|
 | new to FillerAI | [overview.md](overview.md), then the [README](../README.md) tour, then [process.md](process.md) |
+| explaining it to stakeholders | [algorithms.md](algorithms.md) Part 1, [nlp-and-chatbot.md](nlp-and-chatbot.md), [overview.md](overview.md) |
 | about to change the code | [overview.md](overview.md), [architecture.md](architecture.md), [reference/modules.md](reference/modules.md), [pending.md](pending.md) |
 | connecting another application | [integration.md](integration.md), [bot-builder.md](bot-builder.md), [reference/http-api.md](reference/http-api.md) |
 | running it for other people | [operations.md](operations.md), [security.md](security.md), [reference/cli.md](reference/cli.md) |
@@ -43,6 +44,21 @@ effort constants behind every "X% less work" are §4.
 **[pending.md](pending.md)** — what is missing, what is known to be broken, and
 what was deliberately not built, each with its evidence and what it would take
 to resolve. Read this before picking up work.
+
+## How it thinks
+
+**[algorithms.md](algorithms.md)** — how FillerAI learns to fill a form, in
+two parts. For everyone: what kind of problem autofill is, why clustering such
+as K-means is not the tool, the four layers of a prediction, the six engines
+in plain words, how the numbers are checked, and the questions stakeholders
+ask. For engineers: every technique precisely, with its parameters, and the
+alternatives worth considering with a recommendation.
+
+**[nlp-and-chatbot.md](nlp-and-chatbot.md)** — how the chat understands what
+a person types or says: the flow from keyboard or microphone to a filled
+form, the local reader's language pipeline step by step with real examples,
+the optional language-model reader and speech transcription, what leaves the
+machine with each, and the limits.
 
 ## Operating it
 
