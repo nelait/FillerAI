@@ -791,7 +791,7 @@ code.token {
 }
 
 /* ---------------------------------------------------------------- bots */
-.bots { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
+.bots { display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 20px; align-items: start; }
 @media (max-width: 980px) { .bots { grid-template-columns: 1fr; } }
 .bots .toolbar { margin-top: 0; }
 .bots .toolbar select { max-width: 220px; }
@@ -805,4 +805,30 @@ code.token {
 #botFields td { vertical-align: top; }
 .bot-try { position: sticky; top: 72px; }
 .bot-try textarea { width: 100%; font-family: var(--mono); font-size: 11.5px; }
-.bot-chat { height: 460px; margin-top: 10px; }
+.bot-try .bot-chat { height: 440px; margin-top: 12px; }
+.bot-try .bot-form { padding: 12px 14px; margin: 0; }
+.bot-form-head { display: flex; align-items: center; gap: 8px; }
+.bot-form-head strong { flex: 1; }
+.bot-form-state { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--surface-2, #eef1f6); color: var(--text-soft); }
+.bot-form-state.is-ready { background: #e3f4ea; color: #0b6b40; }
+.bot-form-state.is-done { background: #0d8a52; color: #fff; }
+.bot-form-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin: 8px 0 10px; }
+.bot-form-fields label { display: block; font-size: 11.5px; color: var(--text-soft); }
+.bot-form-fields label.wide { grid-column: 1 / -1; }
+.bot-form-fields input, .bot-form-fields select { width: 100%; margin-top: 2px; transition: background .4s, border-color .4s; }
+.bot-form-fields .was { display: block; min-height: 14px; font-size: 10.5px; }
+.bot-form-fields .is-changed input, .bot-form-fields .is-changed select { background: #e6f6ed; border-color: #6cc39a; }
+.bot-form-fields .is-changed .was { color: var(--text-soft); text-decoration: line-through; }
+.bot-form-fields .is-needed input, .bot-form-fields .is-needed select { background: #fff6e5; border-color: #e0a94a; }
+.bot-form-fields .is-needed .was { color: #a8630a; }
+.bot-form-fields .is-flash input, .bot-form-fields .is-flash select { box-shadow: 0 0 0 3px rgba(13, 138, 82, .35); }
+.bot-form-foot { display: flex; justify-content: space-between; gap: 8px; }
+.bot-record { margin-top: 10px; font-size: 12.5px; }
+.bot-record summary { cursor: pointer; color: var(--text-soft); }
+.bot-record textarea { margin-top: 6px; }
+@media (prefers-color-scheme: dark) {
+  .bot-form-fields .is-changed input, .bot-form-fields .is-changed select { background: #12372a; border-color: #2f8a5f; }
+  .bot-form-fields .is-needed input, .bot-form-fields .is-needed select { background: #3a2c10; border-color: #9a6b1c; }
+  .bot-form-state.is-ready { background: #12372a; color: #8fdcb4; }
+}
+.muted.small { font-size: 12px; margin: 4px 0 0; }

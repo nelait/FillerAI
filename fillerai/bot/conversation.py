@@ -592,7 +592,11 @@ def _on_event(turn: Turn, given: Input) -> None:
     template = turn.template
     detail = given.detail or {}
     if given.event == "submitted":
-        if state.status != "submitting":
+        # After a hand-off the person finishes the form in the host and
+        # submits it there; the host may say so, and the chat closes the same
+        # way. Anything else has nothing to submit, which also stops a second
+        # "submitted" for one conversation.
+        if state.status not in ("submitting", "handed_off"):
             raise BotError("nothing was being submitted", code="stale_action", status=409)
         state.status = "done"
         state.expects = None

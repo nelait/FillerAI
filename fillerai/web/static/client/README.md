@@ -46,7 +46,9 @@ its own, so a bundler needs no help with it, and there is nothing to install.
     receives the text; where the audio goes is the browser's business (Chrome
     sends it to Google's recogniser).
   - `ChatWidget` — messages, the before/after card, suggested actions, a text
-    box and a microphone. `fillerai-chat.css` is a default look.
+    box and a microphone, in a scrolling log under a header with a **New
+    chat** button (`title`, `resettable`, `onReset`). `fillerai-chat.css` is
+    a default look.
 
   The contract is [`docs/bot-builder.md`](../../../../docs/bot-builder.md).
 
@@ -59,3 +61,5 @@ serves it at `/client/`.
 
 `chat.html` is a mock host application - a customer's details on file and
 its own forms - with the chat window beside it, served at `/client/chat.html`.
+`examples/sample_app/` in the repository is the same idea as a separate
+application with its own server, which keeps the token out of the browser.

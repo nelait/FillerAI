@@ -2326,6 +2326,8 @@ async function openBot(key) {
 
 function editBot(template) {
   bots.editing = template;
+  if (template.key) botTemplates[template.key] = template;
+  botFormShows(template.key ? template : null);
   $('botEditor').hidden = false;
   botSay('');
   $('botKey').value = template.key || '';
@@ -2391,6 +2393,184 @@ function readBot() {
   };
 }
 
+// The sample form beside the try-it chat: what a host application's own form
+// would show. It is drawn from the template the conversation is on (or the one
+// open in the editor before anyone has said anything) and redrawn from every
+// reply, so a value appears in it the moment the chat has understood it.
+const botForm = { template: null, fields: [], reply: null, filled: false, done: null };
+
+function botRecord() {
+  try {
+    const parsed = JSON.parse($('botCurrent').value || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+// The listing only counts a template's fields, so the form fetches the whole
+// template the first time a conversation lands on it.
+const botTemplates = {};
+
+async function botFormTemplate(key) {
+  if (!botTemplates[key]) {
+    botTemplates[key] = (await api('/api/bot/template', { key })).template;
+  }
+  return botTemplates[key];
+}
+
+function drawBotForm() {
+  const record = botRecord();
+  const reply = botForm.reply;
+  const rows = reply && reply.form ? reply.form.fields
+    : (botForm.fields || []).map((f) => ({ name: f.name, label: f.label || f.name,
+                                           before: record[f.name] ?? null, after: null,
+                                           status: 'empty' }));
+  const byName = Object.fromEntries((botForm.fields || []).map((f) => [f.name, f]));
+  $('botFormTitle').textContent = botForm.template ? botForm.template.name || botForm.template.key
+                                                    : 'Sample form';
+  const box = $('botFormFields');
+  box.innerHTML = '';
+  if (!rows.length) {
+    box.innerHTML = '<p class="muted small">Open or add a template to see its form.</p>';
+  }
+  for (const row of rows) {
+    const spec = byName[row.name] || {};
+    const label = document.createElement('label');
+    label.dataset.field = row.name;
+    if (/street|address|name/.test(row.name) && rows.length > 3) label.className = 'wide';
+    const shown = row.after != null ? row.after : (row.before != null && row.status !== 'outdated'
+                                                   ? row.before : '');
+    let input;
+    const options = spec.options || [];
+    if (options.length) {
+      input = document.createElement('select');
+      input.innerHTML = '<option value=""></option>' + options.map((o) =>
+        `<option>${escapeHtml(o)}</option>`).join('');
+      if (shown && !options.includes(shown)) input.insertAdjacentHTML('beforeend',
+        `<option>${escapeHtml(shown)}</option>`);
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+    }
+    input.name = row.name;
+    input.value = shown;
+    let note = '';
+    if (row.status === 'changed') {
+      label.classList.add('is-changed');
+      note = row.before ? `was ${row.before}` : 'new';
+    } else if (row.status === 'missing') {
+      label.classList.add('is-needed');
+      note = 'the chat will ask for this';
+    } else if (row.status === 'outdated') {
+      label.classList.add('is-needed');
+      note = `${row.before} no longer fits`;
+    }
+    label.append(document.createTextNode(row.label + (row.required ? ' *' : '')), input);
+    const was = document.createElement('span');
+    was.className = 'was';
+    was.textContent = note;
+    label.append(was);
+    box.append(label);
+  }
+
+  const status = reply ? reply.conversation.status : 'idle';
+  const badge = $('botFormState');
+  badge.className = 'bot-form-state';
+  if (botForm.done) {
+    badge.textContent = `submitted, ${botForm.done}`;
+    badge.classList.add('is-done');
+  } else if (botForm.filled) {
+    badge.textContent = 'filled from the chat';
+    badge.classList.add('is-ready');
+  } else if (status === 'ready') {
+    badge.textContent = 'ready';
+    badge.classList.add('is-ready');
+  } else {
+    badge.textContent = { collecting: 'filling in', idle: 'waiting for the chat',
+                          cancelled: 'cancelled', submitted: 'submitted' }[status] || status;
+  }
+  $('botFormNote').textContent = botForm.done
+    ? 'Submitted. The new values are now what the application holds on file.'
+    : botForm.filled
+      ? 'The chat handed this form over. Check it and submit it yourself.'
+      : 'The form a host application would show. It follows the chat as you talk.';
+  // A person can submit by hand once the chat has handed the form over.
+  $('botFormSubmit').disabled = !botForm.filled || Boolean(botForm.done);
+}
+
+function flashBotForm(names) {
+  for (const name of names) {
+    const label = $('botFormFields').querySelector(`[data-field="${CSS.escape(name)}"]`);
+    if (!label) continue;
+    label.classList.add('is-flash');
+    setTimeout(() => label.classList.remove('is-flash'), 900);
+  }
+}
+
+function botFormShows(template) {
+  // Only follow the editor while no conversation has picked a template.
+  if (botForm.reply && botForm.reply.form) return;
+  botForm.template = template;
+  botForm.fields = (template && template.fields) || [];
+  drawBotForm();
+}
+
+function botFormReply(reply) {
+  if (reply.stale) return;
+  const before = botForm.reply && botForm.reply.form ? botForm.reply.form.values : {};
+  if (reply.form) {
+    if (!botForm.template || botForm.template.key !== reply.form.template) {
+      const key = reply.form.template;
+      botForm.template = botTemplates[key] || { key, name: reply.intent.name };
+      botForm.fields = botForm.template.fields || [];
+      botForm.filled = false;
+      botForm.done = null;
+      if (!botTemplates[key]) {
+        // Draw now from the reply; add the options once the template is in.
+        botFormTemplate(key).then((full) => {
+          if (botForm.template && botForm.template.key === key) {
+            botForm.template = full;
+            botForm.fields = full.fields || [];
+            drawBotForm();
+          }
+        }).catch(() => {});
+      }
+    }
+    botForm.reply = reply;
+  } else if (['idle', 'cancelled'].includes(reply.conversation.status)) {
+    botForm.reply = null;
+    botForm.filled = false;
+  }
+  drawBotForm();
+  const now = reply.form ? reply.form.values : {};
+  flashBotForm(Object.keys(now).filter((k) => now[k] !== before[k]));
+}
+
+function botFormReadValues() {
+  const values = {};
+  for (const input of $('botFormFields').querySelectorAll('input, select')) {
+    if (input.value.trim()) values[input.name] = input.value.trim();
+  }
+  return values;
+}
+
+function botRecordSubmitted(values) {
+  const record = { ...botRecord(), ...values };
+  $('botCurrent').value = JSON.stringify(record);
+  bots.submitted = (bots.submitted || 0) + 1;
+  return `TRY-${String(bots.submitted).padStart(3, '0')}`;
+}
+
+function resetBotForm() {
+  botForm.reply = null;
+  botForm.filled = false;
+  botForm.done = null;
+  botForm.template = bots.editing && bots.editing.key ? bots.editing : botForm.template;
+  botForm.fields = (botForm.template && botForm.template.fields) || [];
+  drawBotForm();
+}
+
 function startBotChat() {
   const Chat = globalThis.FillerAIBotChat;
   const Widget = globalThis.FillerAIChatWidget;
@@ -2402,24 +2582,49 @@ function startBotChat() {
   if (bots.chat) return;
   bots.chat = new Chat(null, {
     send: (body) => api('/api/bot/turn', body),
-    current: () => {
-      try {
-        const parsed = JSON.parse($('botCurrent').value || '{}');
-        return parsed && typeof parsed === 'object' ? parsed : {};
-      } catch (error) {
-        return {};
-      }
-    },
+    current: botRecord,
+    onReply: botFormReply,
     onEffect: async (effect, chat) => {
-      toast(`the application would now ${effect.type === 'submit' ? 'submit' : 'prefill its form with'} `
-            + `${Object.keys(effect.values).length} value(s)`);
-      if (effect.type === 'submit') await chat.report('submitted', { reference: 'TRY-1' });
+      if (effect.type === 'fill_form') {
+        botForm.filled = true;
+        drawBotForm();
+        flashBotForm(Object.keys(effect.values));
+        await chat.report('filled');
+        return;
+      }
+      const reference = botRecordSubmitted(effect.values);
+      botForm.done = reference;
+      drawBotForm();
+      await chat.report('submitted', { reference });
     },
   });
-  new Widget($('botChat'), bots.chat, {
+  bots.widget = new Widget($('botChat'), bots.chat, {
+    title: 'Chat',
     greeting: 'Try a template here. Nothing is sent anywhere else.',
+    onReset: resetBotForm,
   });
 }
+
+$('botFormClear').addEventListener('click', () => {
+  botForm.reply = null;
+  botForm.filled = false;
+  botForm.done = null;
+  drawBotForm();
+});
+
+$('botFormSubmit').addEventListener('click', async () => {
+  const values = botFormReadValues();
+  const reference = botRecordSubmitted(values);
+  botForm.done = reference;
+  drawBotForm();
+  toast(`submitted by hand as ${reference}`);
+  // Tell the chat, so it closes the conversation the way a submit from the
+  // chat would.
+  const status = bots.chat && bots.chat.last ? bots.chat.last.conversation.status : null;
+  if (status === 'handed_off') await bots.chat.report('submitted', { reference }).catch(() => {});
+});
+
+$('botCurrent').addEventListener('input', () => drawBotForm());
 
 $('botPick').addEventListener('change', () => {
   if ($('botPick').value) openBot($('botPick').value).catch((e) => botSay(e.message, true));

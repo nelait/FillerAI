@@ -1105,7 +1105,10 @@ what follows them, and by values whose shape gives them away. `serve
 --bot-llm` has the configured language model read it instead, checked by the
 same rules as a typed value; that is off unless asked for, because it sends
 what end users type. `/client/chat.html` is a working host page to try it
-against. The contract is [**docs/bot-builder.md**](docs/bot-builder.md).
+against, and [`examples/sample_app/`](examples/sample_app/README.md) is a
+separate sample application - its own server, records and submit rules - that
+uses the chat service the way a real one would. The contract is
+[**docs/bot-builder.md**](docs/bot-builder.md).
 
 ## Options
 
@@ -1367,7 +1370,7 @@ docs/
 python -m unittest discover -s tests -v
 ```
 
-840 tests, no dependencies. They cover malformed markup, each inference rule,
+847 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real

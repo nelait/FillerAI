@@ -108,6 +108,7 @@ const justChanged = new Set();
 let templates = [];
 let shown = null;
 let refs = 1000;
+let chat = null;
 
 function say(text, bad = false) {
   $("status").textContent = text;
@@ -135,7 +136,7 @@ $("connect").addEventListener("click", async () => {
   drawTabs();
   show(templates[0].key);
 
-  const chat = new BotChat(client, {
+  chat = new BotChat(client, {
     current: () => ({ ...customer }),
     onEffect: async (effect, chat) => {
       if (effect.type === "fill_form") {
@@ -150,6 +151,8 @@ $("connect").addEventListener("click", async () => {
     },
   });
   new ChatWidget($("chat"), chat, {
+    title: "Acme support",
+    onReset: () => show(shown.key),
     greeting: `Hi ${customer.full_name.split(" ")[0]}! I can help with `
       + templates.map((t) => t.name.toLowerCase()).join(" or ") + ".",
   });
@@ -228,7 +231,10 @@ function banner(text) {
 $("submitForm").addEventListener("click", () => {
   const values = {};
   for (const f of shown.fields) values[f.name] = $("form").elements[f.name].value;
-  commit(values);
+  const reference = commit(values);
+  // A form the chat handed over closes the chat when it goes in by hand.
+  const status = chat && chat.last ? chat.last.conversation.status : null;
+  if (status === "handed_off") chat.report("submitted", { reference }).catch(() => {});
 });
 $("resetForm").addEventListener("click", () => show(shown.key));
 

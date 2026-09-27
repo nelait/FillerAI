@@ -502,9 +502,24 @@
 
       <div class="col bot-try">
         <h3>Try it</h3>
-        <label class="field"><span>What the application already holds (JSON)</span>
-          <textarea id="botCurrent" rows="5" spellcheck="false">{"street_address": "55 Market St", "city": "San Francisco", "state": "CA", "postal_code": "94105", "country": "US", "policy_number": "PA-1048822", "full_name": "Jordan Lee"}</textarea></label>
+        <div class="card bot-form" id="botForm">
+          <div class="bot-form-head">
+            <strong id="botFormTitle">Sample form</strong>
+            <span class="bot-form-state" id="botFormState"></span>
+          </div>
+          <p class="muted small" id="botFormNote">The form a host application would show. It follows the chat as you talk.</p>
+          <div class="bot-form-fields" id="botFormFields"></div>
+          <div class="bot-form-foot">
+            <button class="btn btn-ghost small" id="botFormClear" type="button">Put back what is on file</button>
+            <button class="btn btn-primary small" id="botFormSubmit" type="button" disabled>Submit form</button>
+          </div>
+        </div>
         <div id="botChat" class="bot-chat"></div>
+        <details class="bot-record">
+          <summary>What the application holds on file (JSON)</summary>
+          <textarea id="botCurrent" rows="5" spellcheck="false">{"street_address": "55 Market St", "city": "San Francisco", "state": "CA", "postal_code": "94105", "country": "US", "policy_number": "PA-1048822", "full_name": "Jordan Lee"}</textarea>
+          <p class="muted small">Sent as <code>context.current</code> every turn. A submit writes the new values back here, as a host would to its own records.</p>
+        </details>
         <p class="muted" id="botReader"></p>
       </div>
     </div>
