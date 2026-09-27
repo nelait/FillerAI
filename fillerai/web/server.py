@@ -134,6 +134,11 @@ BOT_LLM_VARIABLE = "FILLERAI_BOT_LLM"
 #: with an OpenAI key. Off unless ``serve --bot-transcribe`` or
 #: ``$FILLERAI_BOT_TRANSCRIBE``: it sends a person's voice to a third party.
 BOT_TRANSCRIBE = False
+#: The port the sample application listens on when ``serve`` started it,
+#: for the UI to link to; ``None`` when it isn't running.
+SAMPLE_APP_PORT: int | None = None
+#: What the sample application's token is called, so a restart replaces it.
+SAMPLE_APP_TOKEN = "Sample application"
 BOT_TRANSCRIBE_VARIABLE = "FILLERAI_BOT_TRANSCRIBE"
 
 #: API keys typed into the UI. In memory, for this run of the server, per
@@ -297,6 +302,7 @@ def api_meta(_: dict[str, Any]) -> dict[str, Any]:
         "library": str(library().root),
         "bot_llm": BOT_LLM,
         "bot_transcribe": BOT_TRANSCRIBE,
+        "sample_app_port": SAMPLE_APP_PORT,
     })
     return base
 
@@ -2415,12 +2421,58 @@ def _flag(value: bool | None, variable: str) -> bool:
     return os.environ.get(variable, "") not in ("", "0", "false", "no")
 
 
+def start_sample_app(host: str, fillerai_port: int, port: int = 8100,
+                     username: str | None = None) -> tuple[Any, str]:
+    """Start the sample application next to this server, in a thread.
+
+    It is an outside application that happens to share the process: it
+    reaches FillerAI only over HTTP on ``/v1``, with an API token issued here
+    for one account (``username``, or the first administrator), so its forms
+    are that account's bot templates. The token is replaced on every start,
+    and nobody has to copy one anywhere. Returns the server and a line to
+    print; the server is ``None`` when it could not start, and the line says
+    why.
+    """
+    from ..sampleapp import app as sample
+
+    secret, whose, owner = "", "", ""
+    if AUTH is not None and DATABASE is not None:
+        user = AUTH.find(username) if username else next(
+            (u for u in AUTH.users() if u.is_admin and u.active), None)
+        if user is None:
+            return None, (f"sample application: not started, there is no user "
+                          f"{username!r}" if username else
+                          "sample application: not started, there is no administrator")
+        store = Tokens(DATABASE)
+        while (old := store.find(user.id, SAMPLE_APP_TOKEN)) is not None:
+            store.forget(old.id)
+        _, secret = store.issue(user.id, SAMPLE_APP_TOKEN)
+        whose, owner = f", as {user.username}", user.username
+    local = "127.0.0.1" if host in ("0.0.0.0", "", "localhost") else host
+    base = f"http://{'[' + local + ']' if ':' in local else local}:{fillerai_port}"
+    # The demo customer's record: the sample application's own database.
+    data = Path(LIBRARY.root) / "sample-app" / (f"portal-{owner}.json" if owner else "portal.json")
+    try:
+        httpd = sample.make_server(sample.FillerAIService(base, secret),
+                                   sample.Portal(data), host=host, port=port,
+                                   server_speech=BOT_TRANSCRIBE, fillerai_page=base + "/")
+    except OSError as error:
+        return None, (f"sample application: not started, port {port} is taken "
+                      f"({error.strerror}); use --sample-port, or --no-sample-app")
+    httpd.handler.quiet = True
+    threading.Thread(target=httpd.serve_forever, name="sample-app", daemon=True).start()
+    shown = "localhost" if host in ("127.0.0.1", "0.0.0.0") else host
+    return httpd, (f"sample application: http://{shown}:{httpd.server_address[1]}/  "
+                   f"(its forms are the bot templates{whose})")
+
+
 def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
           verbose: bool = False, library_path: str | None = None,
           database: str | None = None, accounts: bool = True,
           cors_origins: list[str] | None = None, bot_llm: bool | None = None,
-          bot_transcribe: bool | None = None) -> int:
-    global LIBRARY, CORS_ALLOW
+          bot_transcribe: bool | None = None, sample_app: bool = True,
+          sample_port: int = 8100, sample_user: str | None = None) -> int:
+    global LIBRARY, CORS_ALLOW, SAMPLE_APP_PORT
 
     Handler.quiet = not verbose
     use_bot_llm(_flag(bot_llm, BOT_LLM_VARIABLE))
@@ -2451,6 +2503,12 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
     httpd = create_server(host, port)
     shown = "localhost" if host in ("127.0.0.1", "0.0.0.0") else host
     url = f"http://{shown}:{httpd.server_address[1]}/"
+    sample_httpd, sample_line = (None, "")
+    if sample_app:
+        sample_httpd, sample_line = start_sample_app(host, httpd.server_address[1],
+                                                     sample_port, sample_user)
+        if sample_httpd is not None:
+            SAMPLE_APP_PORT = sample_httpd.server_address[1]
 
     print(f"FillerAI UI on {url}")
     if DATABASE is not None:
@@ -2473,6 +2531,8 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
         have = "an OpenAI key is set" if llm_transcribe.openai_key() else \
             "no OpenAI key in the environment yet; add one in Settings"
         print(f"  microphone: recordings are transcribed with OpenAI ({have})")
+    if sample_line:
+        print(f"  {sample_line}")
     print("  press Ctrl-C to stop")
 
     if open_browser:
@@ -2485,6 +2545,9 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
     except KeyboardInterrupt:
         print("\nstopped")
     finally:
+        if sample_httpd is not None:
+            sample_httpd.shutdown()
+            sample_httpd.server_close()
         httpd.server_close()
         close_database()
     return 0

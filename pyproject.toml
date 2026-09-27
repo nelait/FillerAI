@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fillerai"
-version = "0.14.3"
+version = "0.15.0"
 description = "Synthetic sample data, autofill and simulation for dense web forms"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,7 @@ packages = [
     "fillerai.extract",
     "fillerai.generate",
     "fillerai.llm",
+    "fillerai.sampleapp",
     "fillerai.simulate",
     "fillerai.train",
     "fillerai.train.algos",
@@ -36,3 +37,5 @@ packages = [
 "fillerai.web" = ["static/*", "static/client/*"]
 # Starter templates for the Bots tab and `fillerai bot add --starter`.
 "fillerai.bot" = ["starters/*.json"]
+# The sample application `fillerai serve` starts next to the UI.
+"fillerai.sampleapp" = ["static/*"]

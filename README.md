@@ -1108,9 +1108,10 @@ what end users type. Where the browser's own speech service is blocked (a
 VPN, a corporate proxy), `serve --bot-transcribe` has the microphone record in
 the page and FillerAI transcribe it with an OpenAI key instead.
 `/client/chat.html` is a working host page to try it
-against, and [`examples/sample_app/`](examples/sample_app/README.md) is a
-separate sample application - its own server, records and submit rules - that
-uses the chat service the way a real one would. The contract is
+against, and the [sample application](fillerai/sampleapp/README.md), which
+`serve` starts next to the UI on port 8100 and links from its header, is a
+separate application - its own server, records and submit rules, and a form
+for every bot template - that uses the chat service the way a real one would. The contract is
 [**docs/bot-builder.md**](docs/bot-builder.md).
 
 ## Options
@@ -1324,6 +1325,8 @@ fillerai/
                        login.html, login.js - the one page served signed out
     static/client/     fillerai.js, demo.html - the dependency-free browser client;
                        chat.html, fillerai-chat.css - the chat window and a host to try it
+  sampleapp/           Northwind Mutual, the sample application serve starts on
+                       :8100 - a form per bot template, stdlib only, /v1 only
 examples/
   claims_intake.html                  45 fields, 4 screens
   patient_registration.fields.json    21 fields, written as a spec
@@ -1374,7 +1377,7 @@ docs/
 python -m unittest discover -s tests -v
 ```
 
-864 tests, no dependencies. They cover malformed markup, each inference rule,
+868 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real

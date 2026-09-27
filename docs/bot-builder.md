@@ -11,7 +11,7 @@ already holds, and what the person can do next.
 This page is the contract between the chat window and the bot service. It was
 written before the code on purpose: the chat window is in someone else's
 product, so the interface is the part that cannot be changed casually later.
-Everything below is checked against the code at version 0.14.3, and each
+Everything below is checked against the code at version 0.15.0, and each
 example reply is what the service actually returns.
 
 ---
@@ -430,15 +430,29 @@ address on file and its own form, and the chat window beside it. "Fill the
 form" prefills the page's form; "Submit" changes the address on file and
 reports the reference back.
 
-**`examples/sample_app/`** is the same thing as a separate application, the
-way a real host would be built: its own server on its own port, its own
-customer record and submit rules, and FillerAI reached only over HTTP. Its
-server holds the API token and forwards each turn to `/v1/bot/turn`, adding
-the customer's record as `context.current` itself, so the token never reaches
-the browser and the page cannot claim someone else's address. A submit goes
-through the application's own `/api/address` or `/api/documents`, which can
-refuse it (`submit_failed` goes back to the chat with the reason). See its
-[README](../examples/sample_app/README.md).
+**The sample application** (`fillerai/sampleapp/`, Northwind Mutual) is the
+same thing as a separate application, the way a real host would be built: its
+own server on its own port, its own customer record and submit rules, and
+FillerAI reached only over HTTP. `fillerai serve` starts it next to the UI on
+port 8100 (`--no-sample-app` to leave it off, `--sample-port`, and
+`--sample-user` for whose templates it shows; the first administrator by
+default), issues it an API token called "Sample application" on every start,
+and puts a **Sample app** link in the UI's header.
+
+It has a form for **every bot template**, read from `/v1/templates` each time
+the page loads, so a template saved on the Bots tab is a form there after a
+reload. The forms are on the page from the start and can be filled and
+submitted by hand. As the chat talks, the form it is on fills in (changed
+values green with what they were, values still needed amber), and moves to
+another form when the conversation does. Its server holds the token and
+forwards each turn to `/v1/bot/turn`, adding the customer's record as
+`context.current` itself, so the token never reaches the browser and the page
+cannot claim someone else's address. A submit, from the chat or the form,
+goes through the application's own `/api/submit/<template>`, which checks the
+values against the template (required fields, options) and its own rules (a
+real ZIP code, a two-letter state, a policy on this account) and can refuse
+them (`submit_failed` goes back to the chat with the reason). See its
+[README](../fillerai/sampleapp/README.md).
 
 ### 7.1 When the browser's speech service is blocked
 
@@ -467,8 +481,8 @@ for this, because Anthropic's API does not transcribe audio. Then:
 
 A host application passes `transcribe` to `ChatWidget` to get the same
 microphone: `transcribe: (audio) => client.transcribe(audio)`, or a function
-that posts to its own backend. `examples/sample_app` does the latter with
-`--server-speech`. Like `--bot-llm`, this is off unless asked for, because it
+that posts to its own backend. The sample application does the latter when
+FillerAI runs with `--bot-transcribe`. Like `--bot-llm`, this is off unless asked for, because it
 sends people's voices to OpenAI.
 
 ---

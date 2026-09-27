@@ -61,5 +61,6 @@ serves it at `/client/`.
 
 `chat.html` is a mock host application - a customer's details on file and
 its own forms - with the chat window beside it, served at `/client/chat.html`.
-`examples/sample_app/` in the repository is the same idea as a separate
-application with its own server, which keeps the token out of the browser.
+The sample application (`fillerai/sampleapp/`, started by `fillerai serve` on
+port 8100) is the same idea as a separate application with its own server,
+which keeps the token out of the browser.

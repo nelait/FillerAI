@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northwind Mutual - My account</title>
+<link rel="stylesheet" href="/fillerai-chat.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <span class="logo">Northwind <b>Mutual</b></span>
+    <nav id="nav">
+      <a href="#details">My details</a>
+      <a href="#history">Requests</a>
+    </nav>
+    <span class="who" id="who"></span>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="sample-note">A sample application. Everything on this page is its own; only the
+    chat window in the corner talks to FillerAI, through this application's server. There is
+    a form here for every template the FillerAI bot service has, read when the page loads.</p>
+
+  <div class="layout" id="layout">
+    <section class="card" id="details">
+      <h2>My details</h2>
+      <dl class="onfile" id="onfile"></dl>
+    </section>
+
+    <section class="card" id="history">
+      <h2>Recent requests</h2>
+      <table class="requests">
+        <thead><tr><th>Reference</th><th>Request</th><th>When</th></tr></thead>
+        <tbody id="requests"></tbody>
+      </table>
+    </section>
+
+    <!-- One form per bot template, drawn by app.js when the page loads. -->
+    <section class="card wide-card" id="noForms" hidden>
+      <h2>No forms yet</h2>
+      <p class="dim" id="noFormsText"></p>
+    </section>
+  </div>
+</main>
+
+<button class="launcher" id="launcher" aria-expanded="false" aria-controls="dock">Chat with us</button>
+<div class="dock" id="dock" hidden>
+  <div id="chat"></div>
+</div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
