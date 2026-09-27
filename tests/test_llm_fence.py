@@ -43,6 +43,9 @@ CORE_MODULES = (
     "fillerai.train.model",
     "fillerai.train.algos",
     "fillerai.web.server",
+    "fillerai.bot",
+    "fillerai.bot.conversation",
+    "fillerai.web.botrest",
 )
 
 

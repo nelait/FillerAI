@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FillerAI chat demo</title>
+<link rel="stylesheet" href="./fillerai-chat.css">
+<style>
+  :root {
+    --ink: #15181d; --dim: #5d6673; --line: #dde2ea; --bg: #f6f8fb;
+    --card: #ffffff; --accent: #2f6df6; --good: #0d8a52; --fill: #eef4ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .lede { color: var(--dim); margin: 0 0 18px; max-width: 78ch; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px 18px; margin-bottom: 16px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+  input, select, button { font: inherit; padding: 7px 9px; border: 1px solid var(--line);
+                          border-radius: 6px; background: #fff; color: inherit; }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  button.quiet { background: #fff; color: var(--ink); border-color: var(--line); }
+  .note { font-size: 12px; color: var(--dim); }
+  .error { color: #b02033; }
+  code { background: #eef1f6; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+  .app { display: grid; grid-template-columns: 1fr 380px; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr; } }
+  #chat { height: 560px; position: sticky; top: 16px; }
+  .onfile { display: grid; grid-template-columns: 140px 1fr; gap: 2px 10px; font-size: 14px; }
+  .onfile dt { color: var(--dim); }
+  .onfile dd { margin: 0; }
+  .onfile dd.just { color: var(--good); font-weight: 600; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tabs button { background: #fff; color: var(--ink); border-color: var(--line); }
+  .tabs button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+  .field input, .field select { width: 100%; }
+  .field .was { font-size: 11px; color: var(--dim); min-height: 14px; }
+  .from-chat { background: var(--fill); border-color: #b9cdfb; }
+  .banner { font-size: 13px; padding: 8px 10px; border-radius: 6px; background: #e8f6ee;
+            color: #0b5d38; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Acme Insurance &mdash; a host application with a FillerAI chat</h1>
+  <p class="lede">
+    Everything left of the chat is a stand-in for <em>your</em> application:
+    a customer's details on file and your own forms. The chat window is
+    <code>ChatWidget</code> from <code>fillerai.js</code>, talking to
+    <code>/v1/bot/turn</code>. Type, press the microphone, or click a
+    suggestion &mdash; all three arrive at the service the same way. Try
+    <em>&ldquo;please update my city from SFO to Irvine and house no 1429 Silverstein&rdquo;</em>.
+  </p>
+
+  <div class="card" id="connectCard">
+    <h2>Connect</h2>
+    <div class="row">
+      <div><label for="base">Service</label><input id="base"></div>
+      <div><label for="token">API token <span class="note">(Settings &rarr; API tokens, or <code>fillerai tokens add</code>)</span></label>
+        <input id="token" placeholder="flr_... (not needed with --no-auth)" style="min-width: 320px"></div>
+      <button id="connect">Connect</button>
+    </div>
+    <p id="status" class="note" style="margin: 10px 0 0"></p>
+  </div>
+
+  <div class="app" id="app" hidden>
+    <div>
+      <div class="card">
+        <h2>Customer on file</h2>
+        <dl class="onfile" id="onfile"></dl>
+      </div>
+      <div class="card">
+        <div class="tabs" id="tabs"></div>
+        <div id="banner" class="banner" hidden></div>
+        <form id="form" autocomplete="off"><div class="grid" id="fields"></div></form>
+        <div class="row" style="margin-top: 12px">
+          <button id="submitForm" type="button">Submit this form</button>
+          <button id="resetForm" type="button" class="quiet">Reset</button>
+        </div>
+      </div>
+    </div>
+    <div id="chat"></div>
+  </div>
+</div>
+
+<script type="module">
+import { FillerAI, BotChat, ChatWidget } from "./fillerai.js";
+
+const $ = (id) => document.getElementById(id);
+$("base").value = location.origin;
+
+// The host's own record for this customer. In a real application this is
+// your database; the chat only ever sees it as context.current.
+const customer = {
+  street_address: "55 Market St", unit: "", city: "San Francisco", state: "CA",
+  postal_code: "94105", country: "US",
+  policy_number: "PA-1048822", full_name: "Jordan Lee", email: "jordan.lee@example.com",
+};
+const justChanged = new Set();
+let templates = [];
+let shown = null;
+let refs = 1000;
+
+function say(text, bad = false) {
+  $("status").textContent = text;
+  $("status").className = bad ? "note error" : "note";
+}
+
+$("connect").addEventListener("click", async () => {
+  const client = new FillerAI({ baseUrl: $("base").value, token: $("token").value.trim() });
+  try {
+    const listed = await client.templates();
+    if (!listed.templates.length) {
+      say("Connected, but there are no bot templates in this library yet. "
+          + "Add the starters on the Bots tab of FillerAI, or `fillerai bot add --starter address_change`.", true);
+      return;
+    }
+    templates = await Promise.all(listed.templates.map((t) => client.template(t.key)
+      .then((r) => r.template)));
+  } catch (error) {
+    say(error.message, true);
+    return;
+  }
+  say(`Connected. ${templates.length} template(s): ${templates.map((t) => t.name).join(", ")}.`);
+  $("app").hidden = false;
+  drawOnFile();
+  drawTabs();
+  show(templates[0].key);
+
+  const chat = new BotChat(client, {
+    current: () => ({ ...customer }),
+    onEffect: async (effect, chat) => {
+      if (effect.type === "fill_form") {
+        show(effect.template);
+        fill(effect.values, effect.changes);
+        banner("The chat filled this in. Check it, then submit it below.");
+        await chat.report("filled");
+      } else if (effect.type === "submit") {
+        const reference = commit(effect.values);
+        await chat.report("submitted", { reference });
+      }
+    },
+  });
+  new ChatWidget($("chat"), chat, {
+    greeting: `Hi ${customer.full_name.split(" ")[0]}! I can help with `
+      + templates.map((t) => t.name.toLowerCase()).join(" or ") + ".",
+  });
+});
+
+function drawOnFile() {
+  const labels = {};
+  for (const t of templates) for (const f of t.fields) labels[f.name] = f.label;
+  $("onfile").innerHTML = Object.entries(customer).map(([k, v]) =>
+    `<dt>${esc(labels[k] || k)}</dt><dd class="${justChanged.has(k) ? "just" : ""}">${esc(v || "—")}</dd>`).join("");
+}
+
+function drawTabs() {
+  $("tabs").innerHTML = "";
+  for (const t of templates) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = t.name;
+    b.dataset.key = t.key;
+    b.addEventListener("click", () => show(t.key));
+    $("tabs").append(b);
+  }
+}
+
+function show(key) {
+  shown = templates.find((t) => t.key === key) || templates[0];
+  for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.key === shown.key);
+  $("banner").hidden = true;
+  $("fields").innerHTML = shown.fields.map((f) => {
+    const control = f.options && f.options.length
+      ? `<select name="${f.name}"><option value=""></option>`
+        + f.options.map((o) => `<option>${esc(o)}</option>`).join("") + "</select>"
+      : `<input name="${f.name}">`;
+    return `<div class="field"><label>${esc(f.label)}${f.required ? " *" : ""}</label>`
+         + `${control}<div class="was" data-for="${f.name}"></div></div>`;
+  }).join("");
+  // Your form starts from what is on file, as a real edit form would.
+  for (const f of shown.fields) {
+    const el = $("form").elements[f.name];
+    if (el) el.value = customer[f.name] || "";
+  }
+}
+
+function fill(values, changes) {
+  for (const [name, value] of Object.entries(values)) {
+    const el = $("form").elements[name];
+    if (!el) continue;
+    el.value = value;
+    if (changes[name]) {
+      el.classList.add("from-chat");
+      document.querySelector(`.was[data-for="${name}"]`).textContent =
+        `was ${changes[name].before || "empty"}`;
+    }
+  }
+}
+
+function commit(values) {
+  justChanged.clear();
+  for (const [k, v] of Object.entries(values)) {
+    if (customer[k] !== v) justChanged.add(k);
+    customer[k] = v;
+  }
+  drawOnFile();
+  show(shown.key);
+  refs += 1;
+  const reference = `ACME-${refs}`;
+  banner(`Submitted, reference ${reference}.`);
+  return reference;
+}
+
+function banner(text) {
+  $("banner").textContent = text;
+  $("banner").hidden = false;
+}
+
+$("submitForm").addEventListener("click", () => {
+  const values = {};
+  for (const f of shown.fields) values[f.name] = $("form").elements[f.name].value;
+  commit(values);
+});
+$("resetForm").addEventListener("click", () => show(shown.key));
+
+function esc(text) {
+  return String(text == null ? "" : text).replace(/[&<>"]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+</script>
+</body>
+</html>

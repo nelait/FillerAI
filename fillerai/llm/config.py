@@ -50,7 +50,7 @@ MODEL_VARIABLE = "FILLERAI_LLM_MODEL"
 #: Points the whole thing at a different deployment.
 BASE_URL_VARIABLE = "FILLERAI_LLM_BASE_URL"
 
-TASKS = ("rules", "typing")
+TASKS = ("rules", "typing", "chat")
 
 
 def choose_provider(explicit: str | None, model: str | None,

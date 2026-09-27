@@ -1,0 +1,94 @@
+{
+  "template_version": "1.0",
+  "key": "address_change",
+  "name": "Address change",
+  "description": "Update the mailing address on file",
+  "examples": [
+    "update my address",
+    "change my address",
+    "I moved",
+    "I have moved to a new house",
+    "change my city",
+    "update my zip code",
+    "my address has changed",
+    "new address"
+  ],
+  "fields": [
+    {
+      "name": "street_address",
+      "label": "Street address",
+      "semantic_type": "street_address",
+      "required": true,
+      "aliases": [
+        "house no",
+        "house number",
+        "street"
+      ],
+      "example": "1429 Silverstein Ave"
+    },
+    {
+      "name": "unit",
+      "label": "Unit",
+      "semantic_type": "address_line2",
+      "aliases": [
+        "apt",
+        "apartment",
+        "suite",
+        "flat"
+      ],
+      "example": "4B",
+      "follows": [
+        "street_address"
+      ]
+    },
+    {
+      "name": "city",
+      "label": "City",
+      "semantic_type": "city",
+      "required": true,
+      "example": "Irvine"
+    },
+    {
+      "name": "state",
+      "label": "State",
+      "semantic_type": "state",
+      "required": true,
+      "example": "CA",
+      "follows": [
+        "city"
+      ]
+    },
+    {
+      "name": "postal_code",
+      "label": "ZIP code",
+      "semantic_type": "postal_code",
+      "required": true,
+      "aliases": [
+        "zip",
+        "zipcode",
+        "postcode"
+      ],
+      "example": "92618",
+      "follows": [
+        "street_address",
+        "city",
+        "state"
+      ]
+    },
+    {
+      "name": "country",
+      "label": "Country",
+      "semantic_type": "country",
+      "options": [
+        "US",
+        "CA",
+        "MX"
+      ]
+    }
+  ],
+  "actions": [
+    "fill_form",
+    "submit"
+  ],
+  "done_message": "Your address change is in."
+}

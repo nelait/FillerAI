@@ -54,10 +54,10 @@ from .train.model import AutofillModel
 #: A script hangs off the model it would produce rather than off the dataset,
 #: because the question a person arrives with is "what did that run do", and
 #: the run is the model.
-KINDS = ("source", "schema", "dataset", "model", "script")
+KINDS = ("source", "schema", "dataset", "model", "script", "template")
 
 _PREFIX = {"source": "src", "schema": "sch", "dataset": "dat", "model": "mdl",
-           "script": "scr"}
+           "script": "scr", "template": "tpl"}
 _FOLDER = {kind: kind + "s" for kind in KINDS}
 
 # An id becomes a filename, and ids arrive from HTTP requests, so what counts
@@ -68,7 +68,7 @@ _FOLDER = {kind: kind + "s" for kind in KINDS}
 # case that matters - two models trained back to back on the same dataset is,
 # and to the second those two sort by their random tail, which is to say not
 # in any order at all.
-_ID = re.compile(r"^(src|sch|dat|mdl|scr)-\d{8}-\d{9}-[0-9a-f]{4}$")
+_ID = re.compile(r"^(src|sch|dat|mdl|scr|tpl)-\d{8}-\d{9}-[0-9a-f]{4}$")
 
 #: Where the time sits inside an id, so a listing can sort by it. Sorting by
 #: the whole id would sort by the kind prefix first, which puts every source

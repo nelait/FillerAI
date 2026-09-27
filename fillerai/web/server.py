@@ -64,7 +64,10 @@ from ..train import algos, script as script_writer
 from ..train.evaluate import evaluate, suggest_seed_fields
 from ..train.model import ACCEPT_ABOVE, AutofillModel, TrainOptions, split_records, train
 from ..train.trace import Trace
-from . import rest
+from ..bot import TemplateError
+from ..bot import template as bot_templates
+from ..bot.template import Template
+from . import botrest, rest
 from .keyring import SINGLE_USER, Keyring
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -120,6 +123,12 @@ LIBRARY = Store.default()
 #: exactly what this was before there were accounts.
 DATABASE: Database | None = None
 AUTH: Auth | None = None
+
+#: Whether the bot reads chat phrases with a language model. Off unless
+#: ``serve --bot-llm`` or ``$FILLERAI_BOT_LLM`` turns it on: having a key is
+#: not enough, because this sends what end users type, not just field names.
+BOT_LLM = False
+BOT_LLM_VARIABLE = "FILLERAI_BOT_LLM"
 
 #: API keys typed into the UI. In memory, for this run of the server, per
 #: user - see :mod:`.keyring` for why they go no further than that.
@@ -280,6 +289,7 @@ def api_meta(_: dict[str, Any]) -> dict[str, Any]:
         "algorithms": [a.to_dict() for a in algos.all_algorithms()],
         "default_algorithm": algos.DEFAULT,
         "library": str(library().root),
+        "bot_llm": BOT_LLM,
     })
     return base
 
@@ -1340,7 +1350,7 @@ def _who() -> str:
 
 
 def _llm_settings(task: str, *, provider: str | None = None,
-                  model: str | None = None):
+                  model: str | None = None, who: str | None = None):
     """What this user's next call would be made with.
 
     A key typed into the UI is laid over the environment as that provider's
@@ -1351,7 +1361,7 @@ def _llm_settings(task: str, *, provider: str | None = None,
     from ..llm import providers as llm_providers
     from ..llm.config import Settings
 
-    who = _who()
+    who = who if who is not None else _who()
     chosen = KEYRING.preference(who)
     environ = dict(os.environ)
     for name, key in KEYRING.keys(who).items():
@@ -1411,7 +1421,8 @@ def _llm_status() -> dict[str, Any]:
         "provider": settings.provider,
         "label": settings.api.label,
         "reason": reason,
-        "models": {task: _llm_settings(task).model for task in ("rules", "typing")},
+        "models": {task: _llm_settings(task).model for task in ("rules", "typing", "chat")},
+        "bot_llm": BOT_LLM,
         "key": settings.redacted(),
         "configured": settings.configured,
         "transport": sdk.label if sdk else llm_transport.UrllibTransport.label,
@@ -1755,6 +1766,119 @@ def rest_dispatch(method: str, path: str, body: dict[str, Any],
                                    "code": "server_error"})
 
 
+# ----------------------------------------------------------------------
+# Bot Builder: templates, and trying a conversation from the UI
+# ----------------------------------------------------------------------
+
+
+def _bot_reader(who: str):
+    """The language-model reader for this owner, or None to read locally.
+
+    Imported inside the function, like every other use of ``..llm``. The key
+    comes from the owner's keyring row laid over the environment, the same
+    as the rules feature, so a key typed into Settings works here too.
+    """
+    if not BOT_LLM:
+        return None
+    from ..llm import understand as llm_understand
+
+    try:
+        settings = _llm_settings("chat", who=who or SINGLE_USER)
+    except ApiError:
+        return None
+    return llm_understand.reader(settings)
+
+
+def _template_from(payload: dict[str, Any]) -> Template:
+    try:
+        return Template.from_dict(_require(payload, "template"))
+    except TemplateError as error:
+        raise ApiError(str(error)) from None
+
+
+def api_bot_templates(_: dict[str, Any]) -> dict[str, Any]:
+    """Everything the Bots panel lists: templates, starters, and what to link."""
+    store = library()
+    have = bot_templates.listed(store)
+    return {
+        "templates": [t.card() for t in have],
+        "starters": [t.card() for t in bot_templates.starters().values()],
+        "schemas": [{"id": e.id, "name": e.name, "created": e.created}
+                    for e in store.list(kind="schema", limit=100)],
+        "models": [{"id": e.id, "name": e.name, "created": e.created}
+                   for e in store.list(kind="model", limit=100)],
+        "semantic_types": list(SEMANTIC_TYPES),
+        "bot_llm": BOT_LLM,
+    }
+
+
+def api_bot_template(payload: dict[str, Any]) -> dict[str, Any]:
+    key = str(_require(payload, "key"))
+    found = bot_templates.find(library(), key)
+    if found is None:
+        raise ApiError(f"there is no template called {key!r}", status=404)
+    return {"template": found.to_dict(), "entry_id": found.entry_id}
+
+
+def api_bot_save(payload: dict[str, Any]) -> dict[str, Any]:
+    template = _template_from(payload)
+    store = library()
+    if template.model_id and not store.has(template.model_id):
+        raise ApiError(f"there is no model called {template.model_id!r} to link")
+    parent = payload.get("schema_id") or None
+    saved = bot_templates.save(store, template, parent=parent)
+    return {"template": saved.to_dict(), "entry_id": saved.entry_id}
+
+
+def api_bot_delete(payload: dict[str, Any]) -> dict[str, Any]:
+    key = str(_require(payload, "key"))
+    gone = bot_templates.remove(library(), key)
+    if not gone:
+        raise ApiError(f"there is no template called {key!r}", status=404)
+    return {"deleted": key, "entries": gone}
+
+
+def api_bot_starter(payload: dict[str, Any]) -> dict[str, Any]:
+    """Copy a bundled starter into this library, where it can be edited."""
+    key = str(_require(payload, "key"))
+    starter = bot_templates.starters().get(key)
+    if starter is None:
+        raise ApiError(f"there is no starter template called {key!r}", status=404)
+    saved = bot_templates.save(library(), starter)
+    return {"template": saved.to_dict(), "entry_id": saved.entry_id}
+
+
+def api_bot_from_schema(payload: dict[str, Any]) -> dict[str, Any]:
+    """A draft template with a schema's fields. Not saved until it is edited."""
+    if payload.get("id"):
+        entry_id = _entry(payload)
+        try:
+            schema = library().load_schema(entry_id)
+        except StoreError as error:
+            raise ApiError(str(error)) from error
+    else:
+        schema, entry_id = _schema_from(payload), None
+    try:
+        draft = bot_templates.from_schema(schema)
+    except TemplateError as error:
+        raise ApiError(str(error)) from None
+    return {"template": draft.to_dict(), "schema_id": entry_id}
+
+
+def api_bot_turn(payload: dict[str, Any]) -> dict[str, Any]:
+    """One turn, from the Bots panel's try-it chat. Same code as ``/v1``."""
+    store = library()
+    caller = rest.Caller(store=store)
+    who = _who()
+    try:
+        return botrest.run_turn(
+            store, bot_templates.listed(store), payload,
+            load_model=lambda model_id: rest.load(caller, model_id)[0],
+            reader=_bot_reader(who))
+    except rest.RestError as error:
+        raise ApiError(error.message, status=error.status) from None
+
+
 @dataclass(frozen=True)
 class Route:
     """An endpoint and who is allowed to reach it."""
@@ -1811,6 +1935,13 @@ ROUTES: dict[str, Route] = {
     "/api/llm/rules/estimate": Route(api_llm_rules_estimate),
     "/api/llm/rules/propose": Route(api_llm_rules_propose),
     "/api/llm/rules/apply": Route(api_llm_rules_apply),
+    "/api/bot/templates": Route(api_bot_templates),
+    "/api/bot/template": Route(api_bot_template),
+    "/api/bot/save": Route(api_bot_save),
+    "/api/bot/delete": Route(api_bot_delete),
+    "/api/bot/starter": Route(api_bot_starter),
+    "/api/bot/from_schema": Route(api_bot_from_schema),
+    "/api/bot/turn": Route(api_bot_turn),
     "/api/tokens": Route(api_tokens),
     "/api/tokens/create": Route(api_token_create),
     "/api/tokens/revoke": Route(api_token_revoke),
@@ -2219,13 +2350,22 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+def use_bot_llm(on: bool) -> None:
+    """Turn the language-model reading of chat phrases on or off."""
+    global BOT_LLM
+    BOT_LLM = bool(on)
+    botrest.READER = _bot_reader if BOT_LLM else (lambda owner: None)
+
+
 def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
           verbose: bool = False, library_path: str | None = None,
           database: str | None = None, accounts: bool = True,
-          cors_origins: list[str] | None = None) -> int:
+          cors_origins: list[str] | None = None, bot_llm: bool | None = None) -> int:
     global LIBRARY, CORS_ALLOW
 
     Handler.quiet = not verbose
+    use_bot_llm(bot_llm if bot_llm is not None
+                else os.environ.get(BOT_LLM_VARIABLE, "") not in ("", "0", "false", "no"))
     if cors_origins is not None:
         CORS_ALLOW = tuple(o.strip() for o in cors_origins if o.strip())
 
@@ -2266,6 +2406,8 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
     print(f"  integration API: {url}v1  "
           f"({'browsers: ' + ', '.join(origins) if origins else 'same origin only'})")
     print(f"  JavaScript client: {url}client/fillerai.js")
+    print(f"  chat demo: {url}client/chat.html  (bot reads phrases "
+          f"{'with a language model' if BOT_LLM else 'on this machine'})")
     print("  press Ctrl-C to stop")
 
     if open_browser:

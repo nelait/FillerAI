@@ -357,6 +357,20 @@ python -m fillerai tokens add alice --name "claims-system" --model mdl-…
 
 The token is shown once. Full reference: [integration.md](integration.md).
 
+**For a chat window in an application**, add templates and try them before
+connecting anything:
+
+```bash
+python -m fillerai bot add --starter address_change    # or a template .json
+python -m fillerai bot list
+python -m fillerai bot chat --current city="San Francisco" postal_code=94105
+python -m fillerai serve --bot-llm                     # optional: a model reads phrases
+```
+
+The Bots tab does the same with an editor and a try-it chat, and
+`/client/chat.html` is a host page to try the chat widget against. Full
+contract: [bot-builder.md](bot-builder.md).
+
 ---
 
 ## 10. The development process
@@ -367,7 +381,7 @@ The token is shown once. Full reference: [integration.md](integration.md).
 python -m unittest discover -s tests -q
 ```
 
-772 tests, no dependencies, entirely offline — the LLM tests replay recorded
+840 tests, no dependencies, entirely offline — the LLM tests replay recorded
 exchanges through `RecordedTransport`, which raises on anything unrecorded, so
 a changed prompt fails loudly rather than reaching for the network.
 

@@ -123,6 +123,7 @@ function showPanel(name) {
   if (name === 'train') renderTrain();
   if (name === 'simulate') renderSimulate();
   if (name === 'library') loadLibrary();
+  if (name === 'bots') loadBots();
 }
 
 function unlock(name) {
@@ -1547,7 +1548,7 @@ function revealInLibrary(entryId) {
 
 const KIND_WORDS = {
   source: 'source', schema: 'schema', dataset: 'data', model: 'model',
-  script: 'script',
+  script: 'script', template: 'bot template',
 };
 
 document.querySelectorAll('[data-lib]').forEach((button) => {
@@ -1696,6 +1697,13 @@ async function openFromLibrary(id) {
     result = await api('/api/library/open', { id });
   } catch (error) {
     toast(error.message, true);
+    return;
+  }
+
+  if (result.entry.kind === 'template') {
+    // A template belongs to the Bots tab, not to the chain of stages.
+    showPanel('bots');
+    await loadBots((result.entry.meta || {}).key);
     return;
   }
 
@@ -2261,6 +2269,238 @@ $('dbImport').addEventListener('click', () => withBusy($('dbImport'), 'Importing
     ? `copied ${result.copied} entr(ies) from ${result.from}`
     : `nothing new to copy from ${result.from}`;
 }));
+
+// ------------------------------------------------------------------ bots
+//
+// Templates are edited here and kept in the library; the chat on the right
+// is ChatWidget from /client/fillerai.js, sending its turns through /api
+// rather than /v1 so no token is needed to try a template out.
+
+const bots = { list: [], starters: [], editing: null, schemaId: null, chat: null };
+
+function botSay(message, bad) {
+  const node = $('botStatus');
+  node.hidden = !message;
+  node.className = bad ? 'status bad' : 'status ok';
+  node.textContent = message || '';
+}
+
+async function loadBots(select) {
+  try {
+    const result = await api('/api/bot/templates');
+    bots.list = result.templates;
+    bots.starters = result.starters;
+    bots.types = result.semantic_types;
+    $('botPick').innerHTML = result.templates.length
+      ? result.templates.map((t) => `<option value="${escapeAttr(t.key)}">${escapeHtml(t.name)}</option>`).join('')
+      : '<option value="">No templates yet</option>';
+    $('botStarter').innerHTML = '<option value="">Add a starter...</option>'
+      + result.starters.map((t) => `<option value="${escapeAttr(t.key)}">${escapeHtml(t.name)}</option>`).join('');
+    $('botFromSchema').innerHTML = '<option value="">From a schema...</option>'
+      + (state.schema ? '<option value="@current">The schema on the Schema step</option>' : '')
+      + result.schemas.map((e) => `<option value="${escapeAttr(e.id)}">${escapeHtml(e.name)} (${escapeHtml(whenText(e.created))})</option>`).join('');
+    $('botModel').innerHTML = '<option value="">None</option>'
+      + result.models.map((e) => `<option value="${escapeAttr(e.id)}">${escapeHtml(e.name)} (${escapeHtml(e.id)})</option>`).join('');
+    $('botReader').textContent = result.bot_llm
+      ? 'Phrases are read by the language model in Settings, and checked like typed values.'
+      : 'Phrases are read on this machine. Start the server with --bot-llm to use a language model instead.';
+    const key = select || (bots.editing && bots.editing.key) || (result.templates[0] || {}).key;
+    if (key && result.templates.some((t) => t.key === key)) {
+      $('botPick').value = key;
+      await openBot(key);
+    } else if (!result.templates.length) {
+      $('botEditor').hidden = true;
+      botSay('No templates yet. Add a starter, start from a schema, or make a new one.');
+    }
+    startBotChat();
+  } catch (error) {
+    botSay(error.message, true);
+  }
+}
+
+async function openBot(key) {
+  const result = await api('/api/bot/template', { key });
+  bots.schemaId = null;
+  editBot(result.template);
+}
+
+function editBot(template) {
+  bots.editing = template;
+  $('botEditor').hidden = false;
+  botSay('');
+  $('botKey').value = template.key || '';
+  $('botName').value = template.name || '';
+  $('botDesc').value = template.description || '';
+  $('botExamples').value = (template.examples || []).join('\n');
+  $('botActFill').checked = (template.actions || []).includes('fill_form');
+  $('botActSubmit').checked = (template.actions || []).includes('submit');
+  $('botModel').value = template.model_id || '';
+  $('botDone').value = template.done_message || '';
+  $('botFields').tBodies[0].innerHTML = '';
+  for (const field of template.fields || []) addBotField(field);
+}
+
+function addBotField(field = {}) {
+  const types = (bots.types || state.semanticTypes || []).map((t) =>
+    `<option${t === (field.semantic_type || 'unknown') ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('');
+  const row = document.createElement('tr');
+  const list = (items) => escapeAttr((items || []).join(', '));
+  row.innerHTML = `
+    <td><input type="text" data-k="name" value="${escapeAttr(field.name || '')}" spellcheck="false"></td>
+    <td><input type="text" data-k="label" value="${escapeAttr(field.label || '')}"></td>
+    <td><select data-k="semantic_type">${types}</select></td>
+    <td><input type="checkbox" data-k="required"${field.required ? ' checked' : ''}></td>
+    <td><input type="text" data-k="aliases" value="${list(field.aliases)}"></td>
+    <td><input type="text" data-k="options" value="${list(field.options)}"></td>
+    <td><input type="text" data-k="follows" value="${list(field.follows)}" spellcheck="false"></td>
+    <td><button class="btn btn-ghost small" data-drop title="Remove this field">&times;</button></td>`;
+  $('botFields').tBodies[0].append(row);
+}
+
+function readBot() {
+  const split = (text) => text.split(',').map((x) => x.trim()).filter(Boolean);
+  const fields = [...$('botFields').tBodies[0].rows].map((row) => {
+    const get = (k) => row.querySelector(`[data-k="${k}"]`);
+    const out = {
+      name: get('name').value.trim(),
+      label: get('label').value.trim(),
+      semantic_type: get('semantic_type').value,
+      required: get('required').checked,
+    };
+    for (const k of ['aliases', 'options', 'follows']) {
+      const items = split(get(k).value);
+      if (items.length) out[k] = items;
+    }
+    const kept = (bots.editing.fields || []).find((f) => f.name === out.name);
+    if (kept && kept.example) out.example = kept.example;
+    return out;
+  });
+  const actions = [];
+  if ($('botActFill').checked) actions.push('fill_form');
+  if ($('botActSubmit').checked) actions.push('submit');
+  return {
+    template_version: '1.0',
+    key: $('botKey').value.trim(),
+    name: $('botName').value.trim(),
+    description: $('botDesc').value.trim(),
+    examples: $('botExamples').value.split('\n').map((x) => x.trim()).filter(Boolean),
+    fields,
+    actions,
+    model_id: $('botModel').value || null,
+    done_message: $('botDone').value.trim(),
+  };
+}
+
+function startBotChat() {
+  const Chat = globalThis.FillerAIBotChat;
+  const Widget = globalThis.FillerAIChatWidget;
+  if (!Chat || !Widget) {
+    // The client is a module and loads after this script; try once it has.
+    setTimeout(startBotChat, 100);
+    return;
+  }
+  if (bots.chat) return;
+  bots.chat = new Chat(null, {
+    send: (body) => api('/api/bot/turn', body),
+    current: () => {
+      try {
+        const parsed = JSON.parse($('botCurrent').value || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (error) {
+        return {};
+      }
+    },
+    onEffect: async (effect, chat) => {
+      toast(`the application would now ${effect.type === 'submit' ? 'submit' : 'prefill its form with'} `
+            + `${Object.keys(effect.values).length} value(s)`);
+      if (effect.type === 'submit') await chat.report('submitted', { reference: 'TRY-1' });
+    },
+  });
+  new Widget($('botChat'), bots.chat, {
+    greeting: 'Try a template here. Nothing is sent anywhere else.',
+  });
+}
+
+$('botPick').addEventListener('change', () => {
+  if ($('botPick').value) openBot($('botPick').value).catch((e) => botSay(e.message, true));
+});
+
+$('botNew').addEventListener('click', () => {
+  bots.schemaId = null;
+  editBot({ key: '', name: '', examples: [], actions: ['fill_form', 'submit'],
+            fields: [{ name: '', label: '', semantic_type: 'unknown' }] });
+  $('botKey').focus();
+});
+
+$('botStarter').addEventListener('change', async () => {
+  const key = $('botStarter').value;
+  $('botStarter').value = '';
+  if (!key) return;
+  try {
+    await api('/api/bot/starter', { key });
+    toast('starter added');
+    await loadBots(key);
+  } catch (error) {
+    botSay(error.message, true);
+  }
+});
+
+$('botFromSchema').addEventListener('change', async () => {
+  const choice = $('botFromSchema').value;
+  $('botFromSchema').value = '';
+  if (!choice) return;
+  try {
+    const result = await api('/api/bot/from_schema',
+      choice === '@current' ? { schema: state.schema } : { id: choice });
+    bots.schemaId = result.schema_id;
+    editBot(result.template);
+    botSay('A draft from the schema\'s fields. Cut it down to what the request needs, '
+           + 'add a few things people say, and save it.');
+  } catch (error) {
+    botSay(error.message, true);
+  }
+});
+
+$('botAddField').addEventListener('click', () => addBotField());
+
+$('botFields').addEventListener('click', (event) => {
+  if (event.target.closest('[data-drop]')) event.target.closest('tr').remove();
+});
+
+$('botSave').addEventListener('click', () => withBusy($('botSave'), 'Saving...', async () => {
+  try {
+    const template = readBot();
+    const result = await api('/api/bot/save', { template, schema_id: bots.schemaId });
+    bots.schemaId = null;
+    toast(`saved ${result.template.key}`);
+    await loadBots(result.template.key);
+  } catch (error) {
+    botSay(error.message, true);
+  }
+}));
+
+$('botDelete').addEventListener('click', async () => {
+  const key = bots.editing && bots.editing.key;
+  if (!key || !bots.list.some((t) => t.key === key)) {
+    $('botEditor').hidden = true;
+    return;
+  }
+  if (!window.confirm(`Delete the template ${key}?`)) return;
+  try {
+    await api('/api/bot/delete', { key });
+    bots.editing = null;
+    toast(`deleted ${key}`);
+    await loadBots();
+  } catch (error) {
+    botSay(error.message, true);
+  }
+});
+
+$('botDownload').addEventListener('click', () => {
+  const template = readBot();
+  download(`${template.key || 'template'}.template.json`, JSON.stringify(template, null, 2),
+           'application/json');
+});
 
 // ------------------------------------------------------------------ boot
 

@@ -18,8 +18,11 @@
  *   answer.values;       // what to put in the boxes
  *   answer.suggestions;  // each one with its confidence and its reason
  *
- * The only thing here that is not a thin wrapper around `fetch` is
- * {@link FormBinder}, and that is because binding a model to a real form is
+ * The chat pieces - {@link BotChat}, {@link SpeechInput} and
+ * {@link ChatWidget} - talk to the bot service; see docs/bot-builder.md.
+ *
+ * Apart from those, the only thing here that is not a thin wrapper around
+ * `fetch` is {@link FormBinder}, and that is because binding a model to a real form is
  * the part every integration would otherwise write for itself: watch the
  * fields a person types into, ask once they pause, fill what the model is
  * sure about, and never overwrite something typed by hand.
@@ -134,6 +137,36 @@ export class FillerAI {
       records,
       ...this._threshold(threshold),
     });
+  }
+
+  // -- the bot service (docs/bot-builder.md) -----------------------------
+
+  /** Every bot template this token may use. */
+  templates() {
+    return this._call("GET", "/v1/templates");
+  }
+
+  /** One template in full. */
+  template(key) {
+    return this._call("GET", `/v1/templates/${encodeURIComponent(key)}`);
+  }
+
+  /** Create a template, or replace the one with the same key. */
+  saveTemplate(template) {
+    return this._call("POST", "/v1/templates", { template });
+  }
+
+  /** Remove a template by key. */
+  deleteTemplate(key) {
+    return this._call("POST", `/v1/templates/${encodeURIComponent(key)}/delete`, {});
+  }
+
+  /**
+   * One turn of a conversation: `{input, state, context}` in, a reply out.
+   * Most callers want {@link BotChat}, which keeps the state for them.
+   */
+  turn(body) {
+    return this._call("POST", "/v1/bot/turn", body);
   }
 
   /**
@@ -355,6 +388,352 @@ export class FormBinder {
   }
 }
 
+/**
+ * One conversation with the bot service.
+ *
+ * Typing, speaking and clicking a suggested action all go through
+ * {@link BotChat#send}, as one `input`, so there is one path for all three.
+ * Inputs run one at a time in the order they were given - unlike
+ * {@link FormBinder}, a chat must never drop a message because a newer one
+ * arrived.
+ *
+ * `send` can be given in the options to go through the host's own backend
+ * instead of calling `/v1` with a token from the browser: it receives the
+ * request body and returns the reply.
+ */
+export class BotChat {
+  /**
+   * @param {FillerAI|null} client
+   * @param {object} [options]
+   * @param {object|function} [options.current] What the host already holds,
+   *   as `{field: value}`, or a function returning it (read every turn).
+   * @param {string[]} [options.templates] Limit the chat to these templates.
+   * @param {string} [options.template] Start on this template.
+   * @param {function} [options.send] `(body) => Promise<reply>`, to proxy.
+   * @param {function} [options.onReply] Called with every reply.
+   * @param {function} [options.onEffect] Called when a reply carries an effect.
+   * @param {function} [options.onError] Called when a turn is refused.
+   */
+  constructor(client, { current = null, templates = null, template = null,
+                        send = null, onReply = null, onEffect = null,
+                        onError = null } = {}) {
+    this.client = client;
+    this.current = current;
+    this.templates = templates;
+    this.startOn = template;
+    this._send = send || ((body) => this.client.turn(body));
+    this.onReply = onReply;
+    this.onEffect = onEffect;
+    this.onError = onError;
+    /** The state the service handed back last; sent with the next turn. */
+    this.state = null;
+    /** The last reply, for anything that wants to redraw from it. */
+    this.last = null;
+    this._queue = Promise.resolve();
+  }
+
+  /** Something the person typed. */
+  say(text, { via = "typed", alternatives = [] } = {}) {
+    return this.send({ type: "text", text, via, alternatives });
+  }
+
+  /** Something the person said, once speech recognition has a final phrase. */
+  speak(text, alternatives = []) {
+    return this.say(text, { via: "speech", alternatives });
+  }
+
+  /** A suggested action, by the object from `reply.actions` or its id. */
+  click(action) {
+    return this.send({ type: "action", action: typeof action === "string" ? action : action.id });
+  }
+
+  /** Tell the service how an effect went: `submitted`, `submit_failed`, `filled`. */
+  report(event, detail = {}) {
+    return this.send({ type: "event", event, detail });
+  }
+
+  /** Forget the conversation; the next input starts a new one. */
+  reset() {
+    this.state = null;
+    this.last = null;
+  }
+
+  /** Any of the three inputs. Queued behind the one before it. */
+  send(input) {
+    const run = this._queue.then(() => this._turn(input));
+    // A failed turn must not wedge every turn after it.
+    this._queue = run.catch(() => {});
+    // The effect runs once this turn is out of the queue, so a handler that
+    // reports back with `report()` queues behind it instead of waiting on
+    // itself.
+    return run.then(async (reply) => {
+      if (reply.effect && this.onEffect) await this.onEffect(reply.effect, this, reply);
+      return reply;
+    });
+  }
+
+  async _turn(input) {
+    const current = typeof this.current === "function" ? this.current() : this.current;
+    const context = {};
+    if (current) context.current = current;
+    if (this.templates) context.templates = this.templates;
+    if (this.startOn && !this.state) context.template = this.startOn;
+    let reply;
+    try {
+      reply = await this._send({ input, state: this.state, context });
+    } catch (error) {
+      if (this.onError) this.onError(error, input);
+      throw error;
+    }
+    this.state = reply.state;
+    this.last = reply;
+    if (this.onReply) this.onReply(reply, input);
+    return reply;
+  }
+}
+
+/**
+ * The browser's speech recognition, reduced to what a chat box needs.
+ *
+ * FillerAI never receives audio: the phrase is recognised by whatever engine
+ * the browser uses, and arrives at the bot service as text with
+ * `via: "speech"`. Where the audio goes is the browser's business - Chrome,
+ * for one, sends it to Google's recogniser - which a host that cares should
+ * know before it turns the microphone on. Where the browser has no recogniser,
+ * `SpeechInput.supported` is false and {@link ChatWidget} hides the
+ * microphone rather than offering one that does nothing.
+ */
+export class SpeechInput {
+  static get supported() {
+    return typeof globalThis !== "undefined"
+      && Boolean(globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition);
+  }
+
+  /**
+   * @param {object} options
+   * @param {function} options.onFinal `(text, alternatives)` when a phrase ends.
+   * @param {function} [options.onInterim] `(text)` while the person speaks.
+   * @param {function} [options.onState] `(listening)` when it starts or stops.
+   * @param {function} [options.onError] `(message)`.
+   * @param {string} [options.lang] A BCP 47 tag; the page's language otherwise.
+   */
+  constructor({ onFinal, onInterim = null, onState = null, onError = null, lang = "" } = {}) {
+    this.onFinal = onFinal;
+    this.onInterim = onInterim;
+    this.onState = onState;
+    this.onError = onError;
+    this.lang = lang;
+    this.listening = false;
+    this._recogniser = null;
+  }
+
+  start() {
+    if (!SpeechInput.supported || this.listening) return false;
+    const Recogniser = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
+    const recogniser = new Recogniser();
+    recogniser.lang = this.lang || (globalThis.document && document.documentElement.lang) || "en-US";
+    recogniser.interimResults = true;
+    recogniser.maxAlternatives = 3;
+    recogniser.continuous = false;
+    recogniser.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          const all = Array.from(result).map((alt) => alt.transcript.trim());
+          if (this.onFinal && all[0]) this.onFinal(all[0], all.slice(1));
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+      if (interim && this.onInterim) this.onInterim(interim);
+    };
+    recogniser.onerror = (event) => {
+      if (this.onError && event.error !== "no-speech" && event.error !== "aborted") {
+        this.onError(event.error === "not-allowed"
+          ? "the microphone is blocked for this page" : `speech: ${event.error}`);
+      }
+    };
+    recogniser.onend = () => this._set(false);
+    this._recogniser = recogniser;
+    recogniser.start();
+    this._set(true);
+    return true;
+  }
+
+  stop() {
+    if (this._recogniser) this._recogniser.stop();
+  }
+
+  toggle() {
+    return this.listening ? (this.stop(), false) : this.start();
+  }
+
+  _set(listening) {
+    this.listening = listening;
+    if (this.onState) this.onState(listening);
+  }
+}
+
+/**
+ * A chat window: messages, the before/after card, suggested actions, a
+ * text box and a microphone. Plain DOM, class names prefixed `fai-` to style,
+ * and optional - a React app can drive {@link BotChat} and draw its own.
+ */
+export class ChatWidget {
+  /**
+   * @param {HTMLElement} root Where to draw.
+   * @param {BotChat} chat
+   * @param {object} [options]
+   * @param {string} [options.greeting] The first bot line, shown before any turn.
+   * @param {string} [options.placeholder]
+   * @param {boolean} [options.speech] Offer the microphone when supported.
+   * @param {boolean} [options.speakReplies] Read replies aloud after speech input.
+   */
+  constructor(root, chat, { greeting = "Hi! What can I help you with?",
+                            placeholder = "Type a message", speech = true,
+                            speakReplies = true } = {}) {
+    this.root = root;
+    this.chat = chat;
+    this.speakReplies = speakReplies;
+    this._lastVia = "typed";
+    const outerReply = chat.onReply;
+    chat.onReply = (reply, input) => {
+      this._draw(reply, input);
+      if (outerReply) outerReply(reply, input);
+    };
+    const outerError = chat.onError;
+    chat.onError = (error, input) => {
+      this._line("bot", error.message || String(error), "fai-error");
+      if (outerError) outerError(error, input);
+    };
+
+    root.classList.add("fai-chat");
+    root.innerHTML = "";
+    this.log = el("div", "fai-log");
+    this.log.setAttribute("role", "log");
+    this.log.setAttribute("aria-live", "polite");
+    this.actions = el("div", "fai-actions");
+    const bar = el("form", "fai-bar");
+    this.input = el("input", "fai-input");
+    this.input.type = "text";
+    this.input.placeholder = placeholder;
+    this.input.setAttribute("aria-label", "Message");
+    this.mic = el("button", "fai-mic");
+    this.mic.type = "button";
+    this.mic.title = "Speak";
+    this.mic.setAttribute("aria-label", "Speak");
+    this.mic.textContent = "\u{1F3A4}";
+    const go = el("button", "fai-send");
+    go.type = "submit";
+    go.textContent = "Send";
+    bar.append(this.input, this.mic, go);
+    root.append(this.log, this.actions, bar);
+
+    bar.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = this.input.value.trim();
+      if (!text) return;
+      this.input.value = "";
+      this._you(text, "typed");
+      this.chat.say(text).catch(() => {});
+    });
+
+    this.speech = null;
+    if (speech && SpeechInput.supported) {
+      this.speech = new SpeechInput({
+        onInterim: (text) => { this.input.value = text; },
+        onFinal: (text, alternatives) => {
+          this.input.value = "";
+          this._you(text, "speech");
+          this.chat.speak(text, alternatives).catch(() => {});
+        },
+        onState: (on) => this.mic.classList.toggle("is-listening", on),
+        onError: (message) => this._line("bot", message, "fai-error"),
+      });
+      this.mic.addEventListener("click", () => this.speech.toggle());
+    } else {
+      this.mic.hidden = true;
+    }
+
+    if (greeting) this._line("bot", greeting);
+  }
+
+  _you(text, via) {
+    this._lastVia = via;
+    this._line("you", text, via === "speech" ? "fai-spoken" : "");
+  }
+
+  _line(who, text, extra = "") {
+    const line = el("div", `fai-msg fai-${who}${extra ? " " + extra : ""}`);
+    line.textContent = text;
+    this.log.append(line);
+    this.log.scrollTop = this.log.scrollHeight;
+    return line;
+  }
+
+  _draw(reply, input) {
+    if (input && input.type === "action") {
+      const chosen = (this._offered || []).find((a) => a.id === input.action);
+      if (chosen) this._line("you", chosen.label, "fai-clicked");
+    }
+    const said = (reply.messages || []).map((m) => m.text).join(" ");
+    if (said) this._line("bot", said);
+    const form = reply.form;
+    if (form && Object.keys(form.changes || {}).length
+        && ["collecting", "ready"].includes(reply.conversation.status)) {
+      this.log.append(changeCard(form));
+      this.log.scrollTop = this.log.scrollHeight;
+    }
+    this._offered = reply.actions || [];
+    this.actions.innerHTML = "";
+    for (const action of this._offered) {
+      const button = el("button", `fai-action fai-${action.type}`
+        + (action.style === "primary" ? " is-primary" : ""));
+      button.type = "button";
+      button.textContent = action.label;
+      button.addEventListener("click", () => {
+        this.actions.innerHTML = "";
+        this.chat.click(action).catch(() => {});
+      });
+      this.actions.append(button);
+    }
+    if (said && this.speakReplies && this._lastVia === "speech"
+        && typeof globalThis.speechSynthesis !== "undefined") {
+      globalThis.speechSynthesis.speak(new SpeechSynthesisUtterance(said));
+    }
+    this._lastVia = "typed";
+  }
+}
+
+/** The before/after card: one row per field the conversation changed or needs. */
+export function changeCard(form) {
+  const card = el("div", "fai-card");
+  const table = el("table", "fai-diff");
+  const head = el("tr");
+  for (const title of ["", "Now", "New"]) head.append(el("th", "", title));
+  table.append(head);
+  for (const row of form.fields || []) {
+    if (!["changed", "missing", "outdated"].includes(row.status)) continue;
+    const tr = el("tr", `fai-row fai-${row.status}`);
+    tr.append(el("th", "", row.label));
+    tr.append(el("td", "fai-before", row.before || "—"));
+    const after = el("td", "fai-after", row.after || "?");
+    if (row.source === "model") after.title = `suggested (confidence ${row.confidence})`;
+    tr.append(after);
+    table.append(tr);
+  }
+  card.append(table);
+  return card;
+}
+
+function el(tag, className = "", text = null) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== null) node.textContent = text;
+  return node;
+}
+
 function readValue(element) {
   if (element.type === "checkbox") return element.checked ? (element.value || "yes") : "";
   if (element.length !== undefined && element.tagName === undefined) {
@@ -386,6 +765,9 @@ if (typeof globalThis !== "undefined") {
   globalThis.FillerAI = FillerAI;
   globalThis.FillerAIError = FillerAIError;
   globalThis.FillerAIFormBinder = FormBinder;
+  globalThis.FillerAIBotChat = BotChat;
+  globalThis.FillerAIChatWidget = ChatWidget;
+  globalThis.FillerAISpeechInput = SpeechInput;
 }
 
 export default FillerAI;

@@ -37,6 +37,18 @@ its own, so a bundler needs no help with it, and there is nothing to install.
 - `FormBinder` — a model bound to a real `<form>`: fills as you type, never
   overwrites what a person typed, and marks what it filled.
 - `FillerAIError` — carries `status`, `code` and `isAuth`.
+- The bot service: `templates()`, `template(key)`, `saveTemplate(t)`,
+  `deleteTemplate(key)`, `turn(body)`, and
+  - `BotChat` — one conversation: `say()`, `speak()`, `click()` and
+    `report()` all go through one `send(input)`, in order; `send` can be
+    replaced to go through your own backend.
+  - `SpeechInput` — the browser's speech recognition. FillerAI only ever
+    receives the text; where the audio goes is the browser's business (Chrome
+    sends it to Google's recogniser).
+  - `ChatWidget` — messages, the before/after card, suggested actions, a text
+    box and a microphone. `fillerai-chat.css` is a default look.
+
+  The contract is [`docs/bot-builder.md`](../../../../docs/bot-builder.md).
 
 ## Trying it
 
@@ -44,3 +56,6 @@ its own, so a bundler needs no help with it, and there is nothing to install.
 in your library, draws a form from one of them and fills it in as you type,
 with each value's confidence and reason underneath it. A running server
 serves it at `/client/`.
+
+`chat.html` is a mock host application - a customer's details on file and
+its own forms - with the chat window beside it, served at `/client/chat.html`.

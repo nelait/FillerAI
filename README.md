@@ -41,6 +41,10 @@ python -m fillerai simulate model.json -n 50 --seed 7
 # What did all of that leave behind, and what came from what?
 python -m fillerai library list
 
+# A chat bot that fills a template from what a person types or says.
+python -m fillerai bot add --starter address_change
+python -m fillerai bot chat --current city="San Francisco" postal_code=94105
+
 # Who can sign in to the UI, and who can hand out accounts?
 python -m fillerai users add krishna --admin
 python -m fillerai db status
@@ -1061,6 +1065,48 @@ never overwrite what a person typed, and let editing a suggestion take it
 back. The full endpoint reference, the error codes and a React pattern are in
 [**Calling FillerAI from another application**](docs/integration.md).
 
+## Bot Builder: a chat that fills a request
+
+The same idea from the other side of the counter. An end user in somebody
+else's application types *"please update my city from SFO to Irvine and house
+no 1429 Silverstein"* into a chat window, and the application needs to know
+that this is an address change, that the city is now Irvine and the street
+1429 Silverstein, what that changes against what it holds, what is still
+missing, and what to offer next.
+
+A **template** says what a request is made of - an address change is a
+street, a unit, a city, a state, a ZIP code and a country - plus a few things
+people say to mean it. Templates are built on the **Bots** tab (from scratch,
+from a starter, or from a schema already in the library) and kept in the
+library. The chat window sends every turn to one endpoint:
+
+```js
+import { FillerAI, BotChat, ChatWidget } from "http://localhost:8000/client/fillerai.js";
+
+const chat = new BotChat(new FillerAI({ baseUrl, token }), {
+  current: () => myApp.customer(),                    // what the app already holds
+  onEffect: (effect) => effect.type === "fill_form"
+    ? myApp.prefill(effect.values)                     // "Fill the form for manual submission"
+    : myApp.submit(effect.values),                     // "Submit"
+});
+new ChatWidget(document.querySelector("#chat"), chat); // messages, before/after, buttons, microphone
+```
+
+Typing, speaking and clicking a suggested action all arrive at
+`POST /v1/bot/turn` as one `input`, so "submit" typed, said or clicked is the
+same turn. Speech is recognised in the browser; the service only ever sees
+text. Each reply carries the template, a before and after for every field, the
+suggested actions, and - on the turn somebody chose to finish - an `effect`
+the application acts on. The conversation travels in a `state` the client
+sends back, so the service keeps nothing between calls.
+
+By default a phrase is read on this machine, by finding each field's words and
+what follows them, and by values whose shape gives them away. `serve
+--bot-llm` has the configured language model read it instead, checked by the
+same rules as a typed value; that is off unless asked for, because it sends
+what end users type. `/client/chat.html` is a working host page to try it
+against. The contract is [**docs/bot-builder.md**](docs/bot-builder.md).
+
 ## Options
 
 | Flag | Default | What it does |
@@ -1211,12 +1257,17 @@ fillerai/
   schema.py            the versioned field-schema contract
   infer.py             semantic type from ranked evidence
   cli.py               extract / generate / train / predict / simulate / serve
-                       / algorithms / library / users / db
+                       / algorithms / library / users / db / bot
   store.py             the library in a directory: what each run produced
   db.py                the database, and the interface a backend meets
   dbstore.py           the same library in the database, with an owner
   auth.py              users, passwords, roles and sessions
   tokens.py            bearer credentials for an application, as opposed to a person
+  bot/                 Bot Builder: a chat that fills a template
+    template.py        what one request is made of, and keeping it in the library
+    understand.py      reading a phrase on this machine: which template, which values
+    conversation.py    one turn, as a pure function of the input and the state
+    starters/          address_change and document_request, shipped with the package
   extract/
     dom.py             a minimal DOM over html.parser
     html_form.py       HTML -> schema
@@ -1256,13 +1307,16 @@ fillerai/
     prompts.py         what gets asked, and the shape of the answer
     cost.py            what a call will cost, said before it is made
     rules.py           proposing a form's own rules, and disbelieving them
+    understand.py      reading a chat phrase with a model, for --bot-llm
   web/
     server.py          the local HTTP API, one function per endpoint
     rest.py            the /v1 integration API: bearer tokens, no cookies
+    botrest.py         /v1/templates and /v1/bot/turn
     keyring.py         API keys typed into the UI, held in memory and nowhere else
     static/            index.html, app.js, styles.css - no build step
                        login.html, login.js - the one page served signed out
-    static/client/     fillerai.js, demo.html - the dependency-free browser client
+    static/client/     fillerai.js, demo.html - the dependency-free browser client;
+                       chat.html, fillerai-chat.css - the chat window and a host to try it
 examples/
   claims_intake.html                  45 fields, 4 screens
   patient_registration.fields.json    21 fields, written as a spec
@@ -1293,6 +1347,9 @@ tests/
   test_llm_providers.py the same proposals through both wire formats
   test_llm_rules.py    the validation gate, branch by branch
   test_llm_batching.py the output budget, and splitting a large form
+  test_bot.py          templates, reading a phrase, and every kind of turn
+  test_bot_rest.py     the bot's endpoints, token scope, and the UI's try-it chat
+  test_llm_understand.py a model's reading of a phrase, believed only as far as it checks out
 livetests/
   test_rules_acceptance.py  the gate that costs money; skipped unless opted in
 docs/
@@ -1301,6 +1358,7 @@ docs/
   process.md           the same system as a sequence of things you do
   assumptions.md       everything taken as given, and what breaks if it is not
   pending.md           what is missing, what is broken, what is deliberate
+  bot-builder.md       the contract between a chat window and the bot service
 ```
 
 ## Tests
@@ -1309,7 +1367,7 @@ docs/
 python -m unittest discover -s tests -v
 ```
 
-772 tests, no dependencies. They cover malformed markup, each inference rule,
+840 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real
@@ -1582,6 +1640,13 @@ up work.
 answers, how an API token works and why it is not the UI's cookie, when a
 browser on another origin is let in and when it is not, and how to bind a
 model to a form in plain JavaScript or in React.
+
+[**Bot Builder**](docs/bot-builder.md)
+— the contract between a chat window in another application and the bot
+service: what a template is, the one `input` that typing, speaking and
+clicking all arrive as, the before/after form and the suggested actions in a
+reply, the `effect` the application acts on, and how a conversation carries
+its own state between turns.
 
 [**Training, serving, and what happens at 20,000 records**](docs/training-and-scale.md)
 — what a training run does stage by stage and what each stage costs, what it

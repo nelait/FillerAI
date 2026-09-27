@@ -4,7 +4,7 @@ What is missing, what is known to be broken, and what was deliberately not
 built. Each entry says what it is, what the evidence is, and what it would
 take — so that picking one up does not start with a re-investigation.
 
-Verified against version 0.11.0 on 2026-09-22. Where something was measured
+Verified against version 0.11.0 on 2026-09-22; the bot items against 0.12.0 on 2026-09-27. Where something was measured
 for this document, the command is given.
 
 **Status key:** 🔴 blocking a claim this project makes · 🟠 a real defect with
@@ -126,6 +126,27 @@ The library already knows that four models descend from one dataset
 than four rows that happen to share a parent, is the last step in making
 `--compare` something you come back to rather than something you run once.
 
+### 1.8 🟡 The bot's language-model reader has never met a model
+
+`serve --bot-llm` hands chat phrases to `fillerai/llm/understand.py`, and
+every test of it replays a canned answer (`tests/test_llm_understand.py`). What
+is tested is that a bad answer is not believed and a failure falls back to the
+local reading; whether a real model reads "we're moving in with my sister in
+Tustin" well is not. Same missing key as §1.1.
+
+### 1.9 🟡 The microphone has only been tested as far as the text it produces
+
+`SpeechInput` wraps the browser's own recogniser, and the only browser this
+project is checked in is headless and has no microphone. The service side of
+speech (`via: "speech"`, alternatives, no example hints in a spoken question)
+is tested; a person talking into Chrome is not.
+
+### 1.10 🟡 The bot is English and one request at a time
+
+Its field words, action phrases and questions are English, and "change my
+address and send me an ID card" is read as the first request only. See
+[bot-builder.md](bot-builder.md) §9.
+
 ---
 
 ## 2. Known defects
@@ -177,7 +198,7 @@ the real one, which is what a test backend is for.
 
 No `.github/workflows`, so no pull request in this repository will ever show a
 green check, and `python -m unittest discover -s tests -q` run locally is the
-only signal that anything works. 772 tests, about 70 seconds.
+only signal that anything works. 840 tests, about 70 seconds.
 
 Combined with §2.1, a contributor who runs the suite once and sees a failure
 has no way to tell a real regression from the known race without re-running.
