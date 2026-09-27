@@ -1,0 +1,45 @@
+/* Default look for ChatWidget from fillerai.js. Optional: every class is
+   prefixed fai- so a host can restyle it or leave this file out entirely. */
+.fai-chat {
+  --fai-ink: #15181d; --fai-dim: #5d6673; --fai-line: #dde2ea;
+  --fai-bg: #ffffff; --fai-you: #2f6df6; --fai-bot: #f1f4f9;
+  --fai-new: #0d8a52; --fai-need: #a8630a;
+  display: flex; flex-direction: column; height: 100%; min-height: 360px;
+  background: var(--fai-bg); color: var(--fai-ink);
+  border: 1px solid var(--fai-line); border-radius: 12px; overflow: hidden;
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.fai-log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.fai-msg { max-width: 85%; padding: 7px 11px; border-radius: 14px; white-space: pre-wrap; }
+.fai-bot { align-self: flex-start; background: var(--fai-bot); border-bottom-left-radius: 4px; }
+.fai-you { align-self: flex-end; background: var(--fai-you); color: #fff; border-bottom-right-radius: 4px; }
+.fai-you.fai-spoken::before { content: "\1F3A4  "; }
+.fai-you.fai-clicked { background: #fff; color: var(--fai-you); border: 1px solid var(--fai-you); }
+.fai-error { color: #b02033; }
+.fai-card { align-self: stretch; border: 1px solid var(--fai-line); border-radius: 10px; padding: 6px 8px; }
+.fai-diff { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fai-diff th, .fai-diff td { text-align: left; padding: 3px 6px; vertical-align: top; }
+.fai-diff tr:first-child th { font-size: 11px; color: var(--fai-dim); font-weight: 600; }
+.fai-diff tr > th:first-child { color: var(--fai-dim); font-weight: 500; white-space: nowrap; }
+.fai-before { color: var(--fai-dim); text-decoration: line-through; }
+.fai-changed .fai-after { color: var(--fai-new); font-weight: 600; }
+.fai-missing .fai-before, .fai-outdated .fai-before { text-decoration: none; }
+.fai-missing .fai-after, .fai-outdated .fai-after { color: var(--fai-need); font-weight: 600; }
+.fai-outdated .fai-before { text-decoration: line-through; }
+.fai-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px; }
+.fai-actions:empty { display: none; }
+.fai-action {
+  font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 16px; cursor: pointer;
+  border: 1px solid var(--fai-you); background: #fff; color: var(--fai-you);
+}
+.fai-action.is-primary { background: var(--fai-you); color: #fff; }
+.fai-action.fai-cancel { border-color: var(--fai-line); color: var(--fai-dim); }
+.fai-bar { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--fai-line); }
+.fai-input { flex: 1; min-width: 0; font: inherit; padding: 7px 10px; border: 1px solid var(--fai-line); border-radius: 18px; }
+.fai-mic, .fai-send {
+  font: inherit; padding: 6px 12px; border-radius: 18px; cursor: pointer;
+  border: 1px solid var(--fai-line); background: #fff;
+}
+.fai-send { background: var(--fai-you); color: #fff; border-color: var(--fai-you); }
+.fai-mic.is-listening { background: #fde8ea; border-color: #e0475a; animation: fai-pulse 1s infinite; }
+@keyframes fai-pulse { 50% { box-shadow: 0 0 0 4px rgba(224, 71, 90, .2); } }

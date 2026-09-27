@@ -8,9 +8,11 @@ bot service, which works out which template they mean, fills in what they
 said, and answers with the values, what changed against what the application
 already holds, and what the person can do next.
 
-This page is the contract between the chat window and the bot service. It is
+This page is the contract between the chat window and the bot service. It was
 written before the code on purpose: the chat window is in someone else's
 product, so the interface is the part that cannot be changed casually later.
+Everything below is checked against the code at version 0.12.0, and each
+example reply is what the service actually returns.
 
 ---
 
@@ -58,11 +60,13 @@ submit; the host does it, and may tell the service how it went (§3.3).
      "semantic_type": "street_address", "required": true,
      "aliases": ["house no", "house number", "street"]},
     {"name": "unit", "label": "Unit", "semantic_type": "address_line2",
-     "aliases": ["apt", "apartment", "suite"]},
+     "aliases": ["apt", "apartment", "suite"], "follows": ["street_address"]},
     {"name": "city", "label": "City", "semantic_type": "city", "required": true},
-    {"name": "state", "label": "State", "semantic_type": "state", "required": true},
+    {"name": "state", "label": "State", "semantic_type": "state", "required": true,
+     "follows": ["city"]},
     {"name": "postal_code", "label": "ZIP code", "semantic_type": "postal_code",
-     "required": true, "aliases": ["zip", "zipcode", "postcode"]},
+     "required": true, "aliases": ["zip", "zipcode", "postcode"],
+     "follows": ["street_address", "city", "state"]},
     {"name": "country", "label": "Country", "semantic_type": "country",
      "options": ["US", "CA", "MX"]}
   ],
@@ -80,12 +84,22 @@ submit; the host does it, and may tell the service how it went (§3.3).
 | `fields[].semantic_type` | One of the schema's semantic types. It decides how a value is recognised without a label ("92618" is a ZIP) and how it is tidied ("ca" is `CA`). |
 | `fields[].aliases` | Other words a person uses for the field. The label and a set of defaults for the semantic type are always included. |
 | `fields[].options` | A closed list. A value off the list is not accepted, and a field with a short list is offered as buttons. |
+| `fields[].follows` | Fields this one depends on. When one of them changes in the conversation, the value on file for this one no longer holds and is asked for instead of carried over: a new city makes the old ZIP code wrong. The word is the one field specs already use for a declared rule. |
+| `fields[].example` | Shown after a typed question ("For example 92618"), not after a spoken one. |
 | `actions` | Which of the two finishing actions this template offers: `fill_form`, `submit`, or both. |
 | `model_id` | Optional: a trained FillerAI model whose fields share names with this template. After what the person said is filled in, the model is asked to complete related fields (a new city → its state), at its calibrated threshold. |
 
 A template can be started from a form schema already in the library (every
-field of the schema, with its label, semantic type, options and required flag)
-and then cut down, which is how an existing FillerAI form becomes a bot.
+field of the schema, with its label, semantic type, options and required flag,
+leaving out passwords, free text and read-only fields) and then cut down,
+which is how an existing FillerAI form becomes a bot. Two starters ship inside
+the package, `address_change` and `document_request`
+(`fillerai/bot/starters/`), and are added to a library from the Bots tab or
+with `fillerai bot add --starter NAME`.
+
+Templates are kept in the library as a sixth kind, `template` (ids `tpl-…`),
+per owner like everything else. A template started from a schema records it
+as its parent.
 
 ---
 
@@ -149,34 +163,41 @@ already knows (a "Change address" button that opens the chat).
 
 ```json
 {
-  "conversation": {"id": "cnv-6f1c2a9e", "turn": 1, "status": "collecting"},
+  "conversation": {"id": "cnv-6f1c2a9e0b1d", "turn": 1, "status": "collecting"},
   "intent": {"template": "address_change", "name": "Address change",
-             "confidence": 0.86, "how": "matched", "changed": true},
+             "confidence": 0.74, "how": "local", "changed": true},
+  "understood": {"text": "please update my city from SFO to Irvine and house no 1429 Silverstein", "via": "speech"},
   "messages": [{"role": "bot",
-                "text": "Changing your address. City to Irvine and street address to 1429 Silverstein. What is the new ZIP code?"}],
+                "text": "OK, an address change. Street address to 1429 Silverstein and city to Irvine. What is the new state?"}],
   "form": {
     "template": "address_change",
     "fields": [
       {"name": "street_address", "label": "Street address", "required": true,
-       "before": "55 Market St", "after": "1429 Silverstein", "status": "changed",
-       "source": "said", "confidence": 0.9},
+       "before": "55 Market St", "after": "1429 Silverstein", "source": "said",
+       "confidence": 0.9, "status": "changed"},
+      {"name": "unit", "label": "Unit", "required": false, "before": null,
+       "after": null, "status": "empty"},
       {"name": "city", "label": "City", "required": true,
-       "before": "San Francisco", "after": "Irvine", "status": "changed",
-       "source": "said", "confidence": 0.95, "said_before": "SFO"},
+       "before": "San Francisco", "after": "Irvine", "source": "said",
+       "confidence": 0.95, "status": "changed", "said_before": "SFO"},
+      {"name": "state", "label": "State", "required": true,
+       "before": "CA", "after": null, "status": "outdated"},
       {"name": "postal_code", "label": "ZIP code", "required": true,
-       "before": "94105", "after": null, "status": "missing"}
+       "before": "94105", "after": null, "status": "outdated"},
+      {"name": "country", "label": "Country", "required": false,
+       "before": "US", "after": "US", "source": "current", "status": "kept"}
     ],
-    "values":  {"street_address": "1429 Silverstein", "city": "Irvine"},
+    "values":  {"street_address": "1429 Silverstein", "city": "Irvine", "country": "US"},
     "changes": {"street_address": {"before": "55 Market St", "after": "1429 Silverstein"},
                 "city": {"before": "San Francisco", "after": "Irvine"}},
-    "missing": ["postal_code"],
+    "missing": ["state", "postal_code"],
     "complete": false
   },
   "actions": [
-    {"id": "fill_form", "type": "fill_form", "label": "Fill the form for manual submission"},
+    {"id": "fill_form", "type": "fill_form", "label": "Fill the form for manual submission", "style": "primary"},
     {"id": "cancel", "type": "cancel", "label": "Start over"}
   ],
-  "expects": {"field": "postal_code", "label": "ZIP code"},
+  "expects": {"field": "state", "label": "State", "semantic_type": "state"},
   "effect": null,
   "state": {"v": 1, "...": "opaque; send it back unchanged"}
 }
@@ -191,6 +212,7 @@ has so far), and a `status`:
 | `changed` | `after` differs from `before` |
 | `unchanged` | the person gave a value and it is what the host already has |
 | `kept` | nobody mentioned it; `after` is `before`, carried over |
+| `outdated` | a field it `follows` changed, so what is on file no longer holds; asked for if required |
 | `missing` | required, no value from the person and none on file |
 | `empty` | optional, no value at all |
 
@@ -202,7 +224,8 @@ it is worth showing when it does not match what is on file.
 
 `values` is every field that has a value, ready to prefill. `changes` is only
 the fields that differ, ready for a confirmation card. `missing` is required
-fields with no value anywhere.
+fields with no value anywhere, outdated ones included. The next question is
+always the first of them, in the template's field order.
 
 **`actions` are the suggested actions**, in the order to show them:
 
@@ -344,15 +367,12 @@ this. The demo page passes the token straight through because it is a demo.
 Three additions to `fillerai.js`, same file, still no dependencies:
 
 ```js
-import { FillerAI, BotChat, ChatWidget, SpeechInput } from "./fillerai.js";
+import { FillerAI, BotChat, ChatWidget } from "./fillerai.js";
 
 const filler = new FillerAI({ baseUrl, token });
 const chat = new BotChat(filler, {
   current: () => myApp.currentAddress(),        // context.current, read every turn
   templates: ["address_change", "document_request"],
-});
-
-const widget = new ChatWidget(document.querySelector("#chat"), chat, {
   onEffect: async (effect, chat) => {
     if (effect.type === "fill_form") myApp.prefill(effect.values);
     if (effect.type === "submit") {
@@ -360,6 +380,16 @@ const widget = new ChatWidget(document.querySelector("#chat"), chat, {
       await chat.report("submitted", { reference: ref });
     }
   },
+});
+new ChatWidget(document.querySelector("#chat"), chat);
+```
+
+Through the host's backend instead of a token in the browser:
+
+```js
+const chat = new BotChat(null, {
+  send: (body) => fetch("/my-app/bot", { method: "POST", body: JSON.stringify(body) })
+    .then((r) => r.json()),
 });
 ```
 
@@ -373,11 +403,61 @@ const widget = new ChatWidget(document.querySelector("#chat"), chat, {
   `SpeechInput.supported` is false where the browser has none, and the widget
   then hides the microphone instead of showing one that does nothing.
 - **`ChatWidget`** draws the messages, the before/after card, the suggested
-  actions and the text box with its microphone. It is plain DOM with class
-  names to style, and it is optional: a React app can use `BotChat` alone and
-  draw its own.
+  actions and the text box with its microphone, and reads a reply aloud when
+  the phrase it answers was spoken. It is plain DOM with `fai-` class names;
+  `/client/fillerai-chat.css` is a default look to link or leave out. It is
+  optional: a React app can use `BotChat` alone and draw its own.
+- **`onEffect` runs after the turn has left the queue**, so a handler that
+  calls `chat.report()` queues behind it rather than waiting on itself.
 
 `/client/chat.html` is a working host: a mock policyholder page with an
 address on file and its own form, and the chat window beside it. "Fill the
 form" prefills the page's form; "Submit" changes the address on file and
 reports the reference back.
+
+---
+
+## 8. Building templates
+
+Three ways, all writing the same thing to the library.
+
+- **The Bots tab** in the FillerAI UI: pick a template or add a starter, or
+  start from a schema in the library (or the one on the Schema step), edit the
+  examples and the fields table, save. The chat beside the editor runs the
+  same turn through `/api/bot/turn`, with a box for what the host would
+  already hold, so a template can be tried before anything is connected.
+- **`/v1/templates`** from another program, with an unpinned token.
+- **The command line**: `fillerai bot add file.json` or
+  `fillerai bot add --starter address_change`, `fillerai bot list`,
+  `fillerai bot remove KEY`, and `fillerai bot chat --current city=Austin …`
+  for a conversation at the terminal.
+
+A template gets better from real phrasings. The examples are what intent is
+matched against, and a field's aliases are what values are found by, so when
+the bot misreads something a person said, adding that phrasing to the
+template is usually the whole fix.
+
+---
+
+## 9. What this does not do
+
+- **It does not know a city from a street without a label or an address
+  shape.** "we're moving in with my sister in Tustin" names a city the local
+  reader cannot find; it asks instead. That is the case for `--bot-llm`.
+- **It has not been run against a real model.** The language-model reader is
+  tested with canned answers only, for the same reason as the rules feature:
+  no session has had a key.
+- **Speech recognition is the browser's.** It works where the browser has a
+  recogniser (Chrome, Edge, Safari) and the microphone is allowed; elsewhere
+  the microphone is hidden. FillerAI never receives audio, but the browser's
+  recogniser may send it to its vendor (Chrome sends it to Google), so a host
+  that must keep audio in-house should pass `speech: false` to `ChatWidget`
+  and bring its own recogniser to `chat.speak(text)`. It was checked in a headless browser, which has no
+  microphone, so the spoken path is tested only as far as `via: "speech"`.
+- **English only.** The field words, action phrases and question wording are
+  English; a template's own examples and aliases can be any language, but the
+  bot's replies are not.
+- **One conversation is one request.** A phrase that asks for two things at
+  once ("change my address and send me an ID card") is read as the first, and
+  the second is asked for after.
+

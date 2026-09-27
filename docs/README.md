@@ -36,6 +36,12 @@ application: every `/v1` endpoint and what it answers, how an API token works
 and why it is not the UI's cookie, when a browser on another origin is let in,
 and how to bind a model to a form in plain JavaScript or in React.
 
+**[bot-builder.md](bot-builder.md)** — the contract between a chat window in
+another application and the bot service: templates, the one `input` that
+typing, speaking and clicking all arrive as, the before/after and suggested
+actions in a reply, the `effect` the application acts on, and conversations
+that carry their own state.
+
 **[training-and-scale.md](training-and-scale.md)** — what a training run does
 stage by stage and what each stage costs, what it would take to serve a model
 against a real production form, and measured behaviour at 20,000 records

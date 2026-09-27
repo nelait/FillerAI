@@ -488,15 +488,19 @@ def _on_text(turn: Turn, given: Input, reader: Reader, complete: Completer | Non
             best, best_score = reading.best()
         mine = dict(reading.scores).get(active.key, 0.0)
         named = reading.template is not None and reading.template != active.key
+        # A whole phrase taken as the answer to the last question is weak
+        # evidence against a phrase that plainly means another template:
+        # "I need a copy of my policy" is not a street address.
+        weak = all(v.how == "expected" for v in reading.values.values())
         switching = best is not None and best != active.key and (
-            named or (not reading.values and best_score >= SWITCH_AT
+            named or (weak and best_score >= SWITCH_AT
                       and best_score >= mine + SWITCH_MARGIN))
         if switching:
             _begin(turn, turn.by_key[best], how=how, confidence=best_score or 0.9)
             if not named or not reading.values:
                 # The values read were for the template being left.
                 reading = reader(turn.templates, turn.template, given.text)
-        else:
+        elif turn.intent is None:
             turn.intent = {"template": active.key, "name": active.name,
                            "confidence": round(max(mine, 0.0), 3), "how": "continued",
                            "changed": False}
@@ -669,7 +673,7 @@ def _next_step(turn: Turn) -> None:
         return
     if turn.changed_now:
         parts = [f"{_word(template.field(n).label)} to {state.values[n].value}"  # type: ignore[union-attr]
-                 for n in dict.fromkeys(turn.changed_now)]
+                 for n in template.names() if n in set(turn.changed_now)]
         lead = f"OK, {_a(template.name)}. " if turn.intent and \
             turn.intent.get("changed") else ""
         turn.say(lead + _sentence(_join(parts)) + ".")

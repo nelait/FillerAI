@@ -6,6 +6,7 @@
 <title>FillerAI</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%274%27 fill=%27%232d6cdf%27/%3E%3Crect x=%273%27 y=%274.5%27 width=%2710%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27/%3E%3Crect x=%273%27 y=%277.2%27 width=%2710%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27/%3E%3Crect x=%273%27 y=%279.9%27 width=%276%27 height=%271.6%27 rx=%270.8%27 fill=%27white%27 opacity=%270.55%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/client/fillerai-chat.css">
 </head>
 <body>
 
@@ -33,6 +34,9 @@
     </button>
     <button class="step step-aside" role="tab" data-panel="library" aria-selected="false">
       <span class="num">6</span> Library
+    </button>
+    <button class="step step-aside" role="tab" data-panel="bots" aria-selected="false">
+      <span class="num">7</span> Bots
     </button>
   </nav>
   <!-- Always here: the language-model settings live behind it, and those
@@ -414,6 +418,7 @@
         <button class="seg-btn" data-lib="dataset">Datasets</button>
         <button class="seg-btn" data-lib="model">Models</button>
         <button class="seg-btn" data-lib="script">Scripts</button>
+        <button class="seg-btn" data-lib="template">Templates</button>
       </div>
       <span class="spacer"></span>
       <span class="muted" id="libWhere"></span>
@@ -423,6 +428,86 @@
     <div id="libStatus" class="status" hidden></div>
     <div class="stats" id="libStats" hidden></div>
     <div class="library" id="libList"></div>
+  </section>
+
+  <!-- ============================= Bots ============================= -->
+  <section class="panel" id="panel-bots" role="tabpanel">
+    <div class="panel-head">
+      <h2>Bot Builder</h2>
+      <p class="sub">A template is one kind of request - an address change, a
+         document request - and the words people use for it. Another
+         application's chat window sends what its users type, say or click to
+         <code>/v1/bot/turn</code>, and gets back the template, the values, a
+         before and after, and what to offer next. Try any template on the
+         right before connecting anything.</p>
+    </div>
+
+    <div class="bots">
+      <div class="col">
+        <div class="toolbar">
+          <select id="botPick" aria-label="Template"></select>
+          <button class="btn btn-ghost" id="botNew">New</button>
+          <select id="botStarter" aria-label="Add a starter">
+            <option value="">Add a starter...</option>
+          </select>
+          <select id="botFromSchema" aria-label="Start from a schema">
+            <option value="">From a schema...</option>
+          </select>
+        </div>
+
+        <div id="botStatus" class="status" hidden></div>
+
+        <div class="card" id="botEditor" hidden>
+          <div class="bot-grid">
+            <label class="field"><span>Key <span class="muted">(what an application asks for)</span></span>
+              <input type="text" id="botKey" spellcheck="false" placeholder="address_change"></label>
+            <label class="field"><span>Name</span>
+              <input type="text" id="botName" placeholder="Address change"></label>
+            <label class="field wide"><span>Description</span>
+              <input type="text" id="botDesc"></label>
+            <label class="field wide"><span>Things people say to mean this, one per line</span>
+              <textarea id="botExamples" rows="4" spellcheck="false"></textarea></label>
+            <div class="field"><span>Finishing actions</span>
+              <label class="check"><input type="checkbox" id="botActFill"> Fill the form for manual submission</label>
+              <label class="check"><input type="checkbox" id="botActSubmit"> Submit</label></div>
+            <label class="field"><span>Autofill model <span class="muted">(optional, completes related fields)</span></span>
+              <select id="botModel"><option value="">None</option></select></label>
+            <label class="field wide"><span>Said when it is submitted</span>
+              <input type="text" id="botDone" placeholder="Your address change is in."></label>
+          </div>
+
+          <h3 class="bot-h">Fields</h3>
+          <div class="table-wrap">
+            <table class="grid" id="botFields">
+              <thead><tr>
+                <th>Name</th><th>Label</th><th>Means</th><th>Req.</th>
+                <th>Also called</th><th>Options</th><th>Follows</th><th></th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost small" id="botAddField">Add a field</button>
+            <span class="spacer"></span>
+            <button class="btn btn-ghost" id="botDownload">Download</button>
+            <button class="btn btn-ghost" id="botDelete">Delete</button>
+            <button class="btn btn-primary" id="botSave">Save</button>
+          </div>
+          <p class="muted">Aliases, options and follows are comma-separated.
+             A field that <em>follows</em> others is asked again when any of them
+             changes, rather than keeping the old value: a new city makes the ZIP
+             code on file wrong.</p>
+        </div>
+      </div>
+
+      <div class="col bot-try">
+        <h3>Try it</h3>
+        <label class="field"><span>What the application already holds (JSON)</span>
+          <textarea id="botCurrent" rows="5" spellcheck="false">{"street_address": "55 Market St", "city": "San Francisco", "state": "CA", "postal_code": "94105", "country": "US", "policy_number": "PA-1048822", "full_name": "Jordan Lee"}</textarea></label>
+        <div id="botChat" class="bot-chat"></div>
+        <p class="muted" id="botReader"></p>
+      </div>
+    </div>
   </section>
 
   <!-- ============================ Account =========================== -->
@@ -591,6 +676,7 @@
 
 </main>
 
+<script type="module" src="/client/fillerai.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

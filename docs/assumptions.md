@@ -375,7 +375,7 @@ on start rather than being recreated.
 
 ### 8.1 The suite is the only signal
 
-There is no CI in this repository. 772 tests run offline in about 70 seconds,
+There is no CI in this repository. 840 tests run offline in about 70 seconds,
 and running them before pushing is the whole of the quality gate. See
 [pending.md](pending.md) §2.2.
 

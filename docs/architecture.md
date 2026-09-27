@@ -4,7 +4,7 @@ What the pieces are, which way they point, and the boundaries that are not
 allowed to move. The README is the tour; this is the map you want open when
 you are changing something and need to know what else it touches.
 
-Everything here was checked against the code at version 0.11.0.
+Everything here was checked against the code at version 0.12.0.
 
 ---
 
@@ -259,7 +259,7 @@ the markup or spec it was read out of. Follow the chain up for provenance;
 follow it down from a source for every model that descends from it. The same
 links read in either direction.
 
-Five kinds, with id prefixes: `source` (`src-`), `schema` (`sch-`), `dataset`
+Six kinds, with id prefixes: `source` (`src-`), `schema` (`sch-`), `dataset`
 (`dat-`), `model` (`mdl-`), `script` (`scr-`).
 
 There are **two implementations of the same interface**, and a caller holding
@@ -371,6 +371,10 @@ required either way and `Allow-Credentials` is never sent; with `--no-auth`,
 **no origin** is allowed until `--cors-origin` names one, since `*` with no
 credential opens the library to any page the user has open.
 
+The bot service is on the same surface - `/v1/templates` and
+`/v1/bot/turn`, in `web/botrest.py` - and the UI's Bots tab runs the very same
+turn through `/api/bot/turn`. See [bot-builder.md](bot-builder.md).
+
 `rest.py` holds **no modelling of its own** — it calls the same `predict()`
 the Train panel does — which is the point of it existing rather than being
 bolted onto `server.py`. Endpoints: `GET /v1/health` (no token),
@@ -442,6 +446,13 @@ blamed for the problems quoting its field name and dropped. `propose` returns
 proposals and `apply` is a **separate command** — the reviewer in the middle is
 the feature.
 
+**The bot's reader** (`llm/understand.py`) is the second use, and it follows
+the same pattern: the model is asked for exactly what the local reader
+produces, every value goes through the same `accept()` a typed value does, and
+any failure is a turn read locally. It is turned on by `serve --bot-llm`, not
+by a key being present, because it sends what end users type rather than
+field names.
+
 ---
 
 ## 9. Invariants
@@ -454,7 +465,7 @@ These are the things a change should not quietly break. Most have a test.
 3. **Nothing in the core opens a socket.** The one exception is
    `llm/transport.py`, behind the import fence.
 4. **Nothing leaves the machine unless somebody set a key and ran an `llm`
-   command.**
+   command**, or set a key and started the server with `--bot-llm`.
 5. **The schema is the only cross-stage contract**, and its version rules hold
    (§2).
 6. **A shipped migration is never edited** (§5).
@@ -468,6 +479,9 @@ These are the things a change should not quietly break. Most have a test.
     command (`Settings.redacted` shows four characters).
 11. **A model's proposed rule is never believed without the gate**, whoever
     proposed it.
+12. **The bot service keeps no conversation.** A turn is a pure function of
+    the input, the state the client sent back and the templates; the state is
+    re-checked on every turn because it has been through a browser.
 
 ---
 
@@ -488,16 +502,20 @@ fillerai/
   train/               features, associate, derive, model, evaluate,
                        trace, script, algos/
   simulate/            form.py, effort.py, run.py
+  bot/                 template, understand, conversation, starters/
+                       - Bot Builder, see bot-builder.md
   llm/                 providers, config, transport, client, prompts,
-                       cost, rules            (behind the import fence)
+                       cost, rules, understand (behind the import fence)
   web/
     server.py          the UI's /api, and the routing for both surfaces
     rest.py            the /v1 integration API
+    botrest.py         the bot service on /v1
     keyring.py         API keys typed into the UI, in memory only
     static/            index.html, app.js, styles.css, login.*
-    static/client/     fillerai.js, demo.html - the browser client
+    static/client/     fillerai.js, demo.html, chat.html,
+                       fillerai-chat.css - the browser client
 examples/              one HTML form and four field specs
-tests/                 772 tests, offline, no dependencies
+tests/                 840 tests, offline, no dependencies
 livetests/             the LLM acceptance gate; needs a key and an opt-in
 docs/                  this directory
 ```

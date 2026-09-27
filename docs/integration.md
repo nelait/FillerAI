@@ -109,6 +109,10 @@ is a cross-origin request, so the browser asks first.
 
 ## The endpoints
 
+The bot service's endpoints, `/v1/templates` and `/v1/bot/turn`, share this
+surface, its tokens and its CORS rules; they are described with the rest of
+the chat contract in [bot-builder.md](bot-builder.md).
+
 All of them answer JSON. A refusal is
 `{"error": "a sentence", "code": "a_short_code"}` — branch on the code, show
 the sentence.
