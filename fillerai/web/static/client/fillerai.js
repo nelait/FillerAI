@@ -567,7 +567,9 @@ export class SpeechInput {
       network: "The browser couldn't reach its speech service. It needs an internet connection "
         + "(Chrome and Edge recognise speech on their servers).",
       "language-not-supported": "The speech service doesn't support this page's language.",
-      "no-speech": "I didn't hear anything. Press the microphone, wait for it to turn red, then speak.",
+      "no-speech": "I didn't hear anything. Press the microphone, wait for it to turn red, then speak. "
+        + "If it still hears nothing, the browser may be listening to another microphone (a phone "
+        + "or headset nearby): pick the one you speak into under chrome://settings/content/microphone.",
     };
     return reasons[code] || `Speech input failed (${code}).`;
   }

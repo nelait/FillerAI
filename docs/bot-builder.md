@@ -11,7 +11,7 @@ already holds, and what the person can do next.
 This page is the contract between the chat window and the bot service. It was
 written before the code on purpose: the chat window is in someone else's
 product, so the interface is the part that cannot be changed casually later.
-Everything below is checked against the code at version 0.14.0, and each
+Everything below is checked against the code at version 0.14.1, and each
 example reply is what the service actually returns.
 
 ---
@@ -481,7 +481,8 @@ Three ways, all writing the same thing to the library.
   start from a schema in the library (or the one on the Schema step), edit the
   examples and the fields table, save. The chat beside the editor runs the
   same turn through `/api/bot/turn`, so a template can be tried before
-  anything is connected. Above it a **sample form** shows the template the
+  anything is connected. The chat tries only the template that is picked, and
+  picking another starts a new chat on it. Above it a **sample form** shows the template the
   conversation is on and follows every reply: a value appears the moment it
   is understood, changed fields are green with what they were, and fields the
   chat still needs (missing, or outdated by a change) are amber. "Fill the
