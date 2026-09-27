@@ -4,7 +4,7 @@ What the pieces are, which way they point, and the boundaries that are not
 allowed to move. The README is the tour; this is the map you want open when
 you are changing something and need to know what else it touches.
 
-Everything here was checked against the code at version 0.14.1.
+Everything here was checked against the code at version 0.14.2.
 
 ---
 

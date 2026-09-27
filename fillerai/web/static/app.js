@@ -2523,6 +2523,7 @@ function botFormShows(template) {
 
 function botFormReply(reply) {
   if (reply.stale) return;
+  botPickFollowsChat(reply);
   const before = botForm.reply && botForm.reply.form ? botForm.reply.form.values : {};
   if (reply.form) {
     if (!botForm.template || botForm.template.key !== reply.form.template) {
@@ -2585,12 +2586,8 @@ function startBotChat() {
     return;
   }
   if (bots.chat) return;
-  const key = bots.editing && bots.editing.key ? bots.editing.key : null;
+  bots.chatOn = bots.editing && bots.editing.key ? bots.editing.key : null;
   bots.chat = new Chat(null, {
-    // The chat tries the template on screen and no other, so a phrase that
-    // would suit another template can't take the conversation elsewhere.
-    templates: key ? [key] : null,
-    template: key,
     send: (body) => api('/api/bot/turn', body),
     current: botRecord,
     onReply: botFormReply,
@@ -2618,20 +2615,29 @@ function startBotChat() {
 
 function botGreeting(template) {
   const name = template && template.key ? template.name || template.key : '';
-  return name ? `Try "${name}" here. Nothing is sent anywhere else.`
+  return name ? `Try "${name}" here, or ask for another. Nothing is sent anywhere else.`
     : 'Try a template here. Nothing is sent anywhere else.';
 }
 
-// Picking another template starts a new chat on it, and the sample form
-// with it: a conversation about one template can't carry on under another.
+// Picking another template from the list starts a new chat on it, and the
+// sample form with it. The chat moving to another template (someone asked
+// for a document mid-way through an address change) moves the list instead,
+// and keeps the conversation.
 function botChatFollows(template) {
   if (!bots.chat || !bots.widget) return;
   const key = template && template.key ? template.key : null;
-  if (bots.chat.startOn === key) return;
-  bots.chat.templates = key ? [key] : null;
-  bots.chat.startOn = key;
+  if (bots.chatOn === key) return;
+  bots.chatOn = key;
   bots.widget.greeting = botGreeting(template);
   bots.widget.reset();
+}
+
+function botPickFollowsChat(reply) {
+  const key = reply.intent && reply.intent.template;
+  if (!key || key === bots.chatOn || !$('botPick').querySelector(`option[value="${CSS.escape(key)}"]`)) return;
+  bots.chatOn = key;
+  $('botPick').value = key;
+  openBot(key).catch((e) => botSay(e.message, true));
 }
 
 $('botFormClear').addEventListener('click', () => {
