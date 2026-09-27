@@ -124,7 +124,7 @@ convenience wrappers. Everything in `__all__`:
 
 | Name | From | What it is |
 |---|---|---|
-| `__version__` | here | `"0.15.0"`; must match `pyproject.toml` |
+| `__version__` | here | `"0.15.1"`; must match `pyproject.toml` |
 | `SCHEMA_VERSION` | `schema` | `"1.0"`, the schema format version |
 | `FormSchema`, `Screen`, `Field`, `Option`, `Constraints` | `schema` | the schema dataclasses |
 | `extract_html(path, name=None) -> FormSchema` | here | `html_form.extract_file` then `infer` |

@@ -1111,7 +1111,8 @@ the page and FillerAI transcribe it with an OpenAI key instead.
 against, and the [sample application](fillerai/sampleapp/README.md), which
 `serve` starts next to the UI on port 8100 and links from its header, is a
 separate application - its own server, records and submit rules, and a form
-for every bot template - that uses the chat service the way a real one would. The contract is
+for every bot template, one open at a time, opened by the chat or from its
+menu - that uses the chat service the way a real one would. The contract is
 [**docs/bot-builder.md**](docs/bot-builder.md).
 
 ## Options
@@ -1326,7 +1327,7 @@ fillerai/
     static/client/     fillerai.js, demo.html - the dependency-free browser client;
                        chat.html, fillerai-chat.css - the chat window and a host to try it
   sampleapp/           Northwind Mutual, the sample application serve starts on
-                       :8100 - a form per bot template, stdlib only, /v1 only
+                       :8100 - a form per bot template (one open at a time), stdlib only, /v1 only
 examples/
   claims_intake.html                  45 fields, 4 screens
   patient_registration.fields.json    21 fields, written as a spec
@@ -1626,6 +1627,12 @@ application and someone running it for others.
 [**Technical overview**](docs/overview.md)
 — the whole system on a few pages, with diagrams: the parts, how a request
 travels through them, who can do what, and where to read next.
+
+[**The algorithms, and why these ones**](docs/algorithms.md) and
+[**NLP and the chatbot**](docs/nlp-and-chatbot.md)
+— how the model learns and how the chat understands a phrase, each with a
+plain-language part for stakeholders (including why K-means is not the tool)
+and a precise part for engineers.
 
 [**Operations**](docs/operations.md) and [**Security**](docs/security.md)
 — installing, configuring, backing up, upgrading and troubleshooting a running

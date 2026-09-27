@@ -37,7 +37,7 @@ word names a thing in the code, the module is given.
 | **persona** | One invented person from which a whole coherent record is generated. `fillerai/generate/persona.py`. |
 | **reader** | The part of the bot that turns a phrase into a template choice and values. Local by default (`fillerai/bot/understand.py`); a language model with `--bot-llm` (`fillerai/llm/understand.py`). |
 | **rule (in a model)** | A deterministic relationship found in the data during training (a field that always equals another, or is fixed by it), applied before the engine. `fillerai/train/derive.py`. |
-| **sample application** | Northwind Mutual, a demo customer portal in `fillerai/sampleapp/` that uses FillerAI only over `/v1`. Started by `serve` on port 8100. |
+| **sample application** | Northwind Mutual, a demo customer portal in `fillerai/sampleapp/` that uses FillerAI only over `/v1`. Started by `serve` on port 8100. It has a form per bot template and shows one at a time, opened by the chat or from its menu. |
 | **schema** | The versioned `FormSchema`: fields, screens, types and semantic types. The one contract between stages. Library kind `schema`, ids `sch-`. `fillerai/schema.py`. |
 | **script** | The generated, standalone Python script that reproduces a training run, kept in the library. Kind `script`, ids `scr-`. `fillerai/train/script.py`. |
 | **semantic type** | What a field means rather than how it is typed: `postal_code`, `email`, `policy_number` and so on. `SEMANTIC_TYPES` in `fillerai/schema.py`; inferred by `fillerai/infer.py`. |

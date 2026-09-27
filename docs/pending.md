@@ -149,8 +149,8 @@ transcribed a real voice with a real key.
 
 ### 1.10 🟡 The bot is English and one request at a time
 
-Its field words, action phrases and questions are English, and "change my
-address and send me an ID card" is read as the first request only. See
+Its field words, action phrases and questions are English, and a message
+that asks for two things is not split; see §2.5 for what actually happens and
 [bot-builder.md](bot-builder.md) §9.
 
 ---
@@ -255,6 +255,32 @@ for [reference/http-api.md](reference/http-api.md) and
   matched nothing, and the kind `template` runs into the date column.
 - **A missing input file, or a port already in use for `serve`,** ends in a
   Python traceback rather than a one-line message.
+
+### 2.5 🟠 The chat's local reader: defects found while documenting it
+
+Found by running the reader for [nlp-and-chatbot.md](nlp-and-chatbot.md) §8,
+against 0.15.1. None loses data the person did not see, because every value
+is shown before anything is submitted, but the first is visible to users.
+
+- **A second request becomes a value.** "change my address and send me an
+  ID card" fills the street address with "and send me an ID card"
+  (reproduce with `fillerai bot chat` and the two starters). There is no
+  clause splitting, and "address" is a default word for the street field.
+- **"ok", "okay" and "please do" never confirm**, although they are in the
+  confirm list: politeness words are stripped before the lookup.
+- **"new" never counts as a change word**, because it is a stop word and is
+  removed first.
+- **Speech alternatives are rarely read.** They are tried only when the first
+  transcript finds no template and no values at all.
+- **The stemmer misses common pairs** ("update"/"updated", "moving"/"moved").
+- **A field without options accepts any word of the right shape**, so "Mars"
+  is a state in the starter template; the docstring of
+  `fillerai/llm/understand.py` says otherwise.
+- **`fillerai bot chat` always reads locally**, even when `--bot-llm` is
+  configured for the server.
+
+The first two are small code changes with tests; the rest are listed with
+options in [nlp-and-chatbot.md](nlp-and-chatbot.md) §10.
 
 ---
 

@@ -167,7 +167,8 @@ one. It is meant for one person on their own machine.
 the same host as FillerAI, and issues it an API token called "Sample
 application" for the first administrator (or `--sample-user`). The demo has
 **no sign-in of its own**: anyone who reaches its port can chat with that
-user's templates and submit to the demo customer's record. On a shared host
+user's templates and submit to the demo customer's record, from the chat or
+by opening any form from its menu. On a shared host
 start the server with `--no-sample-app`, or keep it on loopback.
 
 ## 10. Before exposing it beyond localhost
