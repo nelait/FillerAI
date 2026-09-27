@@ -172,8 +172,14 @@ class FillerAIService:
         return urllib.request.urlopen(request, timeout=self.timeout)
 
     def turn(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        return self.post("/v1/bot/turn", body)
+
+    def transcribe(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        return self.post("/v1/bot/transcribe", body)
+
+    def post(self, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         try:
-            with self._open("/v1/bot/turn", body) as response:
+            with self._open(path, body) as response:
                 return response.status, json.loads(response.read())
         except urllib.error.HTTPError as error:
             try:
@@ -195,7 +201,7 @@ class FillerAIService:
 
 
 def make_server(fillerai: FillerAIService, portal: Portal, host: str = "127.0.0.1",
-                port: int = 8100) -> ThreadingHTTPServer:
+                port: int = 8100, server_speech: bool = False) -> ThreadingHTTPServer:
     """The application's web server; port 0 picks a free one (tests use that)."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -218,7 +224,8 @@ def make_server(fillerai: FillerAIService, portal: Portal, host: str = "127.0.0.
 
         def _body(self) -> dict[str, Any]:
             length = int(self.headers.get("Content-Length") or 0)
-            if length > 64 * 1024:
+            # A recording is the one big thing the page sends.
+            if length > (8 * 1024 * 1024 if self.path.startswith("/api/transcribe") else 64 * 1024):
                 raise Rejected("request too large", status=413)
             try:
                 body = json.loads(self.rfile.read(length) or b"{}")
@@ -233,7 +240,7 @@ def make_server(fillerai: FillerAIService, portal: Portal, host: str = "127.0.0.
             if path == "/favicon.ico":
                 return self._send(204, b"", "image/x-icon")
             if path == "/api/me":
-                return self._json(200, portal.me())
+                return self._json(200, {**portal.me(), "server_speech": server_speech})
             if path in CLIENT_FILES:
                 try:
                     data, kind = fillerai.client_file(CLIENT_FILES[path])
@@ -256,6 +263,9 @@ def make_server(fillerai: FillerAIService, portal: Portal, host: str = "127.0.0.
                 body = self._body()
                 if path == "/api/chat":
                     return self._chat(body)
+                if path == "/api/transcribe" and server_speech:
+                    return self._json(*fillerai.transcribe(
+                        {k: body.get(k) for k in ("audio", "mime", "language")}))
                 if path == "/api/address":
                     return self._json(200, portal.change_address(body.get("values") or {}))
                 if path == "/api/documents":
@@ -301,6 +311,10 @@ def main(argv: list[str] | None = None) -> int:
                              "works, but browsers only allow the microphone on "
                              "localhost or https")
     parser.add_argument("--port", type=int, default=8100)
+    parser.add_argument("--server-speech", action="store_true",
+                        help="record the microphone in the page and have FillerAI "
+                             "transcribe it (FillerAI must run with --bot-transcribe), "
+                             "for where the browser's speech service is blocked")
     parser.add_argument("--data", type=Path, default=HERE / "portal-data.json",
                         help="where the customer record is kept (default: %(default)s)")
     args = parser.parse_args(argv)
@@ -320,7 +334,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  note: FillerAI has no {key!r} template; add it with "
                   f"'fillerai bot add --starter {key}' or on the Bots tab.", file=sys.stderr)
 
-    httpd = make_server(fillerai, Portal(args.data), host=args.host, port=args.port)
+    httpd = make_server(fillerai, Portal(args.data), host=args.host, port=args.port,
+                        server_speech=args.server_speech)
     print(f"  Northwind Mutual customer portal: http://localhost:{httpd.server_address[1]}")
     print(f"  chat turns go to {args.fillerai}/v1/bot/turn")
     print("  press Ctrl-C to stop")

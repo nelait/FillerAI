@@ -4,7 +4,7 @@ What the pieces are, which way they point, and the boundaries that are not
 allowed to move. The README is the tour; this is the map you want open when
 you are changing something and need to know what else it touches.
 
-Everything here was checked against the code at version 0.13.0.
+Everything here was checked against the code at version 0.14.0.
 
 ---
 
@@ -453,6 +453,13 @@ any failure is a turn read locally. It is turned on by `serve --bot-llm`, not
 by a key being present, because it sends what end users type rather than
 field names.
 
+**Transcription** (`llm/transcribe.py`) is the third, for the chat's
+microphone where the browser's own speech service is blocked. The page
+records the phrase and the server sends it to OpenAI's transcription endpoint
+with an OpenAI key (never an Anthropic one; that API takes no audio). The
+upload is `transport.post_form`, so the socket stays in `transport.py`. It is
+turned on by `serve --bot-transcribe`, for the same reason as `--bot-llm`.
+
 ---
 
 ## 9. Invariants
@@ -465,7 +472,8 @@ These are the things a change should not quietly break. Most have a test.
 3. **Nothing in the core opens a socket.** The one exception is
    `llm/transport.py`, behind the import fence.
 4. **Nothing leaves the machine unless somebody set a key and ran an `llm`
-   command**, or set a key and started the server with `--bot-llm`.
+   command**, or set a key and started the server with `--bot-llm` or
+   `--bot-transcribe`.
 5. **The schema is the only cross-stage contract**, and its version rules hold
    (§2).
 6. **A shipped migration is never edited** (§5).
@@ -515,7 +523,7 @@ fillerai/
     static/client/     fillerai.js, demo.html, chat.html,
                        fillerai-chat.css - the browser client
 examples/              one HTML form and four field specs
-tests/                 847 tests, offline, no dependencies
+tests/                 861 tests, offline, no dependencies
 livetests/             the LLM acceptance gate; needs a key and an opt-in
 docs/                  this directory
 ```

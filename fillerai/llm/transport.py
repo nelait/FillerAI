@@ -280,3 +280,36 @@ def for_settings(settings: Settings) -> Transport:
     if sdk is not None:
         return sdk(settings)
     return UrllibTransport(settings)
+
+
+def post_form(url: str, headers: dict[str, str], fields: dict[str, str],
+              files: dict[str, tuple[str, str, bytes]], *,
+              timeout: float = 60.0) -> dict[str, Any]:
+    """POST ``multipart/form-data`` and read a JSON reply. For uploading audio.
+
+    ``files`` maps a field to ``(filename, content_type, data)``. One attempt
+    and no retry: the person is waiting on the other end of a microphone, and
+    saying it failed beats making them wait through backoff.
+    """
+    boundary = "fillerai-" + hashlib.sha256(str(random.random()).encode()).hexdigest()[:24]
+    parts: list[bytes] = []
+    for name, value in fields.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+                     f"\r\n\r\n{value}\r\n".encode("utf-8"))
+    for name, (filename, kind, data) in files.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
+                     f'filename="{filename}"\r\nContent-Type: {kind}\r\n\r\n'.encode("utf-8"))
+        parts.append(data)
+        parts.append(b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    request = urllib.request.Request(
+        url, data=b"".join(parts), method="POST",
+        headers={**headers, "content-type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        raise TransportError(f"the speech service answered {error.code}: {_detail(error)}",
+                             status=error.code) from None
+    except urllib.error.URLError as error:
+        raise TransportError(f"could not reach the speech service: {error.reason}") from None

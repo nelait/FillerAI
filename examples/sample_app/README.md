@@ -27,7 +27,10 @@ reaches it only over HTTP, the way your own application would.
    python examples/sample_app/app.py --fillerai http://localhost:8000 --token flr_...
    ```
 
-   The token can also come from `$FILLERAI_TOKEN`. Open it as `localhost`:
+   The token can also come from `$FILLERAI_TOKEN`. If the browser's speech
+   service is blocked on your network, start FillerAI with `--bot-transcribe`
+   and an OpenAI key, and add `--server-speech` here: the page then records
+   the phrase and FillerAI transcribes it. Open it as `localhost`:
    browsers only allow the microphone on `https://` or `http://localhost`, so
    the chat can't hear you at a LAN address such as `http://192.168.1.20:8100`.
 

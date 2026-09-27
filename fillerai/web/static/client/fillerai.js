@@ -170,6 +170,15 @@ export class FillerAI {
   }
 
   /**
+   * A recording as text, for a server started with `--bot-transcribe`:
+   * `{audio: base64, mime, language}` in, `{text}` out. {@link ChatWidget}
+   * takes this as its `transcribe` option.
+   */
+  transcribe(body) {
+    return this._call("POST", "/v1/bot/transcribe", body);
+  }
+
+  /**
    * Bind a model to a `<form>`: fill it as the person types, and leave
    * anything they typed themselves alone. See {@link FormBinder}.
    */
@@ -678,6 +687,184 @@ export class SpeechInput {
 }
 
 /**
+ * The microphone without the browser's recogniser: records the phrase here
+ * and has the FillerAI server transcribe it (`serve --bot-transcribe`, with an
+ * OpenAI key). For where the browser's speech service is blocked - a VPN, a
+ * corporate proxy, a browser policy - even though the microphone works.
+ *
+ * Same shape as {@link SpeechInput}. Recording stops by itself after a short
+ * silence once the person has spoken, after 20 seconds, or when the button
+ * is pressed again.
+ */
+export class RecordedSpeechInput {
+  static problem() {
+    const g = typeof globalThis !== "undefined" ? globalThis : {};
+    if (g.isSecureContext === false) {
+      const host = g.location ? g.location.host : "this address";
+      return `The microphone only works on https:// or http://localhost, not on ${host}. `
+        + "Open the page as http://localhost:<port>, or serve it over https.";
+    }
+    if (!(g.navigator && g.navigator.mediaDevices && g.navigator.mediaDevices.getUserMedia)
+        || typeof g.MediaRecorder === "undefined") {
+      return "This browser can't record audio. Type instead.";
+    }
+    return null;
+  }
+
+  /**
+   * @param {object} options
+   * @param {function} options.transcribe `({audio, mime, language}) => Promise<{text}>`.
+   * @param {function} options.onFinal `(text, [])` once the recording is text.
+   * @param {function} [options.onState] `(listening)`.
+   * @param {function} [options.onBusy] `(transcribing)`.
+   * @param {function} [options.onError] `(message, code)`.
+   * @param {string} [options.lang]
+   * @param {number} [options.maxSeconds]
+   */
+  constructor({ transcribe, onFinal, onState = null, onBusy = null, onError = null,
+                lang = "", maxSeconds = 20 } = {}) {
+    this.transcribe = transcribe;
+    this.onFinal = onFinal;
+    this.onState = onState;
+    this.onBusy = onBusy;
+    this.onError = onError;
+    this.lang = lang;
+    this.maxSeconds = maxSeconds;
+    this.listening = false;
+    this._recorder = null;
+  }
+
+  _say(message, code) {
+    if (this.onError) this.onError(message, code);
+  }
+
+  async start() {
+    if (this.listening) return false;
+    const problem = RecordedSpeechInput.problem();
+    if (problem) {
+      this._say(problem, "unsupported");
+      return false;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      this._say(SpeechInput.explain(error && error.name ? error.name : "audio-capture"),
+                error && error.name);
+      return false;
+    }
+    const kinds = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+    const mime = kinds.find((k) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(k)) || "";
+    const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const chunks = [];
+    let spoke = false;
+    recorder.ondataavailable = (event) => { if (event.data && event.data.size) chunks.push(event.data); };
+    const quiet = this._watchSilence(stream, () => { spoke = true; }, () => this.stop(),
+                                     () => { this._silent = true; this.stop(); });
+    const limit = setTimeout(() => this.stop(), this.maxSeconds * 1000);
+    recorder.onstop = async () => {
+      clearTimeout(limit);
+      quiet();
+      stream.getTracks().forEach((track) => track.stop());
+      this._set(false);
+      if (this._silent && !spoke) {
+        this._say(SpeechInput.explain("no-speech"), "no-speech");
+        return;
+      }
+      const blob = new Blob(chunks, { type: (recorder.mimeType || mime || "audio/webm") });
+      if (!blob.size) {
+        this._say(SpeechInput.explain("no-speech"), "no-speech");
+        return;
+      }
+      if (this.onBusy) this.onBusy(true);
+      try {
+        const answer = await this.transcribe({
+          audio: await toBase64(blob),
+          mime: blob.type,
+          language: this.lang || (globalThis.document && document.documentElement.lang) || "",
+        });
+        const text = String((answer && answer.text) || answer || "").trim();
+        if (text) {
+          if (this.onFinal) this.onFinal(text, []);
+        } else {
+          this._say(SpeechInput.explain("no-speech"), "no-speech");
+        }
+      } catch (error) {
+        this._say(`Couldn't turn that into text: ${error.message || error}`, "transcription_failed");
+      } finally {
+        if (this.onBusy) this.onBusy(false);
+      }
+    };
+    this._recorder = recorder;
+    this._silent = false;
+    recorder.start();
+    this._set(true);
+    return true;
+  }
+
+  /**
+   * Calls `onSpeech` the first time the level rises, `onPause` after 1.2 s
+   * of quiet following speech, and `onNothing` after 7 s with no speech at
+   * all. Returns a function that stops watching. Without Web Audio it
+   * watches nothing and the button or the time limit ends the recording.
+   */
+  _watchSilence(stream, onSpeech, onPause, onNothing) {
+    const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!Context) return () => {};
+    const context = new Context();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 1024;
+    context.createMediaStreamSource(stream).connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    const began = Date.now();
+    let heard = false;
+    let lastLoud = Date.now();
+    const timer = setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const v of samples) sum += v * v;
+      const level = Math.sqrt(sum / samples.length);
+      const now = Date.now();
+      if (level > 0.02) {
+        lastLoud = now;
+        if (!heard) { heard = true; onSpeech(); }
+      } else if (heard && now - lastLoud > 1200) {
+        onPause();
+      } else if (!heard && now - began > 7000) {
+        onNothing();
+      }
+    }, 100);
+    return () => {
+      clearInterval(timer);
+      context.close().catch(() => {});
+    };
+  }
+
+  stop() {
+    if (this._recorder && this._recorder.state !== "inactive") this._recorder.stop();
+  }
+
+  toggle() {
+    return this.listening ? (this.stop(), Promise.resolve(false)) : this.start();
+  }
+
+  _set(listening) {
+    if (this.listening === listening) return;
+    this.listening = listening;
+    if (this.onState) this.onState(listening);
+  }
+}
+
+function toBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] || "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
  * A chat window: messages, the before/after card, suggested actions, a
  * text box and a microphone. Plain DOM, class names prefixed `fai-` to style,
  * and optional - a React app can drive {@link BotChat} and draw its own.
@@ -695,11 +882,17 @@ export class ChatWidget {
    *   it carries the reset button.
    * @param {boolean} [options.resettable] Offer a "New chat" button.
    * @param {function} [options.onReset] Called after the chat was reset.
+   * @param {function} [options.transcribe] `({audio, mime, language}) =>
+   *   Promise<{text}>`. Given, the microphone records here and this turns the
+   *   recording into text (for example `(a) => client.transcribe(a)` against
+   *   a server started with `--bot-transcribe`) instead of using the
+   *   browser's recogniser.
    */
   constructor(root, chat, { greeting = "Hi! What can I help you with?",
                             placeholder = "Type a message", speech = true,
                             speakReplies = true, title = "",
-                            resettable = true, onReset = null } = {}) {
+                            resettable = true, onReset = null,
+                            transcribe = null } = {}) {
     this.root = root;
     this.chat = chat;
     this.speakReplies = speakReplies;
@@ -764,14 +957,20 @@ export class ChatWidget {
     if (speech) {
       // The microphone is shown even where speech can't work, so pressing it
       // says why instead of the button silently missing or doing nothing.
-      const problem = SpeechInput.problem();
+      const Input = transcribe ? RecordedSpeechInput : SpeechInput;
+      const problem = Input.problem();
       if (problem) {
         this.mic.classList.add("is-unavailable");
         this.mic.title = problem;
         this.mic.addEventListener("click", () => this._line("bot", problem, "fai-error"));
       } else {
         const typing = placeholder;
-        this.speech = new SpeechInput({
+        this.speech = new Input({
+          transcribe,
+          onBusy: (on) => {
+            this.input.placeholder = on ? "Turning that into text..." : typing;
+            this.mic.disabled = on;
+          },
           onInterim: (text) => { this.input.value = text; },
           onFinal: (text, alternatives) => {
             this.input.value = "";
@@ -922,6 +1121,7 @@ if (typeof globalThis !== "undefined") {
   globalThis.FillerAIBotChat = BotChat;
   globalThis.FillerAIChatWidget = ChatWidget;
   globalThis.FillerAISpeechInput = SpeechInput;
+  globalThis.FillerAIRecordedSpeechInput = RecordedSpeechInput;
 }
 
 export default FillerAI;

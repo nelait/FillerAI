@@ -130,6 +130,12 @@ AUTH: Auth | None = None
 BOT_LLM = False
 BOT_LLM_VARIABLE = "FILLERAI_BOT_LLM"
 
+#: Whether the chat's microphone may send recordings here to be transcribed
+#: with an OpenAI key. Off unless ``serve --bot-transcribe`` or
+#: ``$FILLERAI_BOT_TRANSCRIBE``: it sends a person's voice to a third party.
+BOT_TRANSCRIBE = False
+BOT_TRANSCRIBE_VARIABLE = "FILLERAI_BOT_TRANSCRIBE"
+
 #: API keys typed into the UI. In memory, for this run of the server, per
 #: user - see :mod:`.keyring` for why they go no further than that.
 KEYRING = Keyring()
@@ -290,6 +296,7 @@ def api_meta(_: dict[str, Any]) -> dict[str, Any]:
         "default_algorithm": algos.DEFAULT,
         "library": str(library().root),
         "bot_llm": BOT_LLM,
+        "bot_transcribe": BOT_TRANSCRIBE,
     })
     return base
 
@@ -1363,12 +1370,7 @@ def _llm_settings(task: str, *, provider: str | None = None,
 
     who = who if who is not None else _who()
     chosen = KEYRING.preference(who)
-    environ = dict(os.environ)
-    for name, key in KEYRING.keys(who).items():
-        try:
-            environ[llm_providers.get(name).key_variable] = key
-        except ValueError:
-            continue
+    environ = _llm_environ(who)
     try:
         return Settings.resolve(
             task,
@@ -1378,6 +1380,19 @@ def _llm_settings(task: str, *, provider: str | None = None,
         )
     except ValueError as error:
         raise ApiError(str(error)) from None
+
+
+def _llm_environ(who: str) -> dict[str, str]:
+    """The environment with this user's typed keys laid over it."""
+    from ..llm import providers as llm_providers
+
+    environ = dict(os.environ)
+    for name, key in KEYRING.keys(who).items():
+        try:
+            environ[llm_providers.get(name).key_variable] = key
+        except ValueError:
+            continue
+    return environ
 
 
 def _llm_status() -> dict[str, Any]:
@@ -1789,6 +1804,15 @@ def _bot_reader(who: str):
     return llm_understand.reader(settings)
 
 
+def _bot_transcriber(who: str):
+    """The transcriber for this owner's OpenAI key, or None when it is off."""
+    if not BOT_TRANSCRIBE:
+        return None
+    from ..llm import transcribe as llm_transcribe
+
+    return llm_transcribe.transcriber(_llm_environ(who or SINGLE_USER))
+
+
 def _template_from(payload: dict[str, Any]) -> Template:
     try:
         return Template.from_dict(_require(payload, "template"))
@@ -1809,6 +1833,7 @@ def api_bot_templates(_: dict[str, Any]) -> dict[str, Any]:
                    for e in store.list(kind="model", limit=100)],
         "semantic_types": list(SEMANTIC_TYPES),
         "bot_llm": BOT_LLM,
+        "bot_transcribe": BOT_TRANSCRIBE,
     }
 
 
@@ -1863,6 +1888,14 @@ def api_bot_from_schema(payload: dict[str, Any]) -> dict[str, Any]:
     except TemplateError as error:
         raise ApiError(str(error)) from None
     return {"template": draft.to_dict(), "schema_id": entry_id}
+
+
+def api_bot_transcribe(payload: dict[str, Any]) -> dict[str, Any]:
+    """A recording from the Bots panel's microphone. Same code as ``/v1``."""
+    try:
+        return botrest.run_transcribe(_bot_transcriber(_who()), payload)
+    except rest.RestError as error:
+        raise ApiError(error.message, status=error.status) from None
 
 
 def api_bot_turn(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1942,6 +1975,7 @@ ROUTES: dict[str, Route] = {
     "/api/bot/starter": Route(api_bot_starter),
     "/api/bot/from_schema": Route(api_bot_from_schema),
     "/api/bot/turn": Route(api_bot_turn),
+    "/api/bot/transcribe": Route(api_bot_transcribe),
     "/api/tokens": Route(api_tokens),
     "/api/tokens/create": Route(api_token_create),
     "/api/tokens/revoke": Route(api_token_revoke),
@@ -2357,15 +2391,29 @@ def use_bot_llm(on: bool) -> None:
     botrest.READER = _bot_reader if BOT_LLM else (lambda owner: None)
 
 
+def use_bot_transcribe(on: bool) -> None:
+    """Turn transcribing recordings with an OpenAI key on or off."""
+    global BOT_TRANSCRIBE
+    BOT_TRANSCRIBE = bool(on)
+    botrest.TRANSCRIBER = _bot_transcriber if BOT_TRANSCRIBE else (lambda owner: None)
+
+
+def _flag(value: bool | None, variable: str) -> bool:
+    if value is not None:
+        return value
+    return os.environ.get(variable, "") not in ("", "0", "false", "no")
+
+
 def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
           verbose: bool = False, library_path: str | None = None,
           database: str | None = None, accounts: bool = True,
-          cors_origins: list[str] | None = None, bot_llm: bool | None = None) -> int:
+          cors_origins: list[str] | None = None, bot_llm: bool | None = None,
+          bot_transcribe: bool | None = None) -> int:
     global LIBRARY, CORS_ALLOW
 
     Handler.quiet = not verbose
-    use_bot_llm(bot_llm if bot_llm is not None
-                else os.environ.get(BOT_LLM_VARIABLE, "") not in ("", "0", "false", "no"))
+    use_bot_llm(_flag(bot_llm, BOT_LLM_VARIABLE))
+    use_bot_transcribe(_flag(bot_transcribe, BOT_TRANSCRIBE_VARIABLE))
     if cors_origins is not None:
         CORS_ALLOW = tuple(o.strip() for o in cors_origins if o.strip())
 
@@ -2408,6 +2456,12 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
     print(f"  JavaScript client: {url}client/fillerai.js")
     print(f"  chat demo: {url}client/chat.html  (bot reads phrases "
           f"{'with a language model' if BOT_LLM else 'on this machine'})")
+    if BOT_TRANSCRIBE:
+        from ..llm import transcribe as llm_transcribe
+
+        have = "an OpenAI key is set" if llm_transcribe.openai_key() else \
+            "no OpenAI key in the environment yet; add one in Settings"
+        print(f"  microphone: recordings are transcribed with OpenAI ({have})")
     print("  press Ctrl-C to stop")
 
     if open_browser:

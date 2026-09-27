@@ -1104,7 +1104,10 @@ By default a phrase is read on this machine, by finding each field's words and
 what follows them, and by values whose shape gives them away. `serve
 --bot-llm` has the configured language model read it instead, checked by the
 same rules as a typed value; that is off unless asked for, because it sends
-what end users type. `/client/chat.html` is a working host page to try it
+what end users type. Where the browser's own speech service is blocked (a
+VPN, a corporate proxy), `serve --bot-transcribe` has the microphone record in
+the page and FillerAI transcribe it with an OpenAI key instead.
+`/client/chat.html` is a working host page to try it
 against, and [`examples/sample_app/`](examples/sample_app/README.md) is a
 separate sample application - its own server, records and submit rules - that
 uses the chat service the way a real one would. The contract is
@@ -1311,6 +1314,7 @@ fillerai/
     cost.py            what a call will cost, said before it is made
     rules.py           proposing a form's own rules, and disbelieving them
     understand.py      reading a chat phrase with a model, for --bot-llm
+    transcribe.py      a recording as text with an OpenAI key, for --bot-transcribe
   web/
     server.py          the local HTTP API, one function per endpoint
     rest.py            the /v1 integration API: bearer tokens, no cookies
@@ -1370,7 +1374,7 @@ docs/
 python -m unittest discover -s tests -v
 ```
 
-847 tests, no dependencies. They cover malformed markup, each inference rule,
+861 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real
