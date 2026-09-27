@@ -402,8 +402,12 @@ const chat = new BotChat(null, {
   host's backend.
 - **`SpeechInput`** wraps the browser's speech recognition: interim text while
   the person speaks, the final phrase and its alternatives when they stop.
-  `SpeechInput.supported` is false where the browser has none, and the widget
-  then hides the microphone instead of showing one that does nothing.
+  `SpeechInput.problem()` names what stops it on this page (no recogniser,
+  not a secure origin, Brave), and the widget then greys the microphone out
+  and says why when it is pressed. The first press opens the microphone
+  directly, so a refusal by the page, the browser or the operating system is
+  reported by name; every recogniser error, and hearing nothing at all, comes
+  back to the chat as a sentence.
 - **`ChatWidget`** draws the messages, the before/after card, the suggested
   actions and the text box with its microphone, and reads a reply aloud when
   the phrase it answers was spoken. It is plain DOM with `fai-` class names;
@@ -473,8 +477,15 @@ template is usually the whole fix.
   tested with canned answers only, for the same reason as the rules feature:
   no session has had a key.
 - **Speech recognition is the browser's.** It works where the browser has a
-  recogniser (Chrome, Edge, Safari) and the microphone is allowed; elsewhere
-  the microphone is hidden. FillerAI never receives audio, but the browser's
+  recogniser (Chrome, Edge, Safari), the page is on `https://` or
+  `http://localhost` (browsers refuse the microphone on any other `http://`
+  address, including a LAN IP or a machine name), and the microphone is
+  allowed by both the page and the operating system. Firefox has no
+  recogniser, and Brave turns its speech service off. In each of those cases
+  the microphone is shown greyed out and pressing it says why; a refusal or
+  failure while listening, including hearing nothing, is said in the chat in
+  plain words (`SpeechInput.problem()` and `SpeechInput.explain(code)`).
+  FillerAI never receives audio, but the browser's
   recogniser may send it to its vendor (Chrome sends it to Google), so a host
   that must keep audio in-house should pass `speech: false` to `ChatWidget`
   and bring its own recogniser to `chat.speak(text)`. It was checked in a headless browser, which has no

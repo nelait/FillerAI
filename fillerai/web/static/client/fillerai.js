@@ -515,8 +515,52 @@ export class BotChat {
  */
 export class SpeechInput {
   static get supported() {
-    return typeof globalThis !== "undefined"
-      && Boolean(globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition);
+    return SpeechInput.problem() === null;
+  }
+
+  /**
+   * Why speech input cannot work on this page, in words for the person, or
+   * null when it can. Checked before the microphone is offered, because
+   * several of these fail silently or with an unhelpful code otherwise.
+   */
+  static problem() {
+    const g = typeof globalThis !== "undefined" ? globalThis : {};
+    if (!(g.SpeechRecognition || g.webkitSpeechRecognition)) {
+      return "This browser has no speech recognition. Use Chrome, Edge or Safari, or type instead.";
+    }
+    if (g.isSecureContext === false) {
+      // Browsers only allow the microphone on https:// or http://localhost.
+      const host = g.location ? g.location.host : "this address";
+      return `The microphone only works on https:// or http://localhost, not on ${host}. `
+        + "Open the page as http://localhost:<port>, or serve it over https.";
+    }
+    if (g.navigator && g.navigator.brave) {
+      return "Brave turns off the speech service it would need. Use Chrome, Edge or Safari, or type instead.";
+    }
+    return null;
+  }
+
+  /** The person-readable reason for a recogniser or getUserMedia error. */
+  static explain(code) {
+    const reasons = {
+      "not-allowed": "The microphone is blocked for this page. Allow it from the icon in the "
+        + "address bar and try again.",
+      NotAllowedError: "The microphone is blocked for this page. Allow it from the icon in the "
+        + "address bar and try again. On a Mac, also check System Settings, Privacy & Security, "
+        + "Microphone for this browser.",
+      "service-not-allowed": "The browser's speech service is turned off. In Safari, turn on "
+        + "Dictation (System Settings, Keyboard); in Chrome, check the microphone site setting.",
+      "audio-capture": "No microphone could be opened. Check one is connected and that the "
+        + "system lets this browser use it.",
+      NotFoundError: "No microphone was found. Check one is connected.",
+      NotReadableError: "The microphone is in use by another application or blocked by the "
+        + "system. Close the other application, or allow this browser in the system settings.",
+      network: "The browser couldn't reach its speech service. It needs an internet connection "
+        + "(Chrome and Edge recognise speech on their servers).",
+      "language-not-supported": "The speech service doesn't support this page's language.",
+      "no-speech": "I didn't hear anything. Press the microphone, wait for it to turn red, then speak.",
+    };
+    return reasons[code] || `Speech input failed (${code}).`;
   }
 
   /**
@@ -524,7 +568,7 @@ export class SpeechInput {
    * @param {function} options.onFinal `(text, alternatives)` when a phrase ends.
    * @param {function} [options.onInterim] `(text)` while the person speaks.
    * @param {function} [options.onState] `(listening)` when it starts or stops.
-   * @param {function} [options.onError] `(message)`.
+   * @param {function} [options.onError] `(message, code)`, a sentence for the person.
    * @param {string} [options.lang] A BCP 47 tag; the page's language otherwise.
    */
   constructor({ onFinal, onInterim = null, onState = null, onError = null, lang = "" } = {}) {
@@ -535,23 +579,57 @@ export class SpeechInput {
     this.lang = lang;
     this.listening = false;
     this._recogniser = null;
+    this._askedForMic = false;
   }
 
-  start() {
-    if (!SpeechInput.supported || this.listening) return false;
+  _fail(code) {
+    this._set(false);
+    if (this.onError) this.onError(SpeechInput.explain(code), code);
+  }
+
+  /**
+   * Start listening. Resolves true once the recogniser is running. The first
+   * time, the microphone is opened directly so a refusal (by the page, the
+   * browser or the operating system) is reported by name rather than as the
+   * recogniser's bare "not-allowed" or "audio-capture".
+   */
+  async start() {
+    if (this.listening) return false;
+    const problem = SpeechInput.problem();
+    if (problem) {
+      if (this.onError) this.onError(problem, "unsupported");
+      return false;
+    }
+    this._set(true);
+    const media = globalThis.navigator && globalThis.navigator.mediaDevices;
+    if (!this._askedForMic && media && media.getUserMedia) {
+      try {
+        const stream = await media.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+        this._askedForMic = true;
+      } catch (error) {
+        this._fail(error && error.name ? error.name : "audio-capture");
+        return false;
+      }
+    }
     const Recogniser = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
     const recogniser = new Recogniser();
     recogniser.lang = this.lang || (globalThis.document && document.documentElement.lang) || "en-US";
     recogniser.interimResults = true;
     recogniser.maxAlternatives = 3;
     recogniser.continuous = false;
+    let heard = false;
+    let failed = false;
     recogniser.onresult = (event) => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
         if (result.isFinal) {
           const all = Array.from(result).map((alt) => alt.transcript.trim());
-          if (this.onFinal && all[0]) this.onFinal(all[0], all.slice(1));
+          if (all[0]) {
+            heard = true;
+            if (this.onFinal) this.onFinal(all[0], all.slice(1));
+          }
         } else {
           interim += result[0].transcript;
         }
@@ -559,27 +637,41 @@ export class SpeechInput {
       if (interim && this.onInterim) this.onInterim(interim);
     };
     recogniser.onerror = (event) => {
-      if (this.onError && event.error !== "no-speech" && event.error !== "aborted") {
-        this.onError(event.error === "not-allowed"
-          ? "the microphone is blocked for this page" : `speech: ${event.error}`);
+      failed = true;
+      // "aborted" is our own stop(); everything else the person should hear about.
+      if (event.error !== "aborted") this._fail(event.error);
+    };
+    recogniser.onend = () => {
+      const wasListening = this.listening;
+      this._set(false);
+      // Ended on its own with nothing recognised and no error: say so rather
+      // than leave the person wondering whether the microphone worked.
+      if (wasListening && !heard && !failed && !this._stopped && this.onError) {
+        this.onError(SpeechInput.explain("no-speech"), "no-speech");
       }
     };
-    recogniser.onend = () => this._set(false);
     this._recogniser = recogniser;
-    recogniser.start();
-    this._set(true);
+    this._stopped = false;
+    try {
+      recogniser.start();
+    } catch (error) {
+      this._fail(error && error.name ? error.name : "start");
+      return false;
+    }
     return true;
   }
 
   stop() {
+    this._stopped = true;
     if (this._recogniser) this._recogniser.stop();
   }
 
   toggle() {
-    return this.listening ? (this.stop(), false) : this.start();
+    return this.listening ? (this.stop(), Promise.resolve(false)) : this.start();
   }
 
   _set(listening) {
+    if (this.listening === listening) return;
     this.listening = listening;
     if (this.onState) this.onState(listening);
   }
@@ -669,18 +761,37 @@ export class ChatWidget {
     });
 
     this.speech = null;
-    if (speech && SpeechInput.supported) {
-      this.speech = new SpeechInput({
-        onInterim: (text) => { this.input.value = text; },
-        onFinal: (text, alternatives) => {
-          this.input.value = "";
-          this._you(text, "speech");
-          this.chat.speak(text, alternatives).catch(() => {});
-        },
-        onState: (on) => this.mic.classList.toggle("is-listening", on),
-        onError: (message) => this._line("bot", message, "fai-error"),
-      });
-      this.mic.addEventListener("click", () => this.speech.toggle());
+    if (speech) {
+      // The microphone is shown even where speech can't work, so pressing it
+      // says why instead of the button silently missing or doing nothing.
+      const problem = SpeechInput.problem();
+      if (problem) {
+        this.mic.classList.add("is-unavailable");
+        this.mic.title = problem;
+        this.mic.addEventListener("click", () => this._line("bot", problem, "fai-error"));
+      } else {
+        const typing = placeholder;
+        this.speech = new SpeechInput({
+          onInterim: (text) => { this.input.value = text; },
+          onFinal: (text, alternatives) => {
+            this.input.value = "";
+            this._you(text, "speech");
+            this.chat.speak(text, alternatives).catch(() => {});
+          },
+          onState: (on) => {
+            this.mic.classList.toggle("is-listening", on);
+            this.mic.setAttribute("aria-pressed", String(on));
+            this.mic.title = on ? "Stop listening" : "Speak";
+            this.input.placeholder = on ? "Listening... speak now" : typing;
+          },
+          onError: (message) => this._line("bot", message, "fai-error"),
+        });
+        this.mic.addEventListener("click", () => {
+          // Talking over the bot's own voice makes it hear itself.
+          if (typeof globalThis.speechSynthesis !== "undefined") globalThis.speechSynthesis.cancel();
+          this.speech.toggle();
+        });
+      }
     } else {
       this.mic.hidden = true;
     }
