@@ -154,6 +154,17 @@ function openChat(open) {
   if (open && !widget) {
     widget = new ChatWidget($("chat"), chat, {
       title: "Northwind assistant",
+      // With --server-speech the recording goes through this server to
+      // FillerAI's /v1/bot/transcribe instead of the browser's recogniser.
+      transcribe: me.server_speech ? async (audio) => {
+        const response = await fetch("/api/transcribe", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(audio),
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || `failed (${response.status})`);
+        return body;
+      } : null,
       greeting: `Hi ${me.customer.full_name.split(" ")[0]}! I can change your address `
         + "or send you a policy document. Type, or press the microphone.",
       // A new chat also puts the forms back to what is on file.

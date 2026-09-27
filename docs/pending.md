@@ -139,7 +139,10 @@ Tustin" well is not. Same missing key as §1.1.
 `SpeechInput` wraps the browser's own recogniser, and the only browser this
 project is checked in is headless and has no microphone. The service side of
 speech (`via: "speech"`, alternatives, no example hints in a spoken question)
-is tested; a person talking into Chrome is not.
+is tested; a person talking into Chrome is not. `--bot-transcribe` (the
+recording route, for when Chrome's speech service is blocked) is tested end to
+end with a recorded tone through a stand-in for OpenAI, but has not yet
+transcribed a real voice with a real key.
 
 ### 1.10 🟡 The bot is English and one request at a time
 
@@ -198,7 +201,7 @@ the real one, which is what a test backend is for.
 
 No `.github/workflows`, so no pull request in this repository will ever show a
 green check, and `python -m unittest discover -s tests -q` run locally is the
-only signal that anything works. 847 tests, about 70 seconds.
+only signal that anything works. 861 tests, about 70 seconds.
 
 Combined with §2.1, a contributor who runs the suite once and sees a failure
 has no way to tell a real regression from the known race without re-running.

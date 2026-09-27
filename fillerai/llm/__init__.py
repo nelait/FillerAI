@@ -25,6 +25,7 @@ What is here:
 ``prompts``    what gets asked, and the shape of the answer
 ``cost``       what a call will cost, said before it is made
 ``rules``      proposing a form's own business rules, and disbelieving them
+``transcribe`` a recorded phrase as text, with an OpenAI key
 """
 
 from __future__ import annotations

@@ -10,6 +10,8 @@ The contract is ``docs/bot-builder.md``.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from typing import Any, Callable
 
@@ -24,6 +26,14 @@ from .rest import Caller, Endpoint, RestError
 #: replaces this when it is started with the language-model reader turned
 #: on; left alone, every turn is read on this machine.
 READER: Callable[[str], Reader | None] = lambda owner: None
+
+#: Whose transcriber to use for a recording, given the library owner's id: a
+#: function ``(audio, mime, language) -> text``, or None when the server was
+#: not started with ``--bot-transcribe``. Speech is then the browser's job.
+TRANSCRIBER: Callable[[str], Callable[[bytes, str, str], str] | None] = lambda owner: None
+
+#: Base64 of the largest recording accepted, with room to spare.
+MAX_AUDIO_FIELD = 6 * 1024 * 1024
 
 _KEY = r"(?P<key>[a-z][a-z0-9_]{0,63})"
 
@@ -133,10 +143,46 @@ def run_turn(store: Any, available: list[Template], body: dict[str, Any], *,
         raise RestError(error.message, status=error.status, code=error.code) from None
 
 
+def transcribe(caller: Caller, params: dict[str, str],
+               body: dict[str, Any]) -> dict[str, Any]:
+    """A recording made in the browser, as text. See ``docs/bot-builder.md`` §7."""
+    return run_transcribe(TRANSCRIBER(str(getattr(caller.store, "owner", "") or "")), body)
+
+
+def run_transcribe(transcriber: Callable[[bytes, str, str], str] | None,
+                   body: dict[str, Any]) -> dict[str, Any]:
+    """Check a recording and hand it over; shared by ``/v1`` and the UI."""
+    if transcriber is None:
+        raise RestError("this server does not transcribe speech; start it with "
+                        "--bot-transcribe, or use the browser's recogniser",
+                        status=409, code="transcription_off")
+    audio, mime = body.get("audio"), body.get("mime")
+    if not isinstance(audio, str) or not audio or len(audio) > MAX_AUDIO_FIELD:
+        raise RestError("audio must be the recording as base64, at most about 4 MB",
+                        code="bad_input")
+    if not isinstance(mime, str) or not mime.startswith("audio/"):
+        raise RestError("mime must be the recording's type, such as audio/webm",
+                        code="bad_input")
+    try:
+        data = base64.b64decode(audio, validate=True)
+    except (binascii.Error, ValueError):
+        raise RestError("audio is not valid base64", code="bad_input") from None
+    language = body.get("language") if isinstance(body.get("language"), str) else ""
+    # Imported here: the error type lives behind the language-model fence.
+    from ..llm.transcribe import TranscribeError
+
+    try:
+        text = transcriber(data, mime, language)
+    except TranscribeError as error:
+        raise RestError(str(error), status=502, code="transcription_failed") from None
+    return {"text": text, "via": "speech"}
+
+
 ENDPOINTS: list[Endpoint] = [
     Endpoint("GET", re.compile(r"^/v1/templates$"), templates),
     Endpoint("POST", re.compile(r"^/v1/templates$"), save_template),
     Endpoint("GET", re.compile(rf"^/v1/templates/{_KEY}$"), template),
     Endpoint("POST", re.compile(rf"^/v1/templates/{_KEY}/delete$"), delete_template),
     Endpoint("POST", re.compile(r"^/v1/bot/turn$"), turn),
+    Endpoint("POST", re.compile(r"^/v1/bot/transcribe$"), transcribe),
 ]

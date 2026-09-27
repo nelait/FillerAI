@@ -204,7 +204,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
                  verbose=args.verbose, library_path=args.library,
                  database=args.database, accounts=not args.no_auth,
                  cors_origins=args.cors_origin,
-                 bot_llm=True if args.bot_llm else None)
+                 bot_llm=True if args.bot_llm else None,
+                 bot_transcribe=True if args.bot_transcribe else None)
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -1199,6 +1200,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help=f"let the bot read chat phrases with the configured "
                             f"language model (or ${'FILLERAI_BOT_LLM'}=1). Off by "
                             "default: it sends what end users type to the provider")
+    serve.add_argument("--bot-transcribe", action="store_true",
+                       help="let the chat's microphone record in the browser and have "
+                            "the recording transcribed here with an OpenAI key (or "
+                            "$FILLERAI_BOT_TRANSCRIBE=1), for where the browser's own "
+                            "speech service is blocked. Off by default: it sends voices "
+                            "to OpenAI")
     serve.set_defaults(func=cmd_serve)
 
     trainer = subparsers.add_parser(

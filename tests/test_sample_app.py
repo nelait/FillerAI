@@ -128,6 +128,33 @@ class TestSampleApp(RestCase):
         self.assertNotIn(self.token.encode(), text, "the token never reaches the page")
         self.assertEqual(self.app_call("/../app.py")[0], 404)
 
+    def test_server_speech_goes_through_the_application_to_fillerai(self):
+        self.assertFalse(self.app_json("/api/me")[1]["server_speech"])
+        self.assertEqual(self.app_call("/api/transcribe", {"audio": "AA=="})[0], 404,
+                         "not offered unless the application was started with it")
+        speaking = sample_app.make_server(sample_app.FillerAIService(self.base, self.token),
+                                          self.portal, port=0, server_speech=True)
+        speaking.handler.quiet = True
+        thread = threading.Thread(target=speaking.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base = f"http://127.0.0.1:{speaking.server_address[1]}"
+            with urllib.request.urlopen(base + "/api/me") as response:
+                self.assertTrue(json.loads(response.read())["server_speech"])
+            request = urllib.request.Request(
+                base + "/api/transcribe", method="POST",
+                data=json.dumps({"audio": "AA==", "mime": "audio/webm"}).encode(),
+                headers={"Content-Type": "application/json"})
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(request)
+            # FillerAI here was not started with --bot-transcribe, and says so.
+            self.assertEqual(caught.exception.code, 409)
+            self.assertEqual(json.loads(caught.exception.read())["code"], "transcription_off")
+        finally:
+            speaking.shutdown()
+            speaking.server_close()
+            thread.join(timeout=5)
+
     def test_a_fillerai_that_is_down_is_a_502_with_a_reason(self):
         down = sample_app.FillerAIService("http://127.0.0.1:9", self.token, timeout=2)
         status, body = down.turn({"input": {"type": "text", "text": "hi"}})

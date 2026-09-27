@@ -2291,6 +2291,7 @@ async function loadBots(select) {
     bots.list = result.templates;
     bots.starters = result.starters;
     bots.types = result.semantic_types;
+    bots.transcribe = result.bot_transcribe;
     $('botPick').innerHTML = result.templates.length
       ? result.templates.map((t) => `<option value="${escapeAttr(t.key)}">${escapeHtml(t.name)}</option>`).join('')
       : '<option value="">No templates yet</option>';
@@ -2304,6 +2305,9 @@ async function loadBots(select) {
     $('botReader').textContent = result.bot_llm
       ? 'Phrases are read by the language model in Settings, and checked like typed values.'
       : 'Phrases are read on this machine. Start the server with --bot-llm to use a language model instead.';
+    $('botReader').textContent += result.bot_transcribe
+      ? ' The microphone records here and OpenAI turns it into text (--bot-transcribe).'
+      : ' The microphone uses the browser\'s own speech recognition; --bot-transcribe sends recordings to OpenAI instead.';
     const key = select || (bots.editing && bots.editing.key) || (result.templates[0] || {}).key;
     if (key && result.templates.some((t) => t.key === key)) {
       $('botPick').value = key;
@@ -2600,6 +2604,7 @@ function startBotChat() {
   });
   bots.widget = new Widget($('botChat'), bots.chat, {
     title: 'Chat',
+    transcribe: bots.transcribe ? (audio) => api('/api/bot/transcribe', audio) : null,
     greeting: 'Try a template here. Nothing is sent anywhere else.',
     onReset: resetBotForm,
   });

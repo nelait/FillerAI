@@ -11,7 +11,7 @@ already holds, and what the person can do next.
 This page is the contract between the chat window and the bot service. It was
 written before the code on purpose: the chat window is in someone else's
 product, so the interface is the part that cannot be changed casually later.
-Everything below is checked against the code at version 0.13.0, and each
+Everything below is checked against the code at version 0.14.0, and each
 example reply is what the service actually returns.
 
 ---
@@ -348,13 +348,15 @@ All under `/v1`, bearer token, same CORS rules as the rest of `/v1`.
 | `POST` | `/v1/templates` | create or replace one (body: the template) |
 | `POST` | `/v1/templates/{key}/delete` | remove one |
 | `POST` | `/v1/bot/turn` | one turn (§3) |
+| `POST` | `/v1/bot/transcribe` | a recording as text, when the server runs with `--bot-transcribe` (§7.1) |
 
 A token **pinned to a model** may run turns only on templates linked to that
 model, and cannot create or delete templates. An unpinned token can do both.
 
 Refusals carry a stable `code` as everywhere in `/v1`: `unknown_template`,
 `bad_template`, `bad_input`, `bad_state`, `stale_action`,
-`template_not_allowed`, `out_of_scope`.
+`template_not_allowed`, `out_of_scope`, and for transcription
+`transcription_off` (409) and `transcription_failed` (502).
 
 **Where the token lives.** A chat window runs in an end user's browser, and a
 bearer token in that browser is readable by that user. For a real deployment
@@ -438,6 +440,37 @@ through the application's own `/api/address` or `/api/documents`, which can
 refuse it (`submit_failed` goes back to the chat with the reason). See its
 [README](../examples/sample_app/README.md).
 
+### 7.1 When the browser's speech service is blocked
+
+The browser's recogniser needs the browser vendor's speech service: Chrome and
+Edge send the audio to their servers. A VPN, a corporate proxy or a browser
+policy can block that while the microphone itself works fine (a Teams call in
+the same browser does not use it), and then the microphone hears nothing.
+
+For that case the server can do the transcribing. Start it with
+`serve --bot-transcribe` (or `FILLERAI_BOT_TRANSCRIBE=1`) and give it an
+**OpenAI** key: `$OPENAI_API_KEY`, one typed into Settings for OpenAI, or
+`$FILLERAI_LLM_KEY` when that is an OpenAI key. An Anthropic key is never used
+for this, because Anthropic's API does not transcribe audio. Then:
+
+- The Bots tab's microphone **records in the page** instead (`RecordedSpeechInput`,
+  with `MediaRecorder`). Recording stops after a short pause once you have
+  spoken, after 20 seconds, or when the button is pressed again.
+- The recording goes to `POST /api/bot/transcribe` (the UI) or
+  `POST /v1/bot/transcribe` (another application), as
+  `{"audio": "<base64>", "mime": "audio/webm", "language": "en-US"}`, and comes
+  back as `{"text": "...", "via": "speech"}`. The page then sends that text as
+  an ordinary spoken turn, so nothing about §3 changes.
+- The server passes it to OpenAI's `/v1/audio/transcriptions` with
+  `gpt-4o-mini-transcribe` (`$FILLERAI_TRANSCRIBE_MODEL` to change it, for
+  example to `whisper-1`; `$FILLERAI_TRANSCRIBE_BASE_URL` for a proxy).
+
+A host application passes `transcribe` to `ChatWidget` to get the same
+microphone: `transcribe: (audio) => client.transcribe(audio)`, or a function
+that posts to its own backend. `examples/sample_app` does the latter with
+`--server-speech`. Like `--bot-llm`, this is off unless asked for, because it
+sends people's voices to OpenAI.
+
 ---
 
 ## 8. Building templates
@@ -485,7 +518,8 @@ template is usually the whole fix.
   the microphone is shown greyed out and pressing it says why; a refusal or
   failure while listening, including hearing nothing, is said in the chat in
   plain words (`SpeechInput.problem()` and `SpeechInput.explain(code)`).
-  FillerAI never receives audio, but the browser's
+  FillerAI never receives audio unless it was started with
+  `--bot-transcribe` (§7.1), but the browser's
   recogniser may send it to its vendor (Chrome sends it to Google), so a host
   that must keep audio in-house should pass `speech: false` to `ChatWidget`
   and bring its own recogniser to `chat.speak(text)`. It was checked in a headless browser, which has no
