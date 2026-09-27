@@ -27,7 +27,9 @@ reaches it only over HTTP, the way your own application would.
    python examples/sample_app/app.py --fillerai http://localhost:8000 --token flr_...
    ```
 
-   The token can also come from `$FILLERAI_TOKEN`.
+   The token can also come from `$FILLERAI_TOKEN`. Open it as `localhost`:
+   browsers only allow the microphone on `https://` or `http://localhost`, so
+   the chat can't hear you at a LAN address such as `http://192.168.1.20:8100`.
 
 3. Open http://localhost:8100 and try *"please update my city from SFO to
    Irvine and house no 1429 Silverstein"*. The chat asks for the state and the

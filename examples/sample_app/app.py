@@ -296,6 +296,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--token", default=os.environ.get("FILLERAI_TOKEN", ""),
                         help="a FillerAI API token (or $FILLERAI_TOKEN); not needed "
                              "when FillerAI runs with --no-auth")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="where to listen (default: %(default)s). Another address "
+                             "works, but browsers only allow the microphone on "
+                             "localhost or https")
     parser.add_argument("--port", type=int, default=8100)
     parser.add_argument("--data", type=Path, default=HERE / "portal-data.json",
                         help="where the customer record is kept (default: %(default)s)")
@@ -316,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  note: FillerAI has no {key!r} template; add it with "
                   f"'fillerai bot add --starter {key}' or on the Bots tab.", file=sys.stderr)
 
-    httpd = make_server(fillerai, Portal(args.data), port=args.port)
+    httpd = make_server(fillerai, Portal(args.data), host=args.host, port=args.port)
     print(f"  Northwind Mutual customer portal: http://localhost:{httpd.server_address[1]}")
     print(f"  chat turns go to {args.fillerai}/v1/bot/turn")
     print("  press Ctrl-C to stop")

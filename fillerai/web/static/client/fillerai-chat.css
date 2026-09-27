@@ -51,5 +51,6 @@
   border: 1px solid var(--fai-line); background: #fff;
 }
 .fai-send { background: var(--fai-you); color: #fff; border-color: var(--fai-you); }
+.fai-mic.is-unavailable { opacity: .45; }
 .fai-mic.is-listening { background: #fde8ea; border-color: #e0475a; animation: fai-pulse 1s infinite; }
 @keyframes fai-pulse { 50% { box-shadow: 0 0 0 4px rgba(224, 71, 90, .2); } }
