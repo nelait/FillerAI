@@ -2332,6 +2332,7 @@ function editBot(template) {
   bots.editing = template;
   if (template.key) botTemplates[template.key] = template;
   botFormShows(template.key ? template : null);
+  botChatFollows(template);
   $('botEditor').hidden = false;
   botSay('');
   $('botKey').value = template.key || '';
@@ -2584,7 +2585,12 @@ function startBotChat() {
     return;
   }
   if (bots.chat) return;
+  const key = bots.editing && bots.editing.key ? bots.editing.key : null;
   bots.chat = new Chat(null, {
+    // The chat tries the template on screen and no other, so a phrase that
+    // would suit another template can't take the conversation elsewhere.
+    templates: key ? [key] : null,
+    template: key,
     send: (body) => api('/api/bot/turn', body),
     current: botRecord,
     onReply: botFormReply,
@@ -2605,9 +2611,27 @@ function startBotChat() {
   bots.widget = new Widget($('botChat'), bots.chat, {
     title: 'Chat',
     transcribe: bots.transcribe ? (audio) => api('/api/bot/transcribe', audio) : null,
-    greeting: 'Try a template here. Nothing is sent anywhere else.',
+    greeting: botGreeting(bots.editing),
     onReset: resetBotForm,
   });
+}
+
+function botGreeting(template) {
+  const name = template && template.key ? template.name || template.key : '';
+  return name ? `Try "${name}" here. Nothing is sent anywhere else.`
+    : 'Try a template here. Nothing is sent anywhere else.';
+}
+
+// Picking another template starts a new chat on it, and the sample form
+// with it: a conversation about one template can't carry on under another.
+function botChatFollows(template) {
+  if (!bots.chat || !bots.widget) return;
+  const key = template && template.key ? template.key : null;
+  if (bots.chat.startOn === key) return;
+  bots.chat.templates = key ? [key] : null;
+  bots.chat.startOn = key;
+  bots.widget.greeting = botGreeting(template);
+  bots.widget.reset();
 }
 
 $('botFormClear').addEventListener('click', () => {
