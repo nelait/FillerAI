@@ -1,0 +1,28 @@
+{
+  "template_version": "1.0",
+  "key": "document_request",
+  "name": "Document request",
+  "description": "Send a copy of a policy document",
+  "examples": [
+    "I need a copy of my policy",
+    "send me my documents",
+    "can I get my ID card",
+    "I need my declarations page",
+    "request a document",
+    "email me my proof of insurance"
+  ],
+  "fields": [
+    {"name": "policy_number", "label": "Policy number", "semantic_type": "policy_number",
+     "required": true, "aliases": ["policy"], "example": "PA-1048822"},
+    {"name": "document_type", "label": "Document type", "semantic_type": "enum", "required": true,
+     "aliases": ["document", "doc", "copy of"],
+     "options": ["Declarations page", "ID card", "Proof of insurance", "Full policy", "Billing statement"]},
+    {"name": "full_name", "label": "Name", "semantic_type": "full_name", "required": true,
+     "aliases": ["name is", "i am", "this is"]},
+    {"name": "delivery", "label": "Delivery", "semantic_type": "enum",
+     "aliases": ["send by", "send it by", "deliver by", "by"], "options": ["Email", "Mail"]},
+    {"name": "email", "label": "Email", "semantic_type": "email"}
+  ],
+  "actions": ["submit"],
+  "done_message": "Your document is on its way."
+}

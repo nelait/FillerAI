@@ -453,6 +453,16 @@ ENDPOINTS: list[Endpoint] = [
 ]
 
 
+def _bot_endpoints() -> list[Endpoint]:
+    """The bot service's endpoints, which live in :mod:`.botrest`.
+
+    Imported here rather than at the top because that module builds on this
+    one; it is loaded once and cached like any import.
+    """
+    from . import botrest
+    return botrest.ENDPOINTS
+
+
 def match(method: str, path: str) -> tuple[Endpoint, dict[str, str]] | None:
     """The endpoint a request lands on, or None.
 
@@ -461,7 +471,7 @@ def match(method: str, path: str) -> tuple[Endpoint, dict[str, str]] | None:
     told the truth instead of being sent looking for a typo.
     """
     wrong_method = False
-    for endpoint in ENDPOINTS:
+    for endpoint in ENDPOINTS + _bot_endpoints():
         found = endpoint.pattern.match(path)
         if found is None:
             continue

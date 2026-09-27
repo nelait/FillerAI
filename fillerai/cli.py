@@ -203,7 +203,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return serve(host=args.host, port=args.port, open_browser=args.open,
                  verbose=args.verbose, library_path=args.library,
                  database=args.database, accounts=not args.no_auth,
-                 cors_origins=args.cors_origin)
+                 cors_origins=args.cors_origin,
+                 bot_llm=True if args.bot_llm else None)
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -492,6 +493,98 @@ def cmd_algorithms(args: argparse.Namespace) -> int:
 # ----------------------------------------------------------------------
 # the library
 # ----------------------------------------------------------------------
+
+
+def cmd_bot(args: argparse.Namespace) -> int:
+    """Bot Builder templates, and a conversation at the terminal."""
+    from .bot import BotError, TemplateError, model_completer, take_turn
+    from .bot import template as bot_templates
+
+    store = _library(args)
+    try:
+        if args.action == "list":
+            found = bot_templates.listed(store)
+            if not found:
+                print("no templates yet; try `fillerai bot add --starter address_change`",
+                      file=sys.stderr)
+            for t in found:
+                required = ", ".join(f.name for f in t.fields if f.required)
+                print(f"  {t.key:<24} {t.name}  ({len(t.fields)} fields; needs {required})")
+            print("\n  starters: " + ", ".join(bot_templates.starters()))
+            return 0
+        if args.action == "add":
+            if args.starter:
+                chosen = bot_templates.starters().get(args.starter)
+                if chosen is None:
+                    print(f"no starter called {args.starter!r}; there are "
+                          + ", ".join(bot_templates.starters()), file=sys.stderr)
+                    return 1
+            elif args.file:
+                chosen = bot_templates.Template.from_dict(
+                    json.loads(Path(args.file).read_text(encoding="utf-8")))
+            else:
+                print("give a template .json, or --starter NAME", file=sys.stderr)
+                return 1
+            saved = bot_templates.save(store, chosen)
+            print(f"saved {saved.key} as {saved.entry_id}")
+            return 0
+        if args.action == "remove":
+            gone = bot_templates.remove(store, args.key)
+            print(f"removed {', '.join(gone)}" if gone else f"no template called {args.key!r}")
+            return 0 if gone else 1
+        return _bot_chat(store, args, take_turn, model_completer, BotError)
+    except (TemplateError, StoreError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+
+
+def _bot_chat(store: Store, args: argparse.Namespace, take_turn, model_completer,
+              BotError) -> int:
+    from .bot import template as bot_templates
+
+    available = bot_templates.listed(store) or list(bot_templates.starters().values())
+    current = dict(pair.split("=", 1) for pair in (args.current or []) if "=" in pair)
+    complete = model_completer(store.load_model)
+    state = None
+    print("Say something (an action's number clicks it; empty line to stop).")
+    actions: list[dict] = []
+    while True:
+        try:
+            line = input("you> ").strip()
+        except EOFError:
+            break
+        if not line:
+            break
+        if line.isdigit() and 0 < int(line) <= len(actions):
+            given = {"type": "action", "action": actions[int(line) - 1]["id"]}
+        else:
+            given = {"type": "text", "text": line}
+        try:
+            reply = take_turn(available, {"input": given, "state": state,
+                                          "context": {"current": current}},
+                              complete=complete)
+        except BotError as error:
+            print(f"  ({error.code}: {error.message})")
+            continue
+        state = reply["state"]
+        for message in reply["messages"]:
+            print(f"bot> {message['text']}")
+        for name, change in ((reply.get("form") or {}).get("changes") or {}).items():
+            print(f"       {name}: {change['before'] or '-'} -> {change['after']}")
+        actions = reply["actions"]
+        if actions:
+            print("       " + "   ".join(f"[{i + 1}] {a['label']}"
+                                         for i, a in enumerate(actions)))
+        if reply["effect"]:
+            effect = reply["effect"]
+            print(f"  effect: {effect['type']} {json.dumps(effect['values'])}")
+            if effect["type"] == "submit":
+                state = take_turn(available, {"input": {"type": "event",
+                                                        "event": "submitted"},
+                                              "state": state})["state"]
+                current.update(effect["values"])
+                print("bot> Submitted.")
+    return 0
 
 
 def cmd_library(args: argparse.Namespace) -> int:
@@ -1102,6 +1195,10 @@ def build_parser() -> argparse.ArgumentParser:
                        help="no login and no accounts: one library, for one "
                             "person on one machine. Localhost only, since "
                             "anyone who can reach the port is then signed in")
+    serve.add_argument("--bot-llm", action="store_true",
+                       help=f"let the bot read chat phrases with the configured "
+                            f"language model (or ${'FILLERAI_BOT_LLM'}=1). Off by "
+                            "default: it sends what end users type to the provider")
     serve.set_defaults(func=cmd_serve)
 
     trainer = subparsers.add_parser(
@@ -1200,6 +1297,24 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("schema")
     check.add_argument("records", help="a .json dataset produced by generate")
     check.set_defaults(func=cmd_check)
+
+    bot = subparsers.add_parser(
+        "bot", help="Bot Builder: chat templates, and a conversation to try them")
+    bot.add_argument("--library", metavar="PATH", help="the library to use")
+    bot_actions = bot.add_subparsers(dest="action", required=True)
+    bot_actions.add_parser("list", help="the templates in the library, and the starters")
+    bot_add = bot_actions.add_parser("add", help="add or replace a template")
+    bot_add.add_argument("file", nargs="?", help="a template .json")
+    bot_add.add_argument("--starter", metavar="NAME",
+                         help="a bundled starter: address_change, document_request")
+    bot_remove = bot_actions.add_parser("remove", help="remove a template by key")
+    bot_remove.add_argument("key")
+    bot_chat = bot_actions.add_parser(
+        "chat", help="talk to the bot here, read on this machine")
+    bot_chat.add_argument("--current", nargs="*", metavar="FIELD=VALUE",
+                          help="what the host application already holds, for the "
+                               "before/after")
+    bot.set_defaults(func=cmd_bot)
 
     llm = subparsers.add_parser(
         "llm", help="what the optional language-model features are configured with")

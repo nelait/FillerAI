@@ -18,6 +18,7 @@ fillerai = "fillerai.cli:main"
 [tool.setuptools]
 packages = [
     "fillerai",
+    "fillerai.bot",
     "fillerai.extract",
     "fillerai.generate",
     "fillerai.llm",
@@ -33,3 +34,5 @@ packages = [
 # /client/fillerai.js is that an application can fetch it from the running
 # service rather than vendoring a copy that drifts.
 "fillerai.web" = ["static/*", "static/client/*"]
+# Starter templates for the Bots tab and `fillerai bot add --starter`.
+"fillerai.bot" = ["starters/*.json"]

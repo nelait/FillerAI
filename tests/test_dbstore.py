@@ -98,7 +98,7 @@ class TestTheSameAsTheFileLibrary(StoreCase):
         self.chain()
         self.assertEqual(self.store.totals(),
                          {"source": 1, "schema": 1, "dataset": 1, "model": 0,
-                          "script": 0})
+                          "script": 0, "template": 0})
 
     def test_an_empty_library_lists_nothing_rather_than_failing(self):
         self.assertEqual(self.other.list(), [])

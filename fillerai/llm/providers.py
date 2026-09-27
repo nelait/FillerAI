@@ -201,7 +201,8 @@ class Anthropic(Provider):
     path = "/v1/messages"
     sdk_module = "anthropic"
     key_prefix = "sk-ant-"
-    task_models = {"rules": "claude-opus-5", "typing": "claude-sonnet-5"}
+    task_models = {"rules": "claude-opus-5", "typing": "claude-sonnet-5",
+                   "chat": "claude-haiku-4-5"}
     model_prefixes = ("claude",)
 
     #: The version header the Messages API requires on every request.
@@ -285,7 +286,7 @@ class OpenAI(Provider):
     path = "/v1/chat/completions"
     sdk_module = "openai"
     key_prefix = "sk-"
-    task_models = {"rules": "gpt-5", "typing": "gpt-5-mini"}
+    task_models = {"rules": "gpt-5", "typing": "gpt-5-mini", "chat": "gpt-5-mini"}
     model_prefixes = ("gpt-", "chatgpt", "o1", "o3", "o4")
 
     @classmethod
