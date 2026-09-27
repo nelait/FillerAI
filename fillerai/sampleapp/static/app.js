@@ -3,7 +3,8 @@
 //
 // The forms are not written into the page: there is one for each template
 // the FillerAI bot service has, drawn from /api/templates when the page
-// loads. Once drawn they are ordinary forms, filled by hand or by the chat.
+// loads. Only one is open at a time: the one the chat is talking about, or
+// the one picked from the menu to fill in by hand.
 import { BotChat, ChatWidget } from "/fillerai.js";
 
 const $ = (id) => document.getElementById(id);
@@ -47,13 +48,48 @@ async function drawForms() {
     return;
   }
   for (const template of templates) {
-    $("layout").append(formCard(template));
+    const card = formCard(template);
+    card.hidden = true;
+    $("layout").append(card);
     const link = document.createElement("a");
     link.href = `#form-${template.key}`;
+    link.dataset.template = template.key;
     link.textContent = template.name;
     $("nav").insertBefore(link, $("nav").lastElementChild);
   }
+  $("noneOpen").hidden = false;
 }
+
+// Open one form and close the rest; null closes them all. The address bar
+// follows, so a menu link, the back button and a reload all land on it.
+function openForm(key, { scroll = true } = {}) {
+  const card = key && document.getElementById(`form-${key}`);
+  for (const other of document.querySelectorAll(".form-card")) other.hidden = other !== card;
+  for (const link of $("nav").querySelectorAll("a[data-template]")) {
+    link.classList.toggle("current", link.dataset.template === key);
+  }
+  $("noneOpen").hidden = Boolean(card) || !templates.length;
+  const hash = card ? `#${card.id}` : "";
+  if (location.hash !== hash) history.replaceState(null, "", hash || location.pathname);
+  if (card && scroll) card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function fromHash() {
+  const key = location.hash.startsWith("#form-") ? location.hash.slice(6) : null;
+  openForm(templates.some((t) => t.key === key) ? key : null, { scroll: false });
+}
+
+$("nav").addEventListener("click", (event) => {
+  const link = event.target.closest("a[data-template]");
+  if (!link) return;
+  event.preventDefault();
+  openForm(link.dataset.template);
+});
+// "My details" and "Requests" are places on the page, not forms: they leave
+// the open form alone.
+window.addEventListener("hashchange", () => {
+  if (location.hash.startsWith("#form-")) fromHash();
+});
 
 function showNoForms(text) {
   $("noForms").hidden = false;
@@ -175,7 +211,7 @@ function showChatForm(form, reply) {
     const change = reply.form.changes[row.name];
     if (change) {
       const was = document.createElement("span");
-      was.className = "was";
+      was.className = change.before ? "was" : "was is-new";
       was.textContent = change.before ? `was ${change.before}` : "new";
       input.after(was);
     }
@@ -226,7 +262,7 @@ const chat = new BotChat(null, {
       if (before) resetForm(before);
       chatOn = reply.form.template;
       form.closest(".form-card").classList.add("chatting");
-      form.closest(".form-card").scrollIntoView({ behavior: "smooth", block: "center" });
+      openForm(chatOn);
     }
     showChatForm(form, reply);
     if (status === "collecting" || status === "ready") {
@@ -238,7 +274,7 @@ const chat = new BotChat(null, {
     if (effect.type === "fill_form") {
       if (!form) return;
       banner(form, "Filled in from the chat. Check it, then submit it.", "info");
-      form.closest(".form-card").scrollIntoView({ behavior: "smooth", block: "center" });
+      openForm(effect.template);
       await chat.report("filled");
       return;
     }
@@ -283,6 +319,7 @@ function openChat(open) {
         + "Type, or press the microphone.",
       // A new chat also puts the forms back to what is on file.
       onReset: () => {
+        if (chatOn) openForm(null, { scroll: false });
         chatOn = null;
         document.querySelectorAll(".form-card form").forEach(resetForm);
       },
@@ -313,4 +350,5 @@ me = await (await fetch("/api/me")).json();
 await drawForms();
 await load();
 document.querySelectorAll(".form-card form").forEach(resetForm);
+fromHash();
 openChat(true);

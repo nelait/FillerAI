@@ -11,7 +11,7 @@ already holds, and what the person can do next.
 This page is the contract between the chat window and the bot service. It was
 written before the code on purpose: the chat window is in someone else's
 product, so the interface is the part that cannot be changed casually later.
-Everything below is checked against the code at version 0.15.0, and each
+Everything below is checked against the code at version 0.15.1, and each
 example reply is what the service actually returns.
 
 ---
@@ -441,8 +441,9 @@ and puts a **Sample app** link in the UI's header.
 
 It has a form for **every bot template**, read from `/v1/templates` each time
 the page loads, so a template saved on the Bots tab is a form there after a
-reload. The forms are on the page from the start and can be filled and
-submitted by hand. As the chat talks, the form it is on fills in (changed
+reload. The forms are on the page from the start but only one is open at a
+time: the one the conversation is about, or the one picked from the menu to
+fill and submit by hand. As the chat talks, the form it is on opens and fills in (changed
 values green with what they were, values still needed amber), and moves to
 another form when the conversation does. Its server holds the token and
 forwards each turn to `/v1/bot/turn`, adding the customer's record as
