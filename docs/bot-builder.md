@@ -11,7 +11,7 @@ already holds, and what the person can do next.
 This page is the contract between the chat window and the bot service. It was
 written before the code on purpose: the chat window is in someone else's
 product, so the interface is the part that cannot be changed casually later.
-Everything below is checked against the code at version 0.14.2, and each
+Everything below is checked against the code at version 0.14.3, and each
 example reply is what the service actually returns.
 
 ---
@@ -483,7 +483,9 @@ Three ways, all writing the same thing to the library.
   same turn through `/api/bot/turn`, so a template can be tried before
   anything is connected. Picking a template from the list starts a new chat
   on it; asking the chat for another one ("document request") moves the list,
-  the editor and the form to that template and keeps the conversation. Above it a **sample form** shows the template the
+  the editor and the form to that template and keeps the conversation. The
+  chat knows the starters too, so in an empty library "document request"
+  adds that starter and carries on. Above it a **sample form** shows the template the
   conversation is on and follows every reply: a value appears the moment it
   is understood, changed fields are green with what they were, and fields the
   chat still needs (missing, or outdated by a change) are amber. "Fill the

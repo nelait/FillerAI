@@ -687,6 +687,15 @@ def _next_step(turn: Turn) -> None:
         label = template.field(problem.field).label if template.field(problem.field) else problem.field
         turn.say(f"I couldn't use “{problem.said}” for {_word(label)}: {problem.reason}.")
 
+    form = turn.form() or {}
+    if _is_change(template) and not form.get("changes"):
+        # "Address change" on its own: everything on file is complete, but
+        # nothing has changed yet, so there is nothing to submit.
+        state.expects = None
+        state.status = "collecting"
+        named = [_word(f.label) for f in template.fields[:2]]
+        turn.say(f"What would you like to change? For example the {_join(named)}.")
+        return
     missing = turn.missing()
     if missing:
         ask = missing[0]
@@ -748,7 +757,8 @@ def _actions(turn: Turn) -> list[dict[str, Any]]:
             for index, option in enumerate(field.options):
                 out.append({"id": f"answer:{field.name}:{index}", "type": "answer",
                             "label": option, "field": field.name, "value": option})
-    if "submit" in template.actions and not form.get("missing") and form.get("values"):
+    if "submit" in template.actions and not form.get("missing") and form.get("values") \
+            and (form.get("changes") or not _is_change(template)):
         out.append({"id": "submit", "type": "submit", "label": LABELS["submit"]})
     if "fill_form" in template.actions and (state.values or form.get("changes")):
         out.append({"id": "fill_form", "type": "fill_form", "label": LABELS["fill_form"]})

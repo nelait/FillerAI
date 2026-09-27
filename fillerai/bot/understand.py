@@ -369,6 +369,9 @@ def read_values(template: Template, text: str, *, expects: str | None = None,
 
     hits = _mentions(template, text)
     used: list[tuple[int, int]] = []
+    # "document request" and "address change" name the template; the word
+    # after the label is not a value for that field.
+    naming = content_words(template.name)
     for index, (start, end, name) in enumerate(hits):
         stop = hits[index + 1][0] if index + 1 < len(hits) else len(text)
         span = text[end:stop]
@@ -388,6 +391,9 @@ def read_values(template: Template, text: str, *, expects: str | None = None,
                 used.append((start, stop))
             continue
         if name in values:
+            continue
+        said = content_words(cleaned)
+        if said and said <= naming:
             continue
         if take(name, cleaned, "labelled", 0.9):
             used.append((start, stop))

@@ -201,7 +201,7 @@ the real one, which is what a test backend is for.
 
 No `.github/workflows`, so no pull request in this repository will ever show a
 green check, and `python -m unittest discover -s tests -q` run locally is the
-only signal that anything works. 861 tests, about 70 seconds.
+only signal that anything works. 864 tests, about 70 seconds.
 
 Combined with §2.1, a contributor who runs the suite once and sees a failure
 has no way to tell a real regression from the known race without re-running.
