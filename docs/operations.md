@@ -1,6 +1,6 @@
 # Operations
 
-Installing, running, configuring, backing up and troubleshooting FillerAI.
+Installing, running, configuring, backing up and troubleshooting AIrForms.
 For what each command does in the modelling process see
 [process.md](process.md); for every option of every command see
 [reference/cli.md](reference/cli.md).
@@ -65,7 +65,7 @@ the password once:
     password: djfg-y3gj-dqpg-jegu
     (shown once; you will be asked to change it when you sign in)
 
-FillerAI UI on http://localhost:8000/
+AIrForms UI on http://localhost:8000/
   database: sqlite:///…/.fillerai/fillerai.db
   accounts: on, 1 user(s)
   integration API: http://localhost:8000/v1  (browsers: *)
@@ -121,7 +121,7 @@ defaults.
 | `FILLERAI_LLM_MODEL` | LLM features | A model name other than the per-task default. |
 | `FILLERAI_LLM_BASE_URL` | LLM features | A different endpoint, such as an approved gateway. |
 | `FILLERAI_TRANSCRIBE_BASE_URL`, `FILLERAI_TRANSCRIBE_MODEL` | `--bot-transcribe` | Where and with what model speech is transcribed. |
-| `FILLERAI_URL`, `FILLERAI_TOKEN` | `bot chat`, the sample application run on its own | Which FillerAI to talk to, and the API token. |
+| `FILLERAI_URL`, `FILLERAI_TOKEN` | `bot chat`, the sample application run on its own | Which AIrForms to talk to, and the API token. |
 | `FILLERAI_LLM_LIVE` | `livetests/` only | `1` lets the live acceptance tests spend money. |
 
 `python -m fillerai llm status` prints which provider, model and key the
@@ -211,7 +211,7 @@ One form is open at a time: the chat opens the one the conversation is
 about, and the menu at the top opens any of them to fill in and submit by
 hand (`http://localhost:8100/#form-address_change` opens that one directly).
 
-It can run on its own against any FillerAI:
+It can run on its own against any AIrForms:
 
 ```sh
 python -m fillerai.sampleapp --fillerai http://localhost:8000 --token flr_...
@@ -225,7 +225,7 @@ Its own documentation is `fillerai/sampleapp/README.md`.
 | Symptom | Cause | What to do |
 |---|---|---|
 | `--no-auth … is only allowed on localhost` and exit 1 | `--no-auth` with `--host` other than loopback | Drop `--no-auth`, or keep `--host 127.0.0.1`. |
-| `sample application: not started, port 8100 is taken` | Another program, or another FillerAI, has the port | `--sample-port 8101`, or `--no-sample-app`. The UI still starts. |
+| `sample application: not started, port 8100 is taken` | Another program, or another AIrForms, has the port | `--sample-port 8101`, or `--no-sample-app`. The UI still starts. |
 | `sample application: not started, there is no administrator` / `no user` | `--sample-user` names nobody, or the database has no admin | Create the user, or drop `--sample-user`. |
 | The sample application shows no forms | The token's user has no bot templates | Add the starters on the Bots tab, then reload. |
 | The sample application shows no form, only "What can we help with?" | None is open yet; that is the start | Ask for one in the chat, or pick one from the menu at the top. |

@@ -1,4 +1,4 @@
-"""FillerAI - read a form, fill a form.
+"""AIrForms - read a form, fill a form.
 
 Read a form and work out what each field means; generate as many coherent
 fake records as you need, without any real data ever leaving the environment
@@ -40,7 +40,7 @@ from .train.evaluate import Report, evaluate, suggest_seed_fields
 from .train.model import AutofillModel, Prediction, TrainOptions, train as _train
 from .train.trace import Trace
 
-__version__ = "0.15.1"
+__version__ = "0.16.0"
 
 __all__ = [
     "SCHEMA_VERSION",

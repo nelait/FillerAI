@@ -742,7 +742,7 @@ The ones that are enforced by a test, and the one that is not:
   `"fillerai.llm"`. Put the import inside the function that needs it. The
   subprocess check only sees modules reachable from `CORE_MODULES`, so a new
   core module that nothing there imports should be added to that list.
-- **`sampleapp` imports nothing from FillerAI** (`tests/test_sample_app.py`).
+- **`sampleapp` imports nothing from AIrForms** (`tests/test_sample_app.py`).
 - **No runtime dependencies.** Standard library only, in the package and in
   the tests.
 - **A new subpackage must be added to `packages` in `pyproject.toml`**, which
@@ -785,7 +785,7 @@ port.
 | `test_rest.py` | 50 | `web/rest`: `/v1` over a socket, tokens not cookies, pinned tokens, CORS, ids that survive a restart |
 | `test_bot.py` | 46 | `bot/`: templates, the local reader, turns and state, against `docs/bot-builder.md` |
 | `test_bot_rest.py` | 18 | `web/botrest` and `/api/bot`: token scope, refusal codes, the served client, the UI running the same turn |
-| `test_sample_app.py` | 11 | `sampleapp` against a real FillerAI: the token stays server-side, forms come from templates, submit, and the no-import rule |
+| `test_sample_app.py` | 11 | `sampleapp` against a real AIrForms: the token stays server-side, forms come from templates, submit, and the no-import rule |
 | `test_llm_fence.py` | 4 | the import fence and the empty dependency list (§13) |
 | `test_llm_client.py` | 31 | `llm/client` and `transport`: request building, reply reading, refusals and truncations that arrive as successes, a stubbed opener |
 | `test_llm_providers.py` | 44 | `llm/providers` and `config`: both wire formats, provider inference, the same rules reaching the same verdict through both readers |
@@ -851,7 +851,7 @@ fillerai/
     static/client/     fillerai.js, fillerai-chat.css, chat.html,
                        demo.html, README.md - the browser client
   sampleapp/           app.py, __main__.py, static/ (index.html, app.js,
-                       style.css); imports nothing from FillerAI
+                       style.css); imports nothing from AIrForms
 examples/              one HTML form and four field specs
 tests/                 868 tests, offline, no dependencies
   fixtures/llm/        recorded LLM exchanges

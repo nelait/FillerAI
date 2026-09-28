@@ -1,6 +1,6 @@
 """The database: one file, a handful of tables, and a door left open.
 
-Until now everything FillerAI kept lived in a directory of JSON. That was the
+Until now everything AIrForms kept lived in a directory of JSON. That was the
 right answer for one person on one machine, and it is the wrong answer the
 moment there is a second person: there is nowhere to put a user, nothing to
 scope a library to, and no way to ask a question across the whole set that is
@@ -426,14 +426,14 @@ def connect(url: str | None = None, *, library_root: str | Path | None = None,
         database = SQLiteDatabase(rest)
     elif scheme in ("postgres", "postgresql"):
         raise DatabaseError(
-            "Postgres needs a driver, and FillerAI has no dependencies. "
+            "Postgres needs a driver, and AIrForms has no dependencies. "
             "The storage interface is ready for it: subclass Database with "
             "paramstyle 'pyformat' and a _connect that returns a psycopg "
             "connection, and nothing above fillerai.db has to change."
         )
     else:
         raise DatabaseError(
-            f"{scheme!r} is not a database FillerAI knows; "
+            f"{scheme!r} is not a database AIrForms knows; "
             f"use sqlite://<path> or a plain file path"
         )
 

@@ -1,6 +1,6 @@
 """Two services, one question, and everything that differs between them.
 
-These are the tests that stop "FillerAI supports OpenAI" from meaning "the
+These are the tests that stop "AIrForms supports OpenAI" from meaning "the
 key is read and the call fails". Each provider gets the same three questions
 asked of it - what does the request look like, how is a good reply read, how is
 a bad one caught - and then one test runs the *same* proposed rules through

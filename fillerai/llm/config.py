@@ -27,7 +27,7 @@ have to be wrong for one of them - and the pair differs by provider, which is
 why the defaults live on the provider rather than here.
 
 **The base URL exists so this can run somewhere else.** The whole reason
-FillerAI generates its own data is that the real data cannot leave; a team
+AIrForms generates its own data is that the real data cannot leave; a team
 that wants these features and cannot send anything to a third party points
 this at their own deployment - Bedrock, Vertex, Foundry, Azure or a gateway -
 and the rest of the package neither knows nor cares.
@@ -161,7 +161,7 @@ class Settings:
         if not self.key:
             raise ConfigError(
                 f"no API key for {self.api.label}: export ${KEY_VARIABLE} "
-                f"(or ${self.api.key_variable}). Nothing else in FillerAI needs one."
+                f"(or ${self.api.key_variable}). Nothing else in AIrForms needs one."
             )
         return self.key
 

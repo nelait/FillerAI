@@ -1,4 +1,4 @@
-# FillerAI documentation
+# AIrForms documentation
 
 The [top-level README](../README.md) is the tour: what this is, and what each
 stage looks like when you run it. These are the documents you want open when
@@ -9,7 +9,7 @@ already known.
 
 | You are… | Read, in order |
 |---|---|
-| new to FillerAI | [overview.md](overview.md), then the [README](../README.md) tour, then [process.md](process.md) |
+| new to AIrForms | [overview.md](overview.md), then the [README](../README.md) tour, then [process.md](process.md) |
 | explaining it to stakeholders | [algorithms.md](algorithms.md) Part 1, [nlp-and-chatbot.md](nlp-and-chatbot.md), [overview.md](overview.md) |
 | about to change the code | [overview.md](overview.md), [architecture.md](architecture.md), [reference/modules.md](reference/modules.md), [pending.md](pending.md) |
 | connecting another application | [integration.md](integration.md), [bot-builder.md](bot-builder.md), [reference/http-api.md](reference/http-api.md) |
@@ -47,7 +47,7 @@ to resolve. Read this before picking up work.
 
 ## How it thinks
 
-**[algorithms.md](algorithms.md)** — how FillerAI learns to fill a form, in
+**[algorithms.md](algorithms.md)** — how AIrForms learns to fill a form, in
 two parts. For everyone: what kind of problem autofill is, why clustering such
 as K-means is not the tool, the four layers of a prediction, the six engines
 in plain words, how the numbers are checked, and the questions stakeholders
@@ -95,7 +95,7 @@ the Python library API, and which tests cover what.
 **[glossary.md](glossary.md)** — the words these documents use with a specific
 meaning.
 
-**[integration.md](integration.md)** — calling FillerAI from another
+**[integration.md](integration.md)** — calling AIrForms from another
 application: every `/v1` endpoint and what it answers, how an API token works
 and why it is not the UI's cookie, when a browser on another origin is let in,
 and how to bind a model to a form in plain JavaScript or in React.

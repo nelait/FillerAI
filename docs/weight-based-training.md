@@ -1,6 +1,6 @@
 # Weight-based training: what it would take, and what it would buy
 
-FillerAI's five engines learn by counting, by partitioning, or by keeping
+AIrForms's five engines learn by counting, by partitioning, or by keeping
 records. None of them learns a weight. This document works out what adding a
 weight-based engine would mean: how training would run, how inference would
 run, what each candidate costs under this project's constraints, and which

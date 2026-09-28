@@ -1,7 +1,7 @@
-"""The sample application in ``fillerai/sampleapp`` against a real FillerAI.
+"""The sample application in ``fillerai/sampleapp`` against a real AIrForms.
 
 It is an outside application, so it is started the way one would be: its own
-server, talking to FillerAI's ``/v1`` over HTTP with a token. These tests
+server, talking to AIrForms's ``/v1`` over HTTP with a token. These tests
 check the parts a host has to get right - the token stays on the server, the
 record on file is the server's to say, the forms are the bot service's
 templates, and a submit goes through the application's own rules - rather
@@ -143,7 +143,7 @@ class TestSampleApp(RestCase):
         self.assertIn("postal_code", [f["name"] for f in forms["address_change"]["fields"]])
         self.assertEqual(forms["document_request"]["fields"][1]["options"][1], "ID card")
 
-        # A template saved in FillerAI is a form on the next page load, and
+        # A template saved in AIrForms is a form on the next page load, and
         # can be submitted by hand like the others.
         phone = {"key": "phone_change", "name": "Phone change",
                  "description": "Change the phone number on file",
@@ -215,7 +215,7 @@ class TestSampleApp(RestCase):
                 headers={"Content-Type": "application/json"})
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 urllib.request.urlopen(request)
-            # FillerAI here was not started with --bot-transcribe, and says so.
+            # AIrForms here was not started with --bot-transcribe, and says so.
             self.assertEqual(caught.exception.code, 409)
             self.assertEqual(json.loads(caught.exception.read())["code"], "transcription_off")
         finally:

@@ -4,7 +4,7 @@ The chat's microphone normally uses the browser's own recogniser, which in
 Chrome and Edge sends the audio to the browser vendor's speech service. Where
 that service is unreachable - a VPN, a corporate proxy, a browser policy -
 the microphone hears nothing, however well the microphone itself works. This
-is the second route: the page records the audio itself and FillerAI sends it
+is the second route: the page records the audio itself and AIrForms sends it
 to OpenAI's transcription endpoint with the configured OpenAI key.
 
 **Off unless turned on**, like reading chat phrases with a model: ``serve

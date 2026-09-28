@@ -1,10 +1,10 @@
-"""The fence: nothing in FillerAI reaches for the network on its own.
+"""The fence: nothing in AIrForms reaches for the network on its own.
 
 This is the most important test in the language-model work and the one least
 likely to be missed if it were deleted, so it is worth saying why it exists.
 
 The README promises that nothing here talks to a network, and that promise is
-what lets FillerAI run inside the locked-down environment where the real form
+what lets AIrForms run inside the locked-down environment where the real form
 lives. ``fillerai/llm/`` breaks it deliberately and only when asked. The risk
 is not that somebody calls it on purpose; it is that somebody adds
 ``from .llm import rules`` to the top of a module for convenience, and a

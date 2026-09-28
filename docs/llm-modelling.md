@@ -1,6 +1,6 @@
 # LLM-based modelling: where it would earn its place
 
-FillerAI reads a form, invents records for it, learns to finish it, and costs
+AIrForms reads a form, invents records for it, learns to finish it, and costs
 the saving. A language model could sit at any of those four stages. This
 document works out which ones it belongs in — what training and inference
 would look like in each, what it would cost per form and per year, and how it
@@ -298,7 +298,7 @@ an LLM feature is ever more than an experiment, take the dependency rather
 than reimplement retries badly.
 
 **The network rule is the load-bearing one**, and it should not bend. It is
-what lets FillerAI run inside the environment where the real form lives, which
+what lets AIrForms run inside the environment where the real form lives, which
 is the whole reason the project is built the way it is. So the shape of any
 LLM feature is fixed before its content:
 

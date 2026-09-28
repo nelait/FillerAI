@@ -70,8 +70,8 @@ The default reader is a set of rules and word lists written in plain Python.
 It is not a trained model and not a large language model (LLM). The reasons:
 
 - **Nothing leaves the machine.** What a customer types is their personal
-  data. The default reader runs inside the FillerAI process and sends nothing
-  anywhere. This is the same rule the rest of FillerAI keeps: Python standard
+  data. The default reader runs inside the AIrForms process and sends nothing
+  anywhere. This is the same rule the rest of AIrForms keeps: Python standard
   library only, no network unless someone deliberately turns a feature on.
 - **The problem is small.** A business has a handful of templates, and "update
   my city" is not hard to tell from "send me my policy documents". A
@@ -102,9 +102,9 @@ on: each needs its own switch when the server starts.
 | Language-model reader | `fillerai serve --bot-llm` or `FILLERAI_BOT_LLM=1`, plus a key | Reads phrasings the local reader cannot, such as a city named without the word "city". | Per reading: the message text; every template this chat may use (key, name, description, first five examples, field names, labels, types, and options up to 40); which template is in progress; which field was just asked about and which was mentioned last. Sent to the configured provider (Anthropic or OpenAI). The values the host holds on file (`context.current`) and the values collected so far are **not** sent. |
 | Server-side transcription | `fillerai serve --bot-transcribe` or `FILLERAI_BOT_TRANSCRIBE=1`, plus an OpenAI key | A microphone that works where the browser's own speech service is blocked (a VPN, a corporate proxy). | The recorded audio of each spoken message, and a two-letter language code, sent to OpenAI's transcription endpoint. Only OpenAI: Anthropic's API does not transcribe audio, and an Anthropic key is never sent to OpenAI. |
 
-Separately from FillerAI, **the browser's own speech recognition** (the
+Separately from AIrForms, **the browser's own speech recognition** (the
 default microphone) is the browser's business. Chrome and Edge send the audio
-to their vendor's speech service; FillerAI receives only the resulting text.
+to their vendor's speech service; AIrForms receives only the resulting text.
 A host that must keep audio in-house can turn the microphone off and plug in
 its own recogniser ([bot-builder.md §9](bot-builder.md#9-what-this-does-not-do)).
 
@@ -192,7 +192,7 @@ sequenceDiagram
     participant P as Person
     participant W as ChatWidget
     participant R as RecordedSpeechInput
-    participant F as FillerAI server
+    participant F as AIrForms server
     participant O as OpenAI
     P->>W: presses the microphone
     W->>R: start()
@@ -376,7 +376,7 @@ makes the old state and ZIP code questions again. The statuses are listed in
 
 If the template has a `model_id`, and something changed this turn, the
 completer (`model_completer` in `fillerai/bot/__init__.py`) asks that trained
-FillerAI model to predict the other fields:
+AIrForms model to predict the other fields:
 
 - It passes only values the person **said or clicked**, not values carried
   over from the host or earlier model guesses, and only for fields the model
@@ -1033,7 +1033,7 @@ machine unless someone turns it on**.
 | **Clause splitting** on "and" and commas before extracting values, and a check that a value does not itself look like another request | The "and send me an ID card" street address; a second request could be parked instead of lost. | Harder than it looks: "Austin and Texas" is one address. Needs careful tests. | Yes. |
 | **Naive Bayes intent classifier** over each template's examples (word counts per template, pick the most probable) | Weights words by how much they distinguish templates rather than counting them equally; a word such as "policy" that appears in both would count less. | Needs more examples per template than today's six to eight to beat the overlap score; scores are probabilities that are less easy to explain; must still keep an "I can't tell" threshold. Could be trained when a template is saved. | Yes. A few dozen lines of pure Python. |
 | **TF-IDF with cosine similarity** against the examples | Same benefit as naive Bayes with fewer examples; a common alternative to plain overlap. | Similar explainability cost. | Yes. |
-| **Word or sentence embeddings** (vector representations of meaning) | Synonyms and paraphrases: "relocating" close to "moving", "home" close to "address". | Needs a pre-trained model: either a dependency and tens to hundreds of megabytes of weights shipped with FillerAI, or a call to an embeddings API, which sends the message out. | Only as an optional, off-by-default feature, like `--bot-llm`. |
+| **Word or sentence embeddings** (vector representations of meaning) | Synonyms and paraphrases: "relocating" close to "moving", "home" close to "address". | Needs a pre-trained model: either a dependency and tens to hundreds of megabytes of weights shipped with AIrForms, or a call to an embeddings API, which sends the message out. | Only as an optional, off-by-default feature, like `--bot-llm`. |
 | **A small local language model** run on the same machine | Most of what the LLM reader does, without sending data out. | Needs a model runtime (a dependency), several gigabytes of weights and a capable machine; slower per turn. | Keeps data local, but breaks the no-dependency rule; would have to be optional. |
 | **Place-name lists** (US cities, street types beyond today's list) | "moving in with my sister in Tustin". | A data file to ship and keep current; ambiguous names (a city called "Paris" in Texas). | Yes, if shipped as a data file. |
 | **Multilingual support**: per-language stop words, action phrases, patterns and reply wording, chosen from the template or the request | Non-English users. | Every word list and every sentence the bot says has to be translated and tested per language; accented letters need the tokeniser widened to Unicode letters. | Yes, but it is the largest piece of work here. |

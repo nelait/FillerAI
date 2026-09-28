@@ -19,7 +19,7 @@ example reply is what the service actually returns.
 ## 1. The three parts
 
 ```
-  somebody else's app                                FillerAI
+  somebody else's app                                AIrForms
  +-----------------------------------+        +-------------------------+
  |  their own form     chat window   |        |  bot service  /v1/bot   |
  |  +-------------+   +------------+ |  turn  |  +-------------------+  |
@@ -32,7 +32,7 @@ example reply is what the service actually returns.
                                               +-------------------------+
 ```
 
-- **Templates** are authored in FillerAI (the Bots tab, the `/v1/templates`
+- **Templates** are authored in AIrForms (the Bots tab, the `/v1/templates`
   endpoints, or `fillerai bot add`) and kept in the library like everything
   else, per owner.
 - **The bot service** is `POST /v1/bot/turn`. It holds no conversation in
@@ -87,12 +87,12 @@ submit; the host does it, and may tell the service how it went (§3.3).
 | `fields[].follows` | Fields this one depends on. When one of them changes in the conversation, the value on file for this one no longer holds and is asked for instead of carried over: a new city makes the old ZIP code wrong. The word is the one field specs already use for a declared rule. |
 | `fields[].example` | Shown after a typed question ("For example 92618"), not after a spoken one. |
 | `actions` | Which of the two finishing actions this template offers: `fill_form`, `submit`, or both. |
-| `model_id` | Optional: a trained FillerAI model whose fields share names with this template. After what the person said is filled in, the model is asked to complete related fields (a new city → its state), at its calibrated threshold. |
+| `model_id` | Optional: a trained AIrForms model whose fields share names with this template. After what the person said is filled in, the model is asked to complete related fields (a new city → its state), at its calibrated threshold. |
 
 A template can be started from a form schema already in the library (every
 field of the schema, with its label, semantic type, options and required flag,
 leaving out passwords, free text and read-only fields) and then cut down,
-which is how an existing FillerAI form becomes a bot. Two starters ship inside
+which is how an existing AIrForms form becomes a bot. Two starters ship inside
 the package, `address_change` and `document_request`
 (`fillerai/bot/starters/`), and are added to a library from the Bots tab or
 with `fillerai bot add --starter NAME`.
@@ -433,7 +433,7 @@ reports the reference back.
 **The sample application** (`fillerai/sampleapp/`, Northwind Mutual) is the
 same thing as a separate application, the way a real host would be built: its
 own server on its own port, its own customer record and submit rules, and
-FillerAI reached only over HTTP. `fillerai serve` starts it next to the UI on
+AIrForms reached only over HTTP. `fillerai serve` starts it next to the UI on
 port 8100 (`--no-sample-app` to leave it off, `--sample-port`, and
 `--sample-user` for whose templates it shows; the first administrator by
 default), issues it an API token called "Sample application" on every start,
@@ -483,7 +483,7 @@ for this, because Anthropic's API does not transcribe audio. Then:
 A host application passes `transcribe` to `ChatWidget` to get the same
 microphone: `transcribe: (audio) => client.transcribe(audio)`, or a function
 that posts to its own backend. The sample application does the latter when
-FillerAI runs with `--bot-transcribe`. Like `--bot-llm`, this is off unless asked for, because it
+AIrForms runs with `--bot-transcribe`. Like `--bot-llm`, this is off unless asked for, because it
 sends people's voices to OpenAI.
 
 ---
@@ -492,7 +492,7 @@ sends people's voices to OpenAI.
 
 Three ways, all writing the same thing to the library.
 
-- **The Bots tab** in the FillerAI UI: pick a template or add a starter, or
+- **The Bots tab** in the AIrForms UI: pick a template or add a starter, or
   start from a schema in the library (or the one on the Schema step), edit the
   examples and the fields table, save. The chat beside the editor runs the
   same turn through `/api/bot/turn`, so a template can be tried before
@@ -537,7 +537,7 @@ template is usually the whole fix.
   the microphone is shown greyed out and pressing it says why; a refusal or
   failure while listening, including hearing nothing, is said in the chat in
   plain words (`SpeechInput.problem()` and `SpeechInput.explain(code)`).
-  FillerAI never receives audio unless it was started with
+  AIrForms never receives audio unless it was started with
   `--bot-transcribe` (§7.1), but the browser's
   recogniser may send it to its vendor (Chrome sends it to Google), so a host
   that must keep audio in-house should pass `speech: false` to `ChatWidget`

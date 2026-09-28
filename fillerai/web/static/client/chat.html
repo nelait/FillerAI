@@ -3,28 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FillerAI chat demo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2322d3ee'/%3E%3Cstop offset='.55' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url%28%23g%29'/%3E%3Crect x='7' y='8.7' width='13' height='2.6' rx='1.3' fill='white'/%3E%3Crect x='7' y='14.7' width='18' height='2.6' rx='1.3' fill='white' opacity='.85'/%3E%3Crect x='7' y='20.7' width='10' height='2.6' rx='1.3' fill='white' opacity='.55'/%3E%3Cpath d='M25 5.6l1.1 2.8 2.8 1.1-2.8 1.1L25 13.4l-1.1-2.8-2.8-1.1 2.8-1.1z' fill='white'/%3E%3C/svg%3E">
+<title>AIrForms chat demo</title>
 <link rel="stylesheet" href="./fillerai-chat.css">
 <style>
   :root {
-    --ink: #15181d; --dim: #5d6673; --line: #dde2ea; --bg: #f6f8fb;
-    --card: #ffffff; --accent: #2f6df6; --good: #0d8a52; --fill: #eef4ff;
+    --ink: #0f172a; --dim: #51607a; --line: #e2e7ef; --bg: #f4f6fb;
+    --card: #ffffff; --accent: #4f46e5; --good: #0d8a52; --fill: #eef0ff;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font: 15px/1.5 "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   .wrap { max-width: 1120px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.02em; }
   h2 { font-size: 15px; margin: 0 0 10px; }
   .lede { color: var(--dim); margin: 0 0 18px; max-width: 78ch; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-          padding: 16px 18px; margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+          padding: 18px 20px; margin-bottom: 16px; box-shadow: 0 1px 2px rgb(15 23 42 / .05); }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
   label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
   input, select, button { font: inherit; padding: 7px 9px; border: 1px solid var(--line);
-                          border-radius: 6px; background: #fff; color: inherit; }
+                          border-radius: 8px; background: #fff; color: inherit; }
   button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
   button.quiet { background: #fff; color: var(--ink); border-color: var(--line); }
   .note { font-size: 12px; color: var(--dim); }
@@ -43,14 +45,23 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
   .field input, .field select { width: 100%; }
   .field .was { font-size: 11px; color: var(--dim); min-height: 14px; }
-  .from-chat { background: var(--fill); border-color: #b9cdfb; }
+  .from-chat { background: var(--fill); border-color: #c7c9fb; }
   .banner { font-size: 13px; padding: 8px 10px; border-radius: 6px; background: #e8f6ee;
             color: #0b5d38; margin-bottom: 10px; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgb(79 70 229 / .2); }
+  button { font-weight: 500; }
+  /* Whose client this is: the page is somebody else's application, and the
+     badge says what it is borrowing. */
+  .powered { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px;
+             padding: 3px 10px 3px 4px; border-radius: 99px; font-size: 12px; font-weight: 600;
+             color: #3730a3; background: #eef0ff; border: 1px solid #dfe2ff; }
+  .powered svg { width: 18px; height: 18px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Acme Insurance &mdash; a host application with a FillerAI chat</h1>
+  <span class="powered"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="afMini" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset=".55" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#afMini)"/><rect x="7" y="8.7" width="13" height="2.6" rx="1.3" fill="#fff"/><rect x="7" y="14.7" width="18" height="2.6" rx="1.3" fill="#fff" opacity=".85"/><rect x="7" y="20.7" width="10" height="2.6" rx="1.3" fill="#fff" opacity=".55"/><path d="M25 5.6l1.1 2.8 2.8 1.1-2.8 1.1L25 13.4l-1.1-2.8-2.8-1.1 2.8-1.1z" fill="#fff"/></svg> Powered by AIrForms</span>
+  <h1>Acme Insurance &mdash; a host application with an AIrForms chat</h1>
   <p class="lede">
     Everything left of the chat is a stand-in for <em>your</em> application:
     a customer's details on file and your own forms. The chat window is
@@ -92,7 +103,7 @@
 </div>
 
 <script type="module">
-import { FillerAI, BotChat, ChatWidget } from "./fillerai.js";
+import { AIrForms, BotChat, ChatWidget } from "./fillerai.js";
 
 const $ = (id) => document.getElementById(id);
 $("base").value = location.origin;
@@ -116,12 +127,12 @@ function say(text, bad = false) {
 }
 
 $("connect").addEventListener("click", async () => {
-  const client = new FillerAI({ baseUrl: $("base").value, token: $("token").value.trim() });
+  const client = new AIrForms({ baseUrl: $("base").value, token: $("token").value.trim() });
   try {
     const listed = await client.templates();
     if (!listed.templates.length) {
       say("Connected, but there are no bot templates in this library yet. "
-          + "Add the starters on the Bots tab of FillerAI, or `fillerai bot add --starter address_change`.", true);
+          + "Add the starters on the Bots tab of AIrForms, or `fillerai bot add --starter address_change`.", true);
       return;
     }
     templates = await Promise.all(listed.templates.map((t) => client.template(t.key)

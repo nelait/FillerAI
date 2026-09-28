@@ -26,7 +26,7 @@ word names a thing in the code, the module is given.
 | **follows** | In a field spec, the fields a declared rule depends on. In a bot template, the fields whose change makes the value on file for this one outdated (a new city makes the old ZIP wrong). |
 | **gate / validation gate** | The checks every rule a language model proposes must survive before it is offered for review: the spec parser, real field names, producible values, no cycles, then 200 generated records compared with and without the rule. `fillerai/llm/rules.py`. |
 | **headroom** | The part of a form a better model could still fill. Measured at 6.8% of cells in [llm-modelling.md](llm-modelling.md). |
-| **host application** | Somebody else's application that puts the FillerAI chat window or form binding in front of its users. |
+| **host application** | Somebody else's application that puts the AIrForms chat window or form binding in front of its users. |
 | **import fence** | The rule, enforced by `tests/test_llm_fence.py`, that nothing outside `fillerai/llm/` imports that package at module scope, so no network-capable code loads unless a feature that needs it runs. |
 | **keyring** | Where API keys typed into Settings are held: server memory, per user, never written to disk. `fillerai/web/keyring.py`. |
 | **library** | Everything the stages produce, with lineage. Two implementations of one interface: `Store` (a directory, the CLI's default) and `DatabaseStore` (SQLite, owned entries, the server's). |
@@ -37,7 +37,7 @@ word names a thing in the code, the module is given.
 | **persona** | One invented person from which a whole coherent record is generated. `fillerai/generate/persona.py`. |
 | **reader** | The part of the bot that turns a phrase into a template choice and values. Local by default (`fillerai/bot/understand.py`); a language model with `--bot-llm` (`fillerai/llm/understand.py`). |
 | **rule (in a model)** | A deterministic relationship found in the data during training (a field that always equals another, or is fixed by it), applied before the engine. `fillerai/train/derive.py`. |
-| **sample application** | Northwind Mutual, a demo customer portal in `fillerai/sampleapp/` that uses FillerAI only over `/v1`. Started by `serve` on port 8100. It has a form per bot template and shows one at a time, opened by the chat or from its menu. |
+| **sample application** | Northwind Mutual, a demo customer portal in `fillerai/sampleapp/` that uses AIrForms only over `/v1`. Started by `serve` on port 8100. It has a form per bot template and shows one at a time, opened by the chat or from its menu. |
 | **schema** | The versioned `FormSchema`: fields, screens, types and semantic types. The one contract between stages. Library kind `schema`, ids `sch-`. `fillerai/schema.py`. |
 | **script** | The generated, standalone Python script that reproduces a training run, kept in the library. Kind `script`, ids `scr-`. `fillerai/train/script.py`. |
 | **semantic type** | What a field means rather than how it is typed: `postal_code`, `email`, `policy_number` and so on. `SEMANTIC_TYPES` in `fillerai/schema.py`; inferred by `fillerai/infer.py`. |

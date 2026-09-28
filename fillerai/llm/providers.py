@@ -1,6 +1,6 @@
 """The two wire formats, and everything that differs between them.
 
-FillerAI does not have an opinion about whose model proposes a form's rules.
+AIrForms does not have an opinion about whose model proposes a form's rules.
 It has an opinion about the *shape* of the question - a system prompt, a user
 turn, and an answer in a named JSON schema - and both Anthropic's Messages API
 and OpenAI's Chat Completions API can be asked that question. So the parts

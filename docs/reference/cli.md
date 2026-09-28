@@ -1054,7 +1054,7 @@ Nothing is read from any other configuration file.
 | `OPENAI_API_KEY` | `llm/providers.py`, `llm/transcribe.py`; same, and `serve --bot-transcribe` | OpenAI's key, used when `FILLERAI_LLM_KEY` is not set, and the preferred key for transcription. | none |
 | `FILLERAI_TRANSCRIBE_MODEL` | `llm/transcribe.py`; `serve --bot-transcribe` | The transcription model. | `gpt-4o-mini-transcribe` |
 | `FILLERAI_TRANSCRIBE_BASE_URL` | `llm/transcribe.py`; `serve --bot-transcribe` | Where audio is sent. Separate from `FILLERAI_LLM_BASE_URL` so audio never goes to a gateway meant for the other provider. | `https://api.openai.com` |
-| `FILLERAI_URL` | `sampleapp/app.py`; only `python -m fillerai.sampleapp` run on its own | The FillerAI server the sample application calls. | `http://localhost:8000` |
+| `FILLERAI_URL` | `sampleapp/app.py`; only `python -m fillerai.sampleapp` run on its own | The AIrForms server the sample application calls. | `http://localhost:8000` |
 | `FILLERAI_TOKEN` | `sampleapp/app.py`; same | The API token the sample application uses. Not needed against a `--no-auth` server. | none |
 | `SAMPLE_APP_QUIET` | `sampleapp/app.py`; same | `1` silences its request log. | not set |
 
@@ -1067,5 +1067,5 @@ The per-task default models are:
 | `chat` (`serve --bot-llm`) | `claude-haiku-4-5` | `gpt-5-mini` |
 
 Base URLs are passed to the provider SDKs explicitly, so the SDKs' own
-variables, such as `ANTHROPIC_BASE_URL`, have no effect on FillerAI. Use
+variables, such as `ANTHROPIC_BASE_URL`, have no effect on AIrForms. Use
 `FILLERAI_LLM_BASE_URL` instead.

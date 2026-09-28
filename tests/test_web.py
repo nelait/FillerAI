@@ -1,4 +1,4 @@
-"""Tests for the FillerAI web API.
+"""Tests for the AIrForms web API.
 
 The handlers are called through a real HTTP server on an ephemeral port, so
 routing, body limits and error mapping are covered rather than just the
@@ -82,7 +82,7 @@ class TestStatic(ServerCase):
         status, body, headers = self.get("/")
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["Content-Type"])
-        self.assertIn(b"FillerAI", body)
+        self.assertIn(b"AIrForms", body)
 
     def test_assets_are_served_with_sensible_types(self):
         for path, expected in (("/static/app.js", "javascript"), ("/static/styles.css", "css")):

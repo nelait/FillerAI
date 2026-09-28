@@ -1,4 +1,4 @@
-"""Field schema: the contract every other phase of FillerAI builds on.
+"""Field schema: the contract every other phase of AIrForms builds on.
 
 A schema describes *what a form asks for*, independent of how the form was
 found (scraped HTML, a hand-written field spec, an accessibility dump).
@@ -317,7 +317,7 @@ class FormSchema:
         if version.split(".")[0] != SCHEMA_VERSION.split(".")[0]:
             raise ValueError(
                 f"schema_version {version!r} is not compatible with "
-                f"{SCHEMA_VERSION!r} supported by this build of FillerAI"
+                f"{SCHEMA_VERSION!r} supported by this build of AIrForms"
             )
         return cls(
             name=data.get("name", "form"),

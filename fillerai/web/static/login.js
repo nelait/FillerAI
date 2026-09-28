@@ -36,6 +36,7 @@ function show(node, message) {
 function askForNewPassword() {
   $('signIn').hidden = true;
   $('changePassword').hidden = false;
+  $('signinTitle').textContent = 'Choose your password';
   $('newPassword').focus();
 }
 
@@ -104,6 +105,6 @@ $('changePassword').addEventListener('submit', async (event) => {
       $('foot').textContent = `Signed in as ${meta.user.username}.`;
     }
   } catch (error) {
-    show($('signInError'), 'the FillerAI server is not reachable');
+    show($('signInError'), 'the AIrForms server is not reachable');
   }
 })();

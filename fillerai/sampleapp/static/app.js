@@ -1,8 +1,8 @@
-// Northwind Mutual's page. The FillerAI parts are BotChat and ChatWidget; the
+// Northwind Mutual's page. The AIrForms parts are BotChat and ChatWidget; the
 // rest is the application's own: its record, its forms, its submit path.
 //
 // The forms are not written into the page: there is one for each template
-// the FillerAI bot service has, drawn from /api/templates when the page
+// the AIrForms bot service has, drawn from /api/templates when the page
 // loads. Only one is open at a time: the one the chat is talking about, or
 // the one picked from the menu to fill in by hand.
 import { BotChat, ChatWidget } from "/fillerai.js";
@@ -38,12 +38,12 @@ async function drawForms() {
   const response = await fetch("/api/templates");
   const body = await response.json();
   if (!response.ok) {
-    showNoForms(`FillerAI didn't give this application its templates: ${body.error || response.status}.`);
+    showNoForms(`AIrForms didn't give this application its templates: ${body.error || response.status}.`);
     return;
   }
   templates = body.templates;
   if (!templates.length) {
-    showNoForms("FillerAI's bot service has no templates yet. Add some on its Bots tab"
+    showNoForms("AIrForms's bot service has no templates yet. Add some on its Bots tab"
       + " (the starters are a quick way in), then reload this page.");
     return;
   }
@@ -98,7 +98,7 @@ function showNoForms(text) {
     const link = document.createElement("a");
     link.href = me.fillerai_page;
     link.target = "_blank";
-    link.textContent = " Open FillerAI.";
+    link.textContent = " Open AIrForms.";
     $("noFormsText").append(link);
   }
 }
@@ -237,7 +237,7 @@ async function submit(template, values) {
 let chatOn = null;
 
 // Every turn goes to this application's server, which adds the customer's
-// record and the API token before passing it to FillerAI.
+// record and the API token before passing it to AIrForms.
 const chat = new BotChat(null, {
   send: async (body) => {
     const response = await fetch("/api/chat", {
@@ -304,7 +304,7 @@ function openChat(open) {
     widget = new ChatWidget($("chat"), chat, {
       title: "Northwind assistant",
       // With --server-speech the recording goes through this server to
-      // FillerAI's /v1/bot/transcribe instead of the browser's recogniser.
+      // AIrForms's /v1/bot/transcribe instead of the browser's recogniser.
       transcribe: me.server_speech ? async (audio) => {
         const response = await fetch("/api/transcribe", {
           method: "POST", headers: { "Content-Type": "application/json" },

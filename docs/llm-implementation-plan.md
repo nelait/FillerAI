@@ -28,7 +28,7 @@ layout.
 ### 0.1 The core must never import the LLM package
 
 The README's *"nothing here talks to a network"* is the load-bearing promise —
-it is what lets FillerAI run inside the environment where the real form lives.
+it is what lets AIrForms run inside the environment where the real form lives.
 "Optional dependency" is not enough, because an import at module scope in the
 wrong place makes it mandatory in practice.
 

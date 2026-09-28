@@ -16,7 +16,7 @@ one, and changing it never touches the schema.
 template whose key already exists replaces the old one - a host that
 hard-coded ``address_change`` keeps working after somebody adds an alias.
 
-The field ``name`` is the same join key it is everywhere else in FillerAI:
+The field ``name`` is the same join key it is everywhere else in AIrForms:
 the name of the field in the host's form, in ``context.current``, in the
 values the bot returns, and in a linked autofill model.
 """

@@ -1,6 +1,6 @@
 """The original engine: every field votes with its own conditional table.
 
-This is the model FillerAI shipped with, kept as one of the choices because
+This is the model AIrForms shipped with, kept as one of the choices because
 on a form it is hard to beat and impossible to misread. For each target it
 finds the handful of other fields that genuinely predict it - scored with
 Goodman and Kruskal's lambda, leave-one-out, against a shuffled baseline, all

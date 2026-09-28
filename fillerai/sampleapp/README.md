@@ -1,12 +1,12 @@
-# Northwind Mutual: a sample application using the FillerAI chat
+# Northwind Mutual: a sample application using the AIrForms chat
 
 A made-up insurer's customer portal. It shows a signed-in customer's details
-and their recent requests, a form for **every template the FillerAI bot
-service has**, one at a time, and a chat window in the corner. The chat is FillerAI's;
+and their recent requests, a form for **every template the AIrForms bot
+service has**, one at a time, and a chat window in the corner. The chat is AIrForms's;
 everything else belongs to the application.
 
 It is a separate program on its own port. It imports nothing from the rest of
-FillerAI and reaches it only over HTTP on `/v1`, the way your own application
+AIrForms and reaches it only over HTTP on `/v1`, the way your own application
 would. It lives inside the package only so that `fillerai serve` can start it.
 
 ## Run it
@@ -23,19 +23,19 @@ administrator (or `--sample-user <name>`), replacing the last one, so its
 forms are that account's bot templates. `--sample-port` moves it and
 `--no-sample-app` leaves it off.
 
-It can also be run on its own against any FillerAI:
+It can also be run on its own against any AIrForms:
 
 ```sh
 python -m fillerai.sampleapp --fillerai http://localhost:8000 --token flr_...
 ```
 
-The token can also come from `$FILLERAI_TOKEN`; a FillerAI started with
+The token can also come from `$FILLERAI_TOKEN`; an AIrForms started with
 `--no-auth` needs none. Open it as `localhost`: browsers only allow the
 microphone on `https://` or `http://localhost`.
 
 ## Try it
 
-Add the two starters on FillerAI's Bots tab (or `fillerai bot add --starter
+Add the two starters on AIrForms's Bots tab (or `fillerai bot add --starter
 address_change`), reload the sample application, and there is a form for
 each: a menu item at the top, and no form open until one is asked for. Then,
 in the chat:
@@ -62,7 +62,7 @@ again with the original customer.
 ## How it is put together
 
 ```
-browser (static/app.js)             app.py (this application)              FillerAI
+browser (static/app.js)             app.py (this application)              AIrForms
 ───────────────────────             ──────────────────────────             ────────
 page load            ── GET /api/templates ─► with the token ─────────────► GET /v1/templates
                                                                             GET /v1/templates/<key>
@@ -81,12 +81,12 @@ Four decisions in there are the ones a real host should copy:
 - **The token stays on the server.** The browser talks only to this
   application, which adds `Authorization: Bearer ...` when it forwards a turn.
   `fillerai.js` and its stylesheet are fetched through the application too
-  (`/fillerai.js`), so the page needs nothing from FillerAI's origin.
+  (`/fillerai.js`), so the page needs nothing from AIrForms's origin.
 - **The record on file is the server's to say.** `/api/chat` throws away any
   `context.current` the page sends and puts the customer's record there
   itself, so a page cannot ask for a change against somebody else's address.
 - **The template decides the form, the application decides what it accepts.**
-  `/api/submit/<template>` reads the template from FillerAI again rather than
+  `/api/submit/<template>` reads the template from AIrForms again rather than
   trusting the page's copy, checks required fields and options against it,
   and adds its own rules by semantic type: a real ZIP code, a two-letter
   state, an email address, a policy that is on this account. A value changes
@@ -95,9 +95,9 @@ Four decisions in there are the ones a real host should copy:
 - **A submit goes through the application's own path.** The chat's "Submit"
   and the form's Submit button both post to `/api/submit/<template>`. A
   refusal goes back to the chat as `submit_failed` with the reason, and the
-  chat offers to try again or fill the form instead. FillerAI never writes to
+  chat offers to try again or fill the form instead. AIrForms never writes to
   this application.
 
 The files: `app.py` (the server, standard library only), `static/index.html`,
 `static/app.js` and `static/style.css`. `tests/test_sample_app.py` runs it
-against a real FillerAI.
+against a real AIrForms.

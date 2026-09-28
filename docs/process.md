@@ -377,7 +377,7 @@ contract: [bot-builder.md](bot-builder.md).
 application, Northwind Mutual, on `http://localhost:8100`, with an API token
 for the first administrator. Its forms are that user's templates, so add the
 starters first; one is open at a time, opened by the chat or from the
-application's menu. `--no-sample-app` leaves it off. It reaches FillerAI only over
+application's menu. `--no-sample-app` leaves it off. It reaches AIrForms only over
 `/v1`, which makes it the working example of a host application
 (`fillerai/sampleapp/README.md`).
 

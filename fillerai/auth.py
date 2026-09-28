@@ -1,6 +1,6 @@
 """Who is using this, and what they are allowed to do.
 
-FillerAI started as a tool one person ran on their own machine, where "who
+AIrForms started as a tool one person ran on their own machine, where "who
 are you" had one answer and asking was rude. It is now a thing several people
 share, and the two questions that follow are unavoidable: whose library is
 this, and who is allowed to hand out accounts.

@@ -1,4 +1,4 @@
-"""A local HTTP server for the FillerAI UI.
+"""A local HTTP server for the AIrForms UI.
 
 Built on ``http.server`` so the UI inherits the same promise as the rest of
 the project: nothing to install, nothing that phones home. It is a local
@@ -2005,7 +2005,7 @@ ROUTES: dict[str, Route] = {
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = f"FillerAI/{__version__}"
+    server_version = f"AIrForms/{__version__}"
     # Quiet by default; the console is for the user's own output.
     quiet = True
 
@@ -2087,7 +2087,7 @@ class Handler(BaseHTTPRequestHandler):
         holder = context()
         if route.needs and holder.user is None:
             return {"status": 401,
-                    "body": {"error": "sign in to use FillerAI",
+                    "body": {"error": "sign in to use AIrForms",
                              "sign_in": True}}
         if route.needs == "admin" and not (holder.user and holder.user.is_admin):
             return {"status": 403,
@@ -2365,7 +2365,7 @@ def _first_run(auth: Auth) -> None:
 def _offer_import() -> None:
     """Bring an existing file library in, the first time there is a database.
 
-    Somebody who has been using FillerAI has a ``.fillerai`` directory full
+    Somebody who has been using AIrForms has a ``.fillerai`` directory full
     of their work. Starting the server with accounts should not look like
     losing it, so it is copied into the first administrator's library, ids
     and lineage intact, and said out loud. Running again copies nothing,
@@ -2426,7 +2426,7 @@ def start_sample_app(host: str, fillerai_port: int, port: int = 8100,
     """Start the sample application next to this server, in a thread.
 
     It is an outside application that happens to share the process: it
-    reaches FillerAI only over HTTP on ``/v1``, with an API token issued here
+    reaches AIrForms only over HTTP on ``/v1``, with an API token issued here
     for one account (``username``, or the first administrator), so its forms
     are that account's bot templates. The token is replaced on every start,
     and nobody has to copy one anywhere. Returns the server and a line to
@@ -2510,7 +2510,7 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
         if sample_httpd is not None:
             SAMPLE_APP_PORT = sample_httpd.server_address[1]
 
-    print(f"FillerAI UI on {url}")
+    print(f"AIrForms UI on {url}")
     if DATABASE is not None:
         print(f"  database: {DATABASE.url}")
     else:

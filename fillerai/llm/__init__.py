@@ -6,7 +6,7 @@ commands that use it import it inside the function that runs them.
 
 That is stricter than "an optional dependency", on purpose. The README
 promises that nothing here talks to a network, and that promise is what lets
-FillerAI run inside the locked-down environment where the real form lives. One
+AIrForms run inside the locked-down environment where the real form lives. One
 import in the wrong place turns an optional feature into a mandatory one
 without anybody noticing, so the fence is a test rather than a convention.
 

@@ -1,6 +1,6 @@
 # HTTP API reference
 
-Every route FillerAI serves over HTTP, in one place. `fillerai serve` answers
+Every route AIrForms serves over HTTP, in one place. `fillerai serve` answers
 on two surfaces from one port: `/api`, which is the UI talking to its own
 server, and `/v1`, the integration service for other applications. It also
 serves the UI's pages and the JavaScript client. The sample application
@@ -77,7 +77,7 @@ runs:
 | Access | Who | Refusal when not met |
 |---|---|---|
 | anonymous | anyone | — |
-| user | any signed-in, active account | `401 {"error": "sign in to use FillerAI", "sign_in": true}` |
+| user | any signed-in, active account | `401 {"error": "sign in to use AIrForms", "sign_in": true}` |
 | admin | an account with role `admin` | `403 {"error": "that is an administrator's to do"}` |
 
 Only `/api/meta` and `/api/auth/login` are anonymous. Every other `/api`
@@ -1097,7 +1097,7 @@ that model and cannot create or delete any.
 ## 16. Sample application
 
 Northwind Mutual, the sample customer portal. It is a separate server
-(`fillerai/sampleapp/app.py`) that talks to FillerAI only over `/v1`.
+(`fillerai/sampleapp/app.py`) that talks to AIrForms only over `/v1`.
 `fillerai serve` starts it on port 8100 (`--sample-port`, `--sample-user`,
 `--no-sample-app`), issuing it a token named `Sample application` for the
 first administrator or the named user. It can also run alone:
@@ -1114,16 +1114,16 @@ All of this is in the page; it adds no route.
 
 It has no accounts, cookies, CSRF or CORS: it is one demo customer on
 localhost. The token stays on this server and never reaches the browser.
-Errors are `{"error": "..."}`. An error passed on from FillerAI keeps
-FillerAI's status and body, `code` included. When FillerAI cannot be reached
+Errors are `{"error": "..."}`. An error passed on from AIrForms keeps
+AIrForms's status and body, `code` included. When AIrForms cannot be reached
 the reply is `502` with `code: unreachable`.
 
 | Method | Path | Does |
 |---|---|---|
 | `GET` | `/` | the portal page (`static/index.html`, one form open at a time, `#form-<template>`); other files under `static/` by name |
 | `GET` | `/api/me` | the customer record and past requests, plus `server_speech` and `fillerai_page` |
-| `GET` | `/api/templates` | every FillerAI template in full, as `{templates}`, fetched from `/v1/templates` on each call |
-| `GET` | `/fillerai.js`, `/fillerai-chat.css` | FillerAI's client files, fetched through this server; 502 when FillerAI is down |
+| `GET` | `/api/templates` | every AIrForms template in full, as `{templates}`, fetched from `/v1/templates` on each call |
+| `GET` | `/fillerai.js`, `/fillerai-chat.css` | AIrForms's client files, fetched through this server; 502 when AIrForms is down |
 | `GET` | `/favicon.ico` | `204`, empty |
 | `POST` | `/api/chat` | forwards `input`, `state` and `context.template` to `/v1/bot/turn`, replacing `context.current` with the customer record |
 | `POST` | `/api/submit/{key}` | body `{values}`: checks them against the template and the portal's own rules, updates the record, returns `{reference, customer}` |
@@ -1135,5 +1135,5 @@ Refusals from the portal itself:
 |---|---|
 | 400 | body not JSON or not an object; a required field missing; a value that fails a rule (option, ZIP code, state, email); nothing changed |
 | 403 | a policy number that is not the customer's |
-| 404 | unknown path; a `{key}` the portal will not accept, or one FillerAI does not have |
+| 404 | unknown path; a `{key}` the portal will not accept, or one AIrForms does not have |
 | 413 | a body over 64 KB (8 MB for `/api/transcribe`) |

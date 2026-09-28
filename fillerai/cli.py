@@ -1177,7 +1177,7 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("--review-below", **common_review)
     inspect.set_defaults(func=cmd_inspect)
 
-    serve = subparsers.add_parser("serve", help="open the FillerAI UI in a browser")
+    serve = subparsers.add_parser("serve", help="open the AIrForms UI in a browser")
     serve.add_argument("-p", "--port", type=int, default=8000)
     serve.add_argument("--host", default="127.0.0.1",
                        help="bind address; the default keeps the UI on this machine")

@@ -3,30 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FillerAI integration demo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2322d3ee'/%3E%3Cstop offset='.55' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url%28%23g%29'/%3E%3Crect x='7' y='8.7' width='13' height='2.6' rx='1.3' fill='white'/%3E%3Crect x='7' y='14.7' width='18' height='2.6' rx='1.3' fill='white' opacity='.85'/%3E%3Crect x='7' y='20.7' width='10' height='2.6' rx='1.3' fill='white' opacity='.55'/%3E%3Cpath d='M25 5.6l1.1 2.8 2.8 1.1-2.8 1.1L25 13.4l-1.1-2.8-2.8-1.1 2.8-1.1z' fill='white'/%3E%3C/svg%3E">
+<title>AIrForms integration demo</title>
 <style>
   :root {
-    --ink: #15181d; --dim: #5d6673; --line: #dde2ea; --bg: #f6f8fb;
-    --card: #ffffff; --accent: #2f6df6; --good: #0d8a52; --warn: #a8630a;
-    --fill: #eef4ff;
+    --ink: #0f172a; --dim: #51607a; --line: #e2e7ef; --bg: #f4f6fb;
+    --card: #ffffff; --accent: #4f46e5; --good: #0d8a52; --warn: #a8630a;
+    --fill: #eef0ff;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--ink);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font: 15px/1.5 "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   .wrap { max-width: 1040px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.02em; }
   .lede { color: var(--dim); margin: 0 0 20px; max-width: 70ch; }
   .card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-    padding: 16px 18px; margin-bottom: 16px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 16px; box-shadow: 0 1px 2px rgb(15 23 42 / .05);
   }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
   label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
   input, select, button {
     font: inherit; padding: 7px 9px; border: 1px solid var(--line);
-    border-radius: 6px; background: #fff; color: inherit;
+    border-radius: 8px; background: #fff; color: inherit;
   }
   input, select { min-width: 200px; }
   button {
@@ -40,7 +42,7 @@
   }
   .field input, .field select { width: 100%; min-width: 0; }
   .field .why { font-size: 11px; color: var(--dim); margin-top: 3px; min-height: 14px; }
-  .fillerai-filled { background: var(--fill); border-color: #b9cdfb; }
+  .fillerai-filled { background: var(--fill); border-color: #c7c9fb; }
   .ask { border-left: 3px solid var(--accent); padding-left: 8px; }
   .tally { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; }
   .tally b { font-size: 20px; display: block; }
@@ -49,13 +51,22 @@
   .note { font-size: 12px; color: var(--dim); }
   code { background: #eef1f6; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
   h2 { font-size: 15px; margin: 0 0 10px; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgb(79 70 229 / .2); }
+  button { font-weight: 500; }
+  /* Whose client this is: the page is somebody else's application, and the
+     badge says what it is borrowing. */
+  .powered { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px;
+             padding: 3px 10px 3px 4px; border-radius: 99px; font-size: 12px; font-weight: 600;
+             color: #3730a3; background: #eef0ff; border: 1px solid #dfe2ff; }
+  .powered svg { width: 18px; height: 18px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>FillerAI, from somebody else's application</h1>
+  <span class="powered"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="afMini" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset=".55" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#afMini)"/><rect x="7" y="8.7" width="13" height="2.6" rx="1.3" fill="#fff"/><rect x="7" y="14.7" width="18" height="2.6" rx="1.3" fill="#fff" opacity=".85"/><rect x="7" y="20.7" width="10" height="2.6" rx="1.3" fill="#fff" opacity=".55"/><path d="M25 5.6l1.1 2.8 2.8 1.1-2.8 1.1L25 13.4l-1.1-2.8-2.8-1.1 2.8-1.1z" fill="#fff"/></svg> Powered by AIrForms</span>
+  <h1>AIrForms, from somebody else's application</h1>
   <p class="lede">
-    This page is not part of the FillerAI UI. It is a plain HTML page that
+    This page is not part of the AIrForms UI. It is a plain HTML page that
     imports <code>fillerai.js</code> and talks to the <code>/v1</code> service
     with an API token, exactly as a React application would. It draws the form
     from what the service says the model's fields are, then fills them in as
@@ -107,7 +118,7 @@
 </div>
 
 <script type="module">
-import { FillerAI } from "./fillerai.js";
+import { AIrForms } from "./fillerai.js";
 
 const $ = (id) => document.getElementById(id);
 $("base").value = location.origin;
@@ -122,12 +133,12 @@ function say(text, bad = false) {
 }
 
 $("connect").addEventListener("click", async () => {
-  client = new FillerAI({ baseUrl: $("base").value, token: $("token").value.trim() });
+  client = new AIrForms({ baseUrl: $("base").value, token: $("token").value.trim() });
   try {
     const health = await client.health();
     const { models } = await client.models();
     if (!models.length) {
-      say(`Connected to FillerAI ${health.version}, but this token's library `
+      say(`Connected to AIrForms ${health.version}, but this token's library `
           + "has no trained models in it yet.", true);
       return;
     }
@@ -136,7 +147,7 @@ $("connect").addEventListener("click", async () => {
                 + ` (${m.algorithm}, ${m.trained_on} records)</option>`)
       .join("");
     $("pick").hidden = false;
-    say(`Connected to FillerAI ${health.version}. ${models.length} model(s) available.`);
+    say(`Connected to AIrForms ${health.version}. ${models.length} model(s) available.`);
   } catch (error) {
     say(error.message, true);
   }

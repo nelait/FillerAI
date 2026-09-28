@@ -1,4 +1,4 @@
-"""The only module in FillerAI that opens a socket.
+"""The only module in AIrForms that opens a socket.
 
 That is the entire design. Everything above this file builds a request
 dictionary and reads a response dictionary, which makes every part of these

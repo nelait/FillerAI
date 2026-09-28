@@ -1,4 +1,4 @@
-"""The FillerAI web UI.
+"""The AIrForms web UI.
 
 A local, dependency-free application over the same engine the CLI uses.
 Start it with ``python -m fillerai serve``.

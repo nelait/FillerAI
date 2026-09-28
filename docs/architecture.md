@@ -10,7 +10,7 @@ Everything here was checked against the code at version 0.15.1.
 
 ## 1. The shape of it
 
-FillerAI is four stages over one shared contract, with a library underneath
+AIrForms is four stages over one shared contract, with a library underneath
 and two HTTP surfaces on top.
 
 ```
@@ -112,7 +112,7 @@ answer "what encloses this control", which label association, fieldset scoping
 and `aria-describedby` all need.
 
 `spec.py` takes a compact hand-written JSON field spec and produces the same
-`FormSchema`. It exists because the case FillerAI was built for is a team that
+`FormSchema`. It exists because the case AIrForms was built for is a team that
 *cannot share their markup*. Anything the spec states is taken as given;
 anything it omits is inferred exactly as it would be from HTML. `follows` /
 `when` / `otherwise` in a spec become a `Derived` on the field.
@@ -356,7 +356,7 @@ underneath. Conflating them would undo the reason the second one exists.
 
 | | `/api` | `/v1` |
 |---|---|---|
-| for | the FillerAI UI talking to its own server | somebody else's application |
+| for | the AIrForms UI talking to its own server | somebody else's application |
 | credential | session cookie + CSRF header | **bearer token only** |
 | addressing | an in-process `model_id` handle | a library id (`mdl-…`), which survives a restart |
 | method | one POST per button | GET for reads, POST for work |
@@ -409,13 +409,13 @@ package, and an assertion that `dependencies = []` is still in
 `pyproject.toml`.
 
 That is stricter than "an optional dependency" on purpose: the promise that
-nothing here talks to a network is what lets FillerAI run inside the
+nothing here talks to a network is what lets AIrForms run inside the
 locked-down environment where the real form lives, and one import in the wrong
 place turns an optional feature into a mandatory one without anybody noticing.
 
 Inside the fence, two more seams:
 
-- **`transport.py` is the only module in FillerAI that opens a socket.**
+- **`transport.py` is the only module in AIrForms that opens a socket.**
   Everything above it builds a request dict and reads a response dict.
   `UrllibTransport` is the default and provider-neutral; `SdkTransport` /
   `OpenAiSdkTransport` are used automatically *only* when the matching
@@ -526,7 +526,7 @@ fillerai/
     static/client/     fillerai.js, demo.html, chat.html,
                        fillerai-chat.css - the browser client
   sampleapp/           the sample application serve starts next to the UI;
-                       imports nothing from FillerAI, reaches it over /v1
+                       imports nothing from AIrForms, reaches it over /v1
 examples/              one HTML form and four field specs
 tests/                 868 tests, offline, no dependencies
 livetests/             the LLM acceptance gate; needs a key and an opt-in
