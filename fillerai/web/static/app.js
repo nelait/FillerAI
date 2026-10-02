@@ -29,6 +29,7 @@ const state = {
   // it is not, which is the single-user tool: no login, one library.
   user: null,
   csrf: '',
+  accounts: false,     // whether the server is running with accounts at all
 };
 
 const PREVIEW_ROWS = 100;
@@ -126,6 +127,8 @@ function showPanel(name) {
   if (name === 'simulate') renderSimulate();
   if (name === 'library') loadLibrary();
   if (name === 'bots') loadBots();
+  renderFlow();
+  renderHelp();
 }
 
 function unlock(name) {
@@ -209,6 +212,11 @@ $('extract').addEventListener('click', () => withBusy($('extract'), 'Reading...'
   state.edited = new Set();
   state.records = [];
   state.problems = [];
+  // A new form makes the model on screen another form's.
+  state.model = null;
+  ['tryIt', 'trainReport', 'trainStats', 'voterPanel', 'treePanel', 'runPanel']
+    .forEach((id) => { $(id).hidden = true; });
+  $('downloadModel').hidden = true;
   state.ids = {
     source: result.source_id || null,
     schema: result.schema_id || null,
@@ -376,6 +384,7 @@ $('run').addEventListener('click', () => withBusy($('run'), 'Generating...', asy
   $('downloadModel').hidden = true;
   unlock('train');
   renderData();
+  renderFlow();
   toast(`${result.count} records generated`);
 }));
 
@@ -616,6 +625,7 @@ async function watchRun(started) {
       $('runLog').textContent +=
         `\n# repeat this run\n${started.command}\n\n${started.script}`;
       renderTrainResult();
+      renderFlow();
       await refillPreview();
       toast(`learned from ${log.result.trained_on} records`);
       return;
@@ -1758,10 +1768,14 @@ async function openFromLibrary(id) {
     await refillPreview();
     showPanel('train');
   } else if (kind === 'dataset') {
+    // A different dataset makes any model on screen someone else's.
+    state.model = null;
+    state.ids.model = null;
     showPanel('generate');
   } else {
     showPanel('schema');
   }
+  renderFlow();
   toast(`opened ${result.entry.name}`);
 }
 
@@ -1779,6 +1793,9 @@ function renderAccount() {
   // Without accounts there is no password to change and nobody to manage;
   // the language-model card above stays, because it is not an account thing.
   $('ownCard').hidden = !user;
+  // The docs code is an administrator's; without accounts, whoever runs the
+  // single-user tool is one.
+  $('docsCard').hidden = state.accounts && !(user && user.role === 'admin');
   if (!user) { $('tokenCard').hidden = true; return; }
   const initials = (user.display_name || user.username).trim()
     .split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase();
@@ -1930,6 +1947,7 @@ function openSettings() {
   showPanel('account');
   loadLlm();
   loadTokens();
+  if (!$('docsCard').hidden) loadDocsAccess();
   // An administrator opening this panel expects the user list in it, and an
   // empty table reads as broken rather than as not-asked-for yet.
   if (state.user && state.user.role === 'admin') {
@@ -2760,6 +2778,271 @@ $('botDownload').addEventListener('click', () => {
 // ------------------------------------------------------------------ boot
 
 
+
+// ---------------------------------------------------- the flow between stages
+//
+// Each stage ends with the way to the next one, where its result is, so the
+// work goes source -> schema -> records -> model -> saving without a trip to
+// the menu. The trail above the panel says what is loaded, and each part of
+// it goes back to the stage that made it.
+
+const STAGE_PANELS = ['source', 'schema', 'generate', 'train', 'simulate'];
+
+function formName() {
+  return (state.schema && (state.schema.title || state.schema.name)) || 'this form';
+}
+
+function trailChip(panel, label, value, on) {
+  return `<button class="trail-chip${on ? ' is-on' : ''}" data-go="${panel}" type="button">`
+    + `<span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></button>`;
+}
+
+function nextButton(go, label, primary, extra) {
+  return `<button class="btn ${primary ? 'btn-primary' : 'btn-ghost'}" type="button"`
+    + ` data-go="${go}"${extra || ''}>${label}</button>`;
+}
+
+function setNext(id, html) {
+  const node = $(id);
+  node.hidden = !html;
+  node.innerHTML = html || '';
+}
+
+function renderFlow() {
+  const panel = document.body.dataset.panel;
+  const trail = $('trail');
+  const parts = [];
+  if (state.schema) {
+    parts.push(trailChip('schema', 'Form', formName(), panel === 'schema'));
+  }
+  if (state.records.length) {
+    parts.push(trailChip('generate', 'Records', String(state.records.length), panel === 'generate'));
+  }
+  if (state.model) {
+    const algo = (state.algorithms.find((a) => a.name === state.model.algorithm) || {}).label
+      || state.model.algorithm || 'model';
+    parts.push(trailChip('train', 'Model', algo, panel === 'train' || panel === 'simulate'));
+  }
+  trail.hidden = !parts.length || !STAGE_PANELS.includes(panel);
+  trail.innerHTML = parts.join('<span class="trail-sep" aria-hidden="true">›</span>');
+
+  // Generate: the records are here, so is the way to train on them.
+  const records = state.records.length;
+  setNext('nextGenerate', records ? `
+    <div class="next-copy"><span class="next-kicker">Next step</span>
+      <strong>Train a model on these ${records} records</strong>
+      <span class="muted">It learns ${escapeHtml(formName())} from exactly what is in the table below.</span></div>
+    <div class="next-actions">
+      ${nextButton('schema', '← Schema', false)}
+      ${nextButton('train', 'Train now', false, ' data-start="train"')}
+      ${nextButton('train', 'Go to Train →', true)}
+    </div>` : '');
+
+  // Train: before a model, where the records come from; after, where it goes.
+  let train = '';
+  if (state.model) {
+    train = `
+    <div class="next-copy"><span class="next-kicker">Next step</span>
+      <strong>See what it saves on forms it has never seen</strong>
+      <span class="muted">Simulate plays this model against fresh forms and counts every keystroke.</span></div>
+    <div class="next-actions">
+      ${state.ids.model ? `<button class="btn btn-ghost" type="button" data-reveal="${escapeAttr(state.ids.model)}">In the Library</button>` : ''}
+      ${nextButton('bots', 'Use it in a bot', false)}
+      ${nextButton('simulate', 'Simulate with this model →', true)}
+    </div>`;
+  } else if (!records) {
+    train = `
+    <div class="next-copy"><span class="next-kicker">Before you train</span>
+      <strong>There are no records to learn from yet</strong>
+      <span class="muted">${state.schema ? 'Generate sample records for ' + escapeHtml(formName()) + ' first.' : 'Read a form, then generate records for it.'}</span></div>
+    <div class="next-actions">
+      ${state.schema ? nextButton('generate', 'Generate records →', true) : nextButton('source', 'Read a form →', true)}
+    </div>`;
+  }
+  setNext('nextTrain', train);
+
+  // Simulate: no model means a step back; with one, where else it can go.
+  let simulate = '';
+  if (!state.model) {
+    simulate = `
+    <div class="next-copy"><span class="next-kicker">Before you simulate</span>
+      <strong>${records ? 'Train a model on your records first' : 'There is no model to play yet'}</strong></div>
+    <div class="next-actions">
+      ${records ? nextButton('train', 'Go to Train →', true)
+                : state.schema ? nextButton('generate', 'Generate records →', true)
+                : nextButton('source', 'Read a form →', true)}
+    </div>`;
+  } else {
+    simulate = `
+    <div class="next-copy"><span class="next-kicker">From here</span>
+      <strong>Try another engine, or put this model to work</strong></div>
+    <div class="next-actions">
+      ${nextButton('train', '← Train another', false)}
+      ${state.ids.model ? `<button class="btn btn-ghost" type="button" data-reveal="${escapeAttr(state.ids.model)}">In the Library</button>` : ''}
+      ${nextButton('bots', 'Use it in a bot →', false)}
+    </div>`;
+  }
+  setNext('nextSimulate', simulate);
+}
+
+// One listener for every link the flow draws, wherever it is.
+document.addEventListener('click', (event) => {
+  const reveal = event.target.closest('[data-reveal]');
+  if (reveal && (reveal.closest('.next-step') || reveal.closest('.trail'))) {
+    revealInLibrary(reveal.dataset.reveal);
+    return;
+  }
+  const go = event.target.closest('[data-go]');
+  if (!go || !(go.closest('.next-step') || go.closest('.trail'))) return;
+  const target = go.dataset.go;
+  unlock(target);
+  showPanel(target);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (go.dataset.start === 'train') $('trainRun').click();
+});
+
+// ------------------------------------------------------------- the help panel
+//
+// Pulled out from the right edge. It always describes the screen showing, and
+// follows along when the screen changes while it is open. Not modal: the point
+// is to read it while doing what it says. The words come from
+// the server - the user guide, cut into one section per screen - so the panel
+// and the docs site cannot disagree.
+
+const help = { sections: null, loading: null, open: false };
+
+const HELP_NAMES = {
+  source: 'Source', schema: 'Schema', generate: 'Generate', train: 'Train',
+  simulate: 'Simulate', library: 'Library', bots: 'Bots', account: 'Settings',
+};
+
+async function loadHelp() {
+  if (help.sections) return help.sections;
+  if (!help.loading) {
+    help.loading = api('/api/help').then((result) => {
+      help.sections = result.sections || {};
+      return help.sections;
+    }).catch((error) => {
+      help.loading = null;
+      throw error;
+    });
+  }
+  return help.loading;
+}
+
+async function renderHelp() {
+  if (!help.open) return;
+  const panel = document.body.dataset.panel || 'source';
+  $('helpWhere').textContent = HELP_NAMES[panel] || 'this screen';
+  let sections;
+  try {
+    sections = await loadHelp();
+  } catch (error) {
+    $('helpTitle').textContent = 'Help';
+    $('helpBody').innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  const section = sections[panel];
+  if (!section) {
+    $('helpTitle').textContent = 'Help';
+    $('helpBody').innerHTML = '<p class="muted">There is no help written for this screen yet.</p>';
+    $('helpGuide').href = '/docs/user-guide';
+    return;
+  }
+  $('helpTitle').textContent = section.title;
+  // Server-rendered from the guide, which escapes every byte of its source.
+  $('helpBody').innerHTML = section.html;
+  $('helpBody').scrollTop = 0;
+  $('helpGuide').href = `/docs/user-guide#${section.anchor}`;
+}
+
+function setHelp(open) {
+  help.open = open;
+  document.body.classList.toggle('help-open', open);
+  $('helpPanel').setAttribute('aria-hidden', String(!open));
+  $('helpTab').setAttribute('aria-expanded', String(open));
+  if (open) {
+    renderHelp();
+    $('helpPanel').focus({ preventScroll: true });
+  } else if (document.activeElement && $('helpPanel').contains(document.activeElement)) {
+    $('helpTab').focus();
+  }
+}
+
+$('helpTab').addEventListener('click', () => setHelp(!help.open));
+$('helpClose').addEventListener('click', () => setHelp(false));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && help.open) { setHelp(false); return; }
+  if (event.key !== '?' || event.ctrlKey || event.metaKey || event.altKey) return;
+  const typing = event.target.closest('input, textarea, select, [contenteditable="true"]');
+  if (typing) return;
+  event.preventDefault();
+  setHelp(!help.open);
+});
+
+// ------------------------------------------------------ documentation access
+
+function docsSay(message, bad) {
+  const node = $('docsStatus');
+  node.hidden = !message;
+  node.className = `status ${bad ? 'bad' : 'ok'}`;
+  node.innerHTML = message || '';
+}
+
+function renderDocsAccess(status) {
+  $('docsPill').textContent = status.configured ? 'open with a code' : 'closed';
+  $('docsPill').classList.toggle('on', status.configured);
+  const facts = [];
+  if (status.configured) {
+    const by = status.set_by ? ` by ${escapeHtml(status.set_by)}` : '';
+    facts.push(`Code set ${short(status.set_at)}${by}. It cannot be shown again; set a new one to change it.`);
+  } else {
+    facts.push('No code yet, so nobody can open the documentation.');
+  }
+  if (!status.has_docs) {
+    facts.push('This install has no docs folder, so only the user guide will be there.');
+  }
+  $('docsFacts').innerHTML = facts.map((line) => `<li>${line}</li>`).join('');
+  $('docsClear').hidden = !status.configured;
+}
+
+async function loadDocsAccess() {
+  try {
+    renderDocsAccess(await api('/api/admin/docs'));
+  } catch (error) {
+    docsSay(escapeHtml(error.message), true);
+  }
+}
+
+function docsCodeShown(result) {
+  renderDocsAccess(result);
+  docsSay(`The access code is now <code>${escapeHtml(result.code)}</code>. Share it with
+    whoever should read the docs at <a href="/docs" target="_blank" rel="noopener">/docs</a>.
+    This is the only time it is shown.`);
+}
+
+$('docsSave').addEventListener('click', () => withBusy($('docsSave'), 'Setting...', async () => {
+  docsSay('');
+  try {
+    const result = await api('/api/admin/docs/passcode', { code: $('docsCode').value });
+    $('docsCode').value = '';
+    docsCodeShown(result);
+  } catch (error) {
+    docsSay(escapeHtml(error.message), true);
+  }
+}));
+
+$('docsGenerate').addEventListener('click', () => withBusy($('docsGenerate'), '...', async () => {
+  docsSay('');
+  docsCodeShown(await api('/api/admin/docs/passcode', { generate: true }));
+}));
+
+$('docsClear').addEventListener('click', () => withBusy($('docsClear'), '...', async () => {
+  if (!window.confirm('Close the documentation to everybody until a new code is set?')) return;
+  renderDocsAccess(await api('/api/admin/docs/passcode', { clear: true }));
+  docsSay('The documentation is closed. Set a new code to open it again.');
+}));
+
 (async function start() {
   try {
     const meta = await (await fetch('/api/meta')).json();
@@ -2769,6 +3052,7 @@ $('botDownload').addEventListener('click', () => {
     }
     state.user = meta.user || null;
     state.csrf = meta.csrf || '';
+    state.accounts = Boolean(meta.accounts);
     renderAccount();
     state.semanticTypes = meta.semantic_types;
     $('version').textContent = `v${meta.version}`;

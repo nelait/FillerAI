@@ -132,6 +132,18 @@ gateway your organisation approves.
 The reason `/v1` refuses the cookie: if it honoured it, any web page the user
 has open could drive it with their session.
 
+### The documentation site
+
+`/docs` is a third, read-only surface: the Markdown in `docs/` and the user
+guide, rendered on the server with every byte escaped and only `http`,
+`https` and `mailto` links kept. It is opened by an access code rather than
+an account, so it can be shared with people who have none. The code is kept
+as a scrypt hash; the browser gets an HttpOnly cookie scoped to `/docs` whose
+value is an HMAC keyed by that hash, so it cannot be made without the code and
+dies when the code changes. Wrong codes are limited to 8 per address per 15
+minutes. With no code set the docs are closed to everybody, including
+administrators.
+
 ## 7. Data at rest
 
 - **The database** is one SQLite file, `fillerai.db` in the library

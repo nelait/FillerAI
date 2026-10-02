@@ -79,10 +79,19 @@ class ServerCase(unittest.TestCase):
 
 class TestStatic(ServerCase):
     def test_index_is_served(self):
-        status, body, headers = self.get("/")
+        status, body, headers = self.get("/app")
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["Content-Type"])
         self.assertIn(b"AIrForms", body)
+        self.assertIn(b"panel-source", body)
+
+    def test_the_product_page_is_the_front_door(self):
+        status, body, headers = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", headers["Content-Type"])
+        self.assertIn(b"fill themselves", body)
+        self.assertIn(b'href="/login"', body)
+        self.assertIn(b'href="/docs"', body)
 
     def test_assets_are_served_with_sensible_types(self):
         for path, expected in (("/static/app.js", "javascript"), ("/static/styles.css", "css")):

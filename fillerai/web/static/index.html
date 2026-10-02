@@ -51,6 +51,8 @@
   <!-- Shown when serve started the sample application next to the UI. -->
   <a class="btn btn-ghost small" id="sampleAppLink" target="_blank" rel="noopener" hidden
      title="Northwind Mutual, a sample application whose forms are your bot templates">Sample app ↗</a>
+  <a class="btn btn-ghost small" id="docsLink" href="/docs" target="_blank" rel="noopener"
+     title="User guide, product and architecture documentation">Docs ↗</a>
   <button class="btn btn-ghost small" id="openSettings" title="Settings">Settings</button>
   <!-- Only rendered when the server is running with accounts. -->
   <div class="account" id="account" hidden>
@@ -61,7 +63,34 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+<!-- The help panel: pulled out from the right edge, and always about the
+     screen that is showing. Its text is the user guide, the same one /docs
+     serves, cut into one section per screen. -->
+<button class="help-tab" id="helpTab" type="button" aria-controls="helpPanel"
+        aria-expanded="false" title="Help for this screen (?)">
+  <span class="help-q" aria-hidden="true">?</span><span class="help-word">Help</span>
+</button>
+<aside class="help-panel" id="helpPanel" role="complementary" aria-label="Help"
+       aria-hidden="true" tabindex="-1">
+  <div class="help-head">
+    <div>
+      <p class="help-kicker">Help &middot; <span id="helpWhere">this screen</span></p>
+      <h2 id="helpTitle">How to</h2>
+    </div>
+    <button class="help-close" id="helpClose" type="button" aria-label="Close help">&times;</button>
+  </div>
+  <div class="help-body" id="helpBody"><p class="muted">Loading...</p></div>
+  <div class="help-foot">
+    <a class="btn btn-ghost small" id="helpGuide" href="/docs/user-guide"
+       target="_blank" rel="noopener">Full user guide ↗</a>
+    <span class="muted small">Press <kbd>?</kbd> to open or close</span>
+  </div>
+</aside>
+
 <main>
+  <!-- Where the work on screen came from: the form, the records, the
+       model. Each one goes back to the stage that made it. -->
+  <nav class="trail" id="trail" aria-label="What you are working on" hidden></nav>
 
   <!-- ============================ Source ============================ -->
   <section class="panel is-current" id="panel-source" role="tabpanel">
@@ -187,6 +216,9 @@
 
     <div id="genStatus" class="status" hidden></div>
 
+    <!-- What to do with the records, where they are. -->
+    <div class="next-step" id="nextGenerate" hidden></div>
+
     <div class="toolbar" id="exportBar" hidden>
       <span class="muted" id="resultCount"></span>
       <span class="spacer"></span>
@@ -211,6 +243,9 @@
       <p class="sub">Learn the form from the records on the last step, then finish
          it from the first few fields an agent types. Nothing leaves this machine.</p>
     </div>
+
+    <!-- At the top, because a finished run puts its log and results below. -->
+    <div class="next-step" id="nextTrain" hidden></div>
 
     <div class="chooser">
       <div class="chooser-pick">
@@ -336,6 +371,8 @@
     </div>
 
     <div id="simStatus" class="status" hidden></div>
+
+    <div class="next-step" id="nextSimulate" hidden></div>
 
     <div class="controls" id="simControls" hidden>
       <button class="btn btn-primary" id="simNew">New form</button>
@@ -624,6 +661,28 @@
              and a working page at <a id="tokenDemo" href="/client/"
              target="_blank" rel="noopener">/client/</a>.</p>
           <div id="tokenStatus" class="status" hidden></div>
+        </div>
+
+        <!-- The code people need to open /docs. An administrator's to set;
+             the docs stay closed until somebody does. -->
+        <div class="card" id="docsCard" hidden>
+          <h3>Documentation access <span class="pill" id="docsPill">closed</span></h3>
+          <p class="sub">The documentation at <a href="/docs" target="_blank"
+             rel="noopener">/docs</a> - the user guide, the product documents and the
+             architecture - opens with an access code, so it can be shared with people
+             who have no account here. Only a hash of the code is kept. Changing it
+             closes the docs to every browser that had the old one.</p>
+          <ul class="assumptions" id="docsFacts"></ul>
+          <div class="controls">
+            <label class="field"><em>New access code</em>
+              <input type="text" id="docsCode" spellcheck="false" autocomplete="off"
+                     placeholder="at least 6 characters"></label>
+            <button class="btn btn-primary" id="docsSave">Set code</button>
+            <button class="btn btn-ghost" id="docsGenerate">Make one up</button>
+            <span class="spacer"></span>
+            <button class="btn btn-ghost small" id="docsClear">Close the docs</button>
+          </div>
+          <div id="docsStatus" class="status" hidden></div>
         </div>
 
         <div class="card" id="ownCard">

@@ -65,7 +65,7 @@ the password once:
     password: djfg-y3gj-dqpg-jegu
     (shown once; you will be asked to change it when you sign in)
 
-AIrForms UI on http://localhost:8000/
+AIrForms on http://localhost:8000/  (app: http://localhost:8000/app, docs: http://localhost:8000/docs)
   database: sqlite:///…/.fillerai/fillerai.db
   accounts: on, 1 user(s)
   integration API: http://localhost:8000/v1  (browsers: *)
@@ -74,6 +74,12 @@ AIrForms UI on http://localhost:8000/
   sample application: http://localhost:8100/  (its forms are the bot templates, as admin)
   press Ctrl-C to stop
 ```
+
+`/` is the public product page, with a **Sign in** link; the app itself is at
+`/app` (the old `/index.html` redirects there), and `--open` opens `/app`.
+`/docs` serves the documents in `docs/` as HTML pages, behind an access code an
+administrator sets in **Settings → Documentation access**. Until a code is set
+the docs are closed to everybody.
 
 Set `FILLERAI_ADMIN_PASSWORD` beforehand to choose that password instead, or
 create accounts from a shell first (§6). If a `.fillerai` file library

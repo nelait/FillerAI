@@ -57,7 +57,7 @@ $('signIn').addEventListener('submit', async (event) => {
     if (result.must_change) {
       askForNewPassword();
     } else {
-      window.location.href = '/';
+      window.location.href = '/app';
       return;
     }
   } catch (failure) {
@@ -86,7 +86,7 @@ $('changePassword').addEventListener('submit', async (event) => {
       current: $('password').value,
       new: $('newPassword').value,
     }, csrf);
-    window.location.href = '/';
+    window.location.href = '/app';
   } catch (failure) {
     show(error, failure.message);
   } finally {
