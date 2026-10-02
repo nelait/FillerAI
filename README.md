@@ -710,6 +710,17 @@ administrator and prints the password once. `--no-auth` turns all of that off
 and gives back the single-user tool — and only works on localhost, because
 that is the only place it is the right thing.
 
+`/` is the product page, public, with a **Sign in** link; the app is at
+`/app`. Every screen has a **Help** tab on its right edge (or press `?`) that
+pulls out how-to steps for that screen, taken from the
+[user guide](fillerai/web/guide.md). Each stage ends with a **next step** bar
+where its result is - **Go to Train** under freshly generated records,
+**Simulate with this model** above a finished run - and a trail above the
+panel says which form, records and model are loaded, each a link back to the
+stage that made it. **Docs** in the menu opens `/docs`: the user guide and
+everything in `docs/`, rendered as HTML, behind an access code an
+administrator sets in Settings.
+
 Five stages across the top, and a library beside them:
 
 1. **Source** — paste markup, drop a file, or start from a bundled example.
@@ -1329,7 +1340,11 @@ fillerai/
     rest.py            the /v1 integration API: bearer tokens, no cookies
     botrest.py         /v1/templates and /v1/bot/turn
     keyring.py         API keys typed into the UI, held in memory and nowhere else
-    static/            index.html, app.js, styles.css - no build step
+    static/            index.html, app.js, styles.css - no build step;
+                       product.html/.css/.js - the public page at /;
+                       docs.css, docs-gate.js - the /docs site
+    docs.py            Markdown -> HTML for /docs and the help panel
+    guide.md           the user guide, one section per screen
                        login.html, login.js - the one page served signed out
     static/client/     fillerai.js, demo.html - the dependency-free browser client;
                        chat.html, fillerai-chat.css - the chat window and a host to try it

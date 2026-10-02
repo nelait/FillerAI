@@ -120,9 +120,18 @@ class AuthServerCase(unittest.TestCase):
 
 class TestTheDoor(AuthServerCase):
     def test_the_app_sends_a_signed_out_browser_to_the_login_page(self):
-        status, where, _body = self.client().get("/", follow=False)
+        status, where, _body = self.client().get("/app", follow=False)
         self.assertEqual(status, 302)
         self.assertEqual(where, "/login")
+
+    def test_the_product_page_is_public(self):
+        status, _where, body = self.client().get("/", follow=False)
+        self.assertEqual(status, 200)
+        self.assertIn(b"fill themselves", body)
+
+    def test_the_old_app_address_redirects_to_the_new_one(self):
+        status, where, _body = self.client().get("/index.html", follow=False)
+        self.assertEqual((status, where), (302, "/app"))
 
     def test_the_login_page_and_its_assets_are_served_signed_out(self):
         for path in ("/login", "/static/styles.css", "/static/login.js"):
@@ -133,11 +142,11 @@ class TestTheDoor(AuthServerCase):
 
     def test_a_signed_in_browser_gets_the_app_and_not_the_login_page(self):
         client = self.signed_in()
-        status, _where, body = client.get("/")
+        status, _where, body = client.get("/app")
         self.assertEqual(status, 200)
         self.assertIn(b"panel-source", body)
         status, where, _body = client.get("/login", follow=False)
-        self.assertEqual((status, where), (302, "/"))
+        self.assertEqual((status, where), (302, "/app"))
 
     def test_every_stage_is_refused_without_a_session(self):
         for path in ("/api/extract", "/api/generate", "/api/train", "/api/library",

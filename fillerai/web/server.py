@@ -27,6 +27,7 @@ request through at all.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -35,6 +36,7 @@ import os
 import random
 import sys
 import threading
+import time
 import traceback
 import uuid
 from collections import OrderedDict
@@ -47,7 +49,8 @@ from typing import Any, Callable
 
 from .. import __version__, extract_html, extract_spec
 from ..auth import (
-    COOKIE, ROLES, Auth, AuthError, Session, User, suggest_password,
+    COOKIE, ROLES, Auth, AuthError, Session, User, hash_password,
+    suggest_password, verify_password,
 )
 from ..db import Database, connect as connect_database
 from ..dbstore import DatabaseStore, import_store
@@ -67,7 +70,7 @@ from ..train.trace import Trace
 from ..bot import TemplateError
 from ..bot import template as bot_templates
 from ..bot.template import Template
-from . import botrest, rest
+from . import botrest, docs as docs_site, rest
 from .keyring import SINGLE_USER, Keyring
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -157,12 +160,12 @@ CORS_ALLOW: tuple[str, ...] | None = None
 
 #: Endpoints reachable without signing in. Everything else needs a session
 #: whenever accounts are on.
-PUBLIC = {"/api/auth/login", "/api/meta"}
+PUBLIC = {"/api/auth/login", "/api/meta", "/api/docs/unlock"}
 
 #: Endpoints a user who must change their password may still call. Anything
 #: else would be working in an account somebody else knows the password to.
 WHILE_LOCKED = {"/api/auth/me", "/api/auth/password", "/api/auth/logout",
-                "/api/meta"}
+                "/api/meta", "/api/docs/unlock"}
 
 
 @dataclass
@@ -181,6 +184,9 @@ class Context:
     session: Session | None = None
     #: A cookie to set, or "" to clear one, once the handler returns.
     cookie: str | None = None
+    #: The documentation cookie to set, the same way. A separate thing from
+    #: the session: the docs are opened by a code, not by an account.
+    docs_cookie: str | None = None
 
 
 _CONTEXT: ContextVar[Context] = ContextVar("fillerai_request")
@@ -1929,6 +1935,171 @@ def api_bot_turn(payload: dict[str, Any]) -> dict[str, Any]:
         raise ApiError(error.message, status=error.status) from None
 
 
+
+# ----------------------------------------------------------------------
+# help and documentation
+# ----------------------------------------------------------------------
+#
+# The in-app help panel and the /docs site are made from the same Markdown.
+# The help panel is part of the app and needs what the app needs, a session.
+# The docs site is meant to be read by people who have never had an account -
+# somebody the product page was shown to - so it is opened by an access code
+# an administrator sets, and is closed until one is.
+
+#: Where the access code's hash is kept in the database's settings table.
+DOCS_SETTING = "docs_access"
+
+#: The file it is kept in when there is no database (``--no-auth``).
+DOCS_FILE = "docs-access.json"
+
+#: The browser's proof that it was given the code. Scoped to /docs.
+DOCS_COOKIE = "airforms_docs"
+DOCS_COOKIE_DAYS = 30
+
+MIN_DOCS_CODE = 6
+MAX_DOCS_CODE = 128
+
+#: Wrong codes allowed from one address before it has to wait. The code is
+#: shared by design, so it is shorter than a password; this is what stops it
+#: being guessed.
+DOCS_MAX_FAILURES = 8
+DOCS_WINDOW_SECONDS = 15 * 60
+
+_DOCS_FAILURES: dict[str, list[float]] = {}
+_DOCS_LOCK = threading.Lock()
+
+
+def _docs_record() -> dict[str, Any] | None:
+    """The stored code (hashed), who set it and when, or None."""
+    try:
+        if DATABASE is not None:
+            raw = DATABASE.setting(DOCS_SETTING)
+        else:
+            path = Path(LIBRARY.root) / DOCS_FILE
+            raw = path.read_text(encoding="utf-8") if path.is_file() else None
+        record = json.loads(raw) if raw else None
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) and record.get("hash") else None
+
+
+def _docs_store(record: dict[str, Any] | None) -> None:
+    text = json.dumps(record) if record else ""
+    if DATABASE is not None:
+        DATABASE.remember(DOCS_SETTING, text)
+        return
+    path = Path(LIBRARY.root) / DOCS_FILE
+    if record is None:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:  # pragma: no cover - not every filesystem has modes
+        pass
+
+
+def docs_cookie_for(record: dict[str, Any]) -> str:
+    """The cookie value that proves the current code was given.
+
+    Keyed by the stored hash, which never leaves the server, so it cannot be
+    made without the code, and every cookie issued under an old code stops
+    working the moment the code changes.
+    """
+    return hmac.new(record["hash"].encode("utf-8"), b"airforms-docs-access",
+                    hashlib.sha256).hexdigest()
+
+
+def docs_unlocked(cookie_value: str) -> bool:
+    record = _docs_record()
+    if record is None or not cookie_value:
+        return False
+    return hmac.compare_digest(cookie_value, docs_cookie_for(record))
+
+
+def _docs_throttled(address: str) -> bool:
+    now = time.monotonic()
+    with _DOCS_LOCK:
+        recent = [t for t in _DOCS_FAILURES.get(address, []) if now - t < DOCS_WINDOW_SECONDS]
+        _DOCS_FAILURES[address] = recent
+        return len(recent) >= DOCS_MAX_FAILURES
+
+
+def _docs_failed(address: str) -> None:
+    with _DOCS_LOCK:
+        _DOCS_FAILURES.setdefault(address, []).append(time.monotonic())
+
+
+_ADDRESS: ContextVar[str] = ContextVar("fillerai_address", default="")
+
+
+def api_help(_: dict[str, Any]) -> dict[str, Any]:
+    """The help panel's sections, one per screen, as HTML."""
+    return {"sections": docs_site.help_sections()}
+
+
+def api_docs_unlock(payload: dict[str, Any]) -> dict[str, Any]:
+    address = _ADDRESS.get()
+    if _docs_throttled(address):
+        raise ApiError("too many wrong codes; try again in a few minutes", status=429)
+    record = _docs_record()
+    if record is None:
+        raise ApiError("the documentation has no access code yet - an "
+                       "administrator sets one in Settings", status=403)
+    code = payload.get("code")
+    if not isinstance(code, str) or not code or len(code) > MAX_DOCS_CODE \
+            or not verify_password(record["hash"], code):
+        _docs_failed(address)
+        raise ApiError("that is not the access code", status=403)
+    context().docs_cookie = docs_cookie_for(record)
+    return {"ok": True, "next": "/docs"}
+
+
+def api_docs_status(_: dict[str, Any]) -> dict[str, Any]:
+    record = _docs_record()
+    return {
+        "configured": record is not None,
+        "set_at": (record or {}).get("set_at", ""),
+        "set_by": (record or {}).get("set_by", ""),
+        "min_length": MIN_DOCS_CODE,
+        "has_docs": bool(docs_site.catalog()),
+    }
+
+
+def api_docs_passcode(payload: dict[str, Any]) -> dict[str, Any]:
+    """Set, generate or clear the documentation access code.
+
+    ``{"code": "..."}`` sets it, ``{"generate": true}`` makes one up and
+    returns it - the only time it is ever shown - and ``{"clear": true}``
+    closes the docs to everybody.
+    """
+    if payload.get("clear"):
+        _docs_store(None)
+        return {"configured": False, "code": ""}
+    if payload.get("generate"):
+        code = suggest_password(3)
+    else:
+        code = payload.get("code")
+        if not isinstance(code, str):
+            raise ApiError("give the new access code")
+        code = code.strip()
+        if len(code) < MIN_DOCS_CODE:
+            raise ApiError(f"use at least {MIN_DOCS_CODE} characters")
+        if len(code) > MAX_DOCS_CODE:
+            raise ApiError(f"use at most {MAX_DOCS_CODE} characters")
+    user = current_user()
+    record = {
+        "hash": hash_password(code),
+        "set_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "set_by": user.username if user else "",
+    }
+    _docs_store(record)
+    status = api_docs_status({})
+    status["code"] = code
+    return status
+
+
 @dataclass(frozen=True)
 class Route:
     """An endpoint and who is allowed to reach it."""
@@ -1993,6 +2164,10 @@ ROUTES: dict[str, Route] = {
     "/api/bot/from_schema": Route(api_bot_from_schema),
     "/api/bot/turn": Route(api_bot_turn),
     "/api/bot/transcribe": Route(api_bot_transcribe),
+    "/api/help": Route(api_help),
+    "/api/docs/unlock": Route(api_docs_unlock, ""),
+    "/api/admin/docs": Route(api_docs_status, "admin"),
+    "/api/admin/docs/passcode": Route(api_docs_passcode, "admin"),
     "/api/tokens": Route(api_tokens),
     "/api/tokens/create": Route(api_token_create),
     "/api/tokens/revoke": Route(api_token_revoke),
@@ -2045,16 +2220,25 @@ class Handler(BaseHTTPRequestHandler):
         flag because this is served over http on loopback and a Secure cookie
         would simply never be stored.
         """
+        headers = []
         value = context().cookie
-        if value is None:
-            return []
         if value == "":
-            return [("Set-Cookie",
-                     f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")]
-        return [("Set-Cookie",
-                 f"{COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict")]
+            headers.append(("Set-Cookie",
+                            f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"))
+        elif value is not None:
+            headers.append(("Set-Cookie",
+                            f"{COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict"))
+        docs = context().docs_cookie
+        if docs:
+            # Lax rather than Strict: following a link to the docs from
+            # somewhere else should arrive signed in to them. Nothing under
+            # /docs changes anything, so there is nothing for Lax to expose.
+            headers.append(("Set-Cookie",
+                            f"{DOCS_COOKIE}={docs}; Path=/docs; "
+                            f"Max-Age={DOCS_COOKIE_DAYS * 86400}; HttpOnly; SameSite=Lax"))
+        return headers
 
-    def _session_cookie(self) -> str:
+    def _session_cookie(self, name: str = COOKIE) -> str:
         raw = self.headers.get("Cookie") or ""
         if not raw:
             return ""
@@ -2063,12 +2247,13 @@ class Handler(BaseHTTPRequestHandler):
             jar.load(raw)
         except Exception:  # noqa: BLE001 - a malformed cookie is no cookie
             return ""
-        morsel = jar.get(COOKIE)
+        morsel = jar.get(name)
         return morsel.value if morsel else ""
 
     def _sign_in(self) -> Context:
         """Work out who is asking, before deciding whether they may."""
         holder = Context()
+        _ADDRESS.set(self.client_address[0] if self.client_address else "")
         if AUTH is not None:
             found = AUTH.resolve(self._session_cookie())
             if found is not None:
@@ -2134,6 +2319,29 @@ class Handler(BaseHTTPRequestHandler):
         if content_type.startswith("text/") or content_type.endswith("javascript"):
             content_type += "; charset=utf-8"
         self._send(200, target.read_bytes(), content_type)
+
+    def _send_html(self, status: int, page: str) -> None:
+        self._send(status, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _docs(self, path: str) -> None:
+        """The documentation site, or the page that asks for its code."""
+        record = _docs_record()
+        if record is None or not docs_unlocked(self._session_cookie(DOCS_COOKIE)):
+            self._send_html(200 if record is not None else 403,
+                            docs_site.gate_page(record is not None))
+            return
+        catalog = docs_site.catalog()
+        slug = path[len("/docs"):].strip("/").lower()
+        if slug.endswith(".md"):
+            slug = slug[:-3]
+        if not slug:
+            self._send_html(200, docs_site.home_page(catalog))
+            return
+        doc = catalog.get(slug)
+        if doc is None:
+            self._send(404, b"Not found", "text/plain; charset=utf-8")
+            return
+        self._send_html(200, docs_site.doc_page(catalog, doc))
 
     # -- the integration surface ----------------------------------------
 
@@ -2217,18 +2425,27 @@ class Handler(BaseHTTPRequestHandler):
         holder = self._sign_in()
         signed_in = AUTH is None or holder.user is not None
 
-        if path in ("/", "/index.html"):
+        if path == "/":
+            # The product page: public, and the front door for somebody who
+            # has never seen AIrForms. It links to the login and the docs.
+            self._static("product.html")
+        elif path in ("/app", "/app/"):
             # The app itself is behind the login, so that a signed-out
             # browser lands on the page it can do something with rather than
             # on a stage that will refuse every button.
             self._static("index.html") if signed_in else self._redirect("/login")
+        elif path == "/index.html":
+            # Where the app used to live, for bookmarks made before /app.
+            self._redirect("/app")
         elif path == "/login":
             if AUTH is None:
-                self._redirect("/")
+                self._redirect("/app")
             elif holder.user is not None and not holder.user.must_change:
-                self._redirect("/")
+                self._redirect("/app")
             else:
                 self._static("login.html")
+        elif path == "/docs" or path.startswith("/docs/"):
+            self._docs(path)
         elif path.startswith("/static/"):
             # Stylesheet, script and the login page's own assets: served
             # signed out, because the login page is made of them.
@@ -2510,7 +2727,7 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
         if sample_httpd is not None:
             SAMPLE_APP_PORT = sample_httpd.server_address[1]
 
-    print(f"AIrForms UI on {url}")
+    print(f"AIrForms on {url}  (app: {url}app, docs: {url}docs)")
     if DATABASE is not None:
         print(f"  database: {DATABASE.url}")
     else:
@@ -2538,7 +2755,7 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
     if open_browser:
         import webbrowser
 
-        webbrowser.open(url)
+        webbrowser.open(f"{url}app")
 
     try:
         httpd.serve_forever()

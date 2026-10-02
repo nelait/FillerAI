@@ -397,6 +397,32 @@ file_library_exists}`. `entries` counts every account's entries together;
 
 Errors: 404 `this server is running without a database`.
 
+### `POST /api/admin/docs`
+
+The documentation access code's state. No body. Returns `{configured, set_at,
+set_by, min_length, has_docs}`; never the code, which is kept only as a scrypt
+hash (database `settings` row `docs_access`, or `docs-access.json` in the
+library folder with `--no-auth`).
+
+### `POST /api/admin/docs/passcode`
+
+`{"code": "..."}` sets the code (6-128 characters), `{"generate": true}`
+makes one up, `{"clear": true}` closes the docs. Returns the state above plus
+`code`, the only time it is shown. A new code invalidates every docs cookie
+issued under the old one.
+
+### `POST /api/docs/unlock` (public)
+
+`{"code": "..."}`. Needs no session and no CSRF header: the docs are for people
+without accounts. On success sets `airforms_docs` (HttpOnly, `Path=/docs`,
+`SameSite=Lax`, 30 days), an HMAC keyed by the stored hash. Errors: 403 wrong
+code or no code set, 429 after 8 wrong codes from one address in 15 minutes.
+
+### `POST /api/help`
+
+The in-app help panel: `{sections: {<panel>: {title, html, anchor}}}`, one per
+screen, cut from `fillerai/web/guide.md`. Needs a session like any stage.
+
 ### `POST /api/admin/import`
 
 Copies the file library on disk into the caller's own library, keeping ids
