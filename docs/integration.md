@@ -1,6 +1,6 @@
-# Calling FillerAI from another application
+# Calling AIrForms from another application
 
-FillerAI's UI is where a model is built. This is how something else uses
+AIrForms's UI is where a model is built. This is how something else uses
 one: a REST service at `/v1`, and a JavaScript client for the browser
 applications that are the common case.
 
@@ -30,7 +30,7 @@ this against your own library, and its source is
 
 ## Why this is a second surface
 
-Everything under `/api` is the FillerAI UI talking to its own server, and it
+Everything under `/api` is the AIrForms UI talking to its own server, and it
 is shaped for that: a session cookie, a CSRF header, one POST per button, and
 a model held in memory under a handle the browser was handed a moment ago.
 None of that suits a claims system calling from another machine next Tuesday.
@@ -119,7 +119,7 @@ the sentence.
 
 ### `GET /v1/health`
 
-No token needed. Is this a FillerAI, and which version.
+No token needed. Is this an AIrForms, and which version.
 
 ### `GET /v1/models`
 
@@ -239,7 +239,7 @@ import { FillerAI } from "./fillerai.js";
 // <script type="module">import { FillerAI } from "/client/fillerai.js";</script>
 
 // A page that also has classic scripts: loading the module puts
-// window.FillerAI in place on the way past.
+// window.AIrForms in place on the way past.
 ```
 
 There is no npm package and no build step, on purpose. The stack rule for

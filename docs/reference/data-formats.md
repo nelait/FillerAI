@@ -1,6 +1,6 @@
 # Data formats
 
-Every format FillerAI writes to disk, keeps in its database, or hands to
+Every format AIrForms writes to disk, keeps in its database, or hands to
 another program: what the keys are, what types they hold, and which rules a
 reader can rely on. Why each format looks the way it does is in
 [architecture.md](../architecture.md) and, for the bot, in

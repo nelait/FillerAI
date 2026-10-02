@@ -10,7 +10,7 @@ weak. A tree splits on one field and then asks the next question inside that
 branch, which is exactly how a conditional relationship is written down.
 
 Everything here is plain Python. There is no scikit-learn in this project
-and there is not going to be: the point of FillerAI is that it runs inside
+and there is not going to be: the point of AIrForms is that it runs inside
 the locked-down environment where the real form data already lives, and
 nothing installs there.
 

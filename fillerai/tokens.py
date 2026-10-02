@@ -1,7 +1,7 @@
 """Credentials for an application, as opposed to a person.
 
 A browser signing in gets a cookie and a CSRF token, which is exactly right
-for a browser and exactly wrong for a claims system calling FillerAI from a
+for a browser and exactly wrong for a claims system calling AIrForms from a
 server room. What an application needs is one string it can put in a config
 file, that never expires by walking away from the keyboard, that a person can
 revoke without changing their own password, and that is not attached to a

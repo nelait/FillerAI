@@ -25,7 +25,7 @@ Its honest weakness is that it is the one engine whose model file is the
 training records - a bounded sample of them, but still rows rather than
 counts. On generated data that is nobody's business; on real past
 submissions it is very much somebody's, so the sample is capped, and the
-whole point of FillerAI's generate stage is that this need never hold real
+whole point of AIrForms's generate stage is that this need never hold real
 rows at all.
 """
 

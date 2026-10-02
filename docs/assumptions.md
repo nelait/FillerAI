@@ -1,6 +1,6 @@
 # Assumptions
 
-Everything FillerAI takes as given. Some are constraints somebody chose, some
+Everything AIrForms takes as given. Some are constraints somebody chose, some
 are beliefs about forms that happen to hold, and some are constants that a
 stopwatch would replace. They are gathered here because each one is a place
 the system can be wrong, and a number produced under an assumption nobody

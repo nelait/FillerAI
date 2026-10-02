@@ -1,6 +1,6 @@
 # Security and data handling
 
-What FillerAI protects, from whom, and how; what can leave the machine and
+What AIrForms protects, from whom, and how; what can leave the machine and
 under which switch; and what to change before letting anybody other than
 yourself reach it. The reasoning behind each credential is in
 [architecture.md](architecture.md) §6 and §7; this page is the operational
@@ -49,7 +49,7 @@ all explicit:
 | `serve --bot-transcribe` / `FILLERAI_BOT_TRANSCRIBE=1` | recordings of end users' voices | OpenAI's transcription endpoint | an OpenAI key **and** the switch |
 | The browser's own speech recognition (the chat's microphone without `--bot-transcribe`) | audio of the speaker | whichever service the browser uses (Google, for Chrome) | the person pressing the microphone |
 
-The last row is not FillerAI's traffic but it is the one most easily
+The last row is not AIrForms's traffic but it is the one most easily
 forgotten: Chrome's Web Speech API sends audio to Google. It is documented in
 [bot-builder.md](bot-builder.md) §7 rather than hidden. A deployment where
 voices may not leave should use `--bot-transcribe` against an approved
@@ -104,7 +104,7 @@ gateway your organisation approves.
 - Disabling or deleting the user revokes every token they issued.
 - Keep the token on the application's **server**, never in the browser. The
   sample application shows the pattern: its page talks to its own server,
-  which adds the token and forwards to FillerAI ([integration.md](integration.md)).
+  which adds the token and forwards to AIrForms ([integration.md](integration.md)).
 
 ## 5. Language-model keys
 
@@ -123,7 +123,7 @@ gateway your organisation approves.
 
 | | `/api` | `/v1` |
 |---|---|---|
-| For | the FillerAI UI | other applications |
+| For | the AIrForms UI | other applications |
 | Credential | session cookie + CSRF header | `Authorization: Bearer` only |
 | Reads the other's credential | never accepts a bearer token | never reads the cookie (`Handler._rest` installs an empty context first) |
 | Cross-origin | same origin only | `*` by default with accounts, since a token is needed anyway and `Allow-Credentials` is never sent; with `--no-auth`, no origin until `--cors-origin` names one |
@@ -164,7 +164,7 @@ one. It is meant for one person on their own machine.
 ## 9. The sample application
 
 `fillerai serve` also starts the Northwind Mutual demo on port 8100, bound to
-the same host as FillerAI, and issues it an API token called "Sample
+the same host as AIrForms, and issues it an API token called "Sample
 application" for the first administrator (or `--sample-user`). The demo has
 **no sign-in of its own**: anyone who reaches its port can chat with that
 user's templates and submit to the demo customer's record, from the chat or
@@ -173,11 +173,11 @@ start the server with `--no-sample-app`, or keep it on loopback.
 
 ## 10. Before exposing it beyond localhost
 
-FillerAI is built as a local working tool ([assumptions.md](assumptions.md)
+AIrForms is built as a local working tool ([assumptions.md](assumptions.md)
 §1.3). If more than one machine needs to reach it:
 
 1. **Keep accounts on.** `--no-auth` is refused off loopback anyway.
-2. **Put it behind an HTTPS reverse proxy** and keep FillerAI itself on
+2. **Put it behind an HTTPS reverse proxy** and keep AIrForms itself on
    `127.0.0.1`. The server speaks plain HTTP only. Have the proxy add
    `Secure` to the `fillerai_session` cookie if it can, and HSTS.
 3. **Start with `--no-sample-app`**, or accept that its port is open to

@@ -1,4 +1,4 @@
-"""Tests for FillerAI. Run with: python -m unittest discover -s tests"""
+"""Tests for AIrForms. Run with: python -m unittest discover -s tests"""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
-# FillerAI JavaScript client
+# AIrForms JavaScript client
 
 One file, no dependencies, no build step. It talks to the `/v1` integration
-API of a running FillerAI server and asks a trained model what to put in a
+API of a running AIrForms server and asks a trained model what to put in a
 form.
 
 Full documentation, including the REST endpoints it wraps and how to get an
@@ -14,9 +14,9 @@ is to point at the service you are going to talk to:
 
 ```html
 <script type="module">
-  import { FillerAI } from "http://localhost:8000/client/fillerai.js";
+  import { AIrForms } from "http://localhost:8000/client/fillerai.js";
 
-  const filler = new FillerAI({
+  const filler = new AIrForms({
     baseUrl: "http://localhost:8000",
     token: "flr_...",
   });
@@ -32,7 +32,7 @@ its own, so a bundler needs no help with it, and there is nothing to install.
 
 ## What is in it
 
-- `FillerAI` — `health()`, `models()`, `model(id)`, `suggest(id, observed)`,
+- `AIrForms` (also exported under its old name, `FillerAI`) — `health()`, `models()`, `model(id)`, `suggest(id, observed)`,
   `fill(id, observed)`, `batch(id, records)`, `bind(form, id)`.
 - `FormBinder` — a model bound to a real `<form>`: fills as you type, never
   overwrites what a person typed, and marks what it filled.
@@ -42,7 +42,7 @@ its own, so a bundler needs no help with it, and there is nothing to install.
   - `BotChat` — one conversation: `say()`, `speak()`, `click()` and
     `report()` all go through one `send(input)`, in order; `send` can be
     replaced to go through your own backend.
-  - `SpeechInput` — the browser's speech recognition. FillerAI only ever
+  - `SpeechInput` — the browser's speech recognition. AIrForms only ever
     receives the text; where the audio goes is the browser's business (Chrome
     sends it to Google's recogniser).
   - `ChatWidget` — messages, the before/after card, suggested actions, a text

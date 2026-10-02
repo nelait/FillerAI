@@ -446,7 +446,7 @@ class AutofillModel:
         if major not in ("1", MODEL_VERSION.split(".")[0]):
             raise ValueError(
                 f"model_version {version!r} is not compatible with "
-                f"{MODEL_VERSION!r} supported by this build of FillerAI"
+                f"{MODEL_VERSION!r} supported by this build of AIrForms"
             )
 
         if major == "1":

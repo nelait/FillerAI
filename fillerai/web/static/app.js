@@ -1,4 +1,4 @@
-/* FillerAI UI.
+/* AIrForms UI.
  *
  * Plain ES modules-free JavaScript, no build step. The server owns all the
  * logic: every button here is one POST to an endpoint that calls the same
@@ -51,7 +51,7 @@ async function api(path, body) {
       body: JSON.stringify(body || {}),
     });
   } catch (error) {
-    throw new Error('the FillerAI server is not reachable - is it still running?');
+    throw new Error('the AIrForms server is not reachable - is it still running?');
   }
   let payload;
   try {
@@ -112,6 +112,8 @@ function download(filename, text, mime) {
 // ------------------------------------------------------------ navigation
 
 function showPanel(name) {
+  // The stylesheet marks Settings in the navigation from this.
+  document.body.dataset.panel = name;
   document.querySelectorAll('.panel').forEach((panel) => {
     panel.classList.toggle('is-current', panel.id === `panel-${name}`);
   });
@@ -2799,6 +2801,6 @@ $('botDownload').addEventListener('click', () => {
       }
     });
   } catch (error) {
-    toast('could not reach the FillerAI server', true);
+    toast('could not reach the AIrForms server', true);
   }
 })();

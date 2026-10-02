@@ -1,15 +1,15 @@
 /**
- * FillerAI browser and Node client.
+ * AIrForms browser and Node client.
  *
  * One file, no dependencies, no build step. It is an ES module, so a React
  * or Vue application imports it and a bundler treats it like any other
  * source file; a plain page loads it with `<script type="module">`, and for
- * a page that also has classic scripts it puts `FillerAI` on `globalThis`
- * on the way past.
+ * a page that also has classic scripts it puts `AIrForms` (and its old name,
+ * `FillerAI`) on `globalThis` on the way past.
  *
- *   import { FillerAI } from "./fillerai.js";
+ *   import { AIrForms } from "./fillerai.js";
  *
- *   const filler = new FillerAI({
+ *   const filler = new AIrForms({
  *     baseUrl: "http://localhost:8000",
  *     token: "flr_...",
  *   });
@@ -51,7 +51,7 @@ function trimSlash(url) {
 }
 
 /**
- * A connection to one FillerAI service.
+ * A connection to one AIrForms service.
  *
  * Every method returns a promise of the decoded reply and throws
  * {@link FillerAIError} on anything else, so a caller never has to look at a
@@ -514,7 +514,7 @@ export class BotChat {
 /**
  * The browser's speech recognition, reduced to what a chat box needs.
  *
- * FillerAI never receives audio: the phrase is recognised by whatever engine
+ * AIrForms never receives audio: the phrase is recognised by whatever engine
  * the browser uses, and arrives at the bot service as text with
  * `via: "speech"`. Where the audio goes is the browser's business - Chrome,
  * for one, sends it to Google's recogniser - which a host that cares should
@@ -690,7 +690,7 @@ export class SpeechInput {
 
 /**
  * The microphone without the browser's recogniser: records the phrase here
- * and has the FillerAI server transcribe it (`serve --bot-transcribe`, with an
+ * and has the AIrForms server transcribe it (`serve --bot-transcribe`, with an
  * OpenAI key). For where the browser's speech service is blocked - a VPN, a
  * corporate proxy, a browser policy - even though the microphone works.
  *
@@ -1118,6 +1118,7 @@ function mark(element, className, on) {
 // So a page that mixes a module with classic scripts can still reach this.
 if (typeof globalThis !== "undefined") {
   globalThis.FillerAI = FillerAI;
+  globalThis.AIrForms = FillerAI;
   globalThis.FillerAIError = FillerAIError;
   globalThis.FillerAIFormBinder = FormBinder;
   globalThis.FillerAIBotChat = BotChat;
@@ -1126,4 +1127,7 @@ if (typeof globalThis !== "undefined") {
   globalThis.FillerAIRecordedSpeechInput = RecordedSpeechInput;
 }
 
+// The product is called AIrForms now; the class keeps its old name as well,
+// so code written against FillerAI keeps working.
+export { FillerAI as AIrForms, FillerAIError as AIrFormsError };
 export default FillerAI;

@@ -98,7 +98,7 @@ plan has the order.
 `fillerai/db.py` exists so this is a subclass rather than a rewrite: the only
 backend-specific surface is the parameter style and connecting, the DDL uses
 the SQL both accept, and times are ISO 8601 strings. What is missing is the
-driver, and it stays missing until FillerAI is allowed a dependency
+driver, and it stays missing until AIrForms is allowed a dependency
 ([assumptions.md](assumptions.md) §1.2).
 
 ### 1.5 🟡 The effort constants have never been measured

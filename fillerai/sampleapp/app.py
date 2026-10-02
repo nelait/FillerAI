@@ -1,7 +1,7 @@
-"""Northwind Mutual: a sample application that uses the FillerAI chat service.
+"""Northwind Mutual: a sample application that uses the AIrForms chat service.
 
-This is an *outside* application. It does not import the rest of FillerAI;
-it talks to a running FillerAI server over HTTP, the way your own
+This is an *outside* application. It does not import the rest of AIrForms;
+it talks to a running AIrForms server over HTTP, the way your own
 application would. ``fillerai serve`` starts it next to itself (turn that off
 with ``--no-sample-app``), and it can be run on its own too::
 
@@ -10,20 +10,20 @@ with ``--no-sample-app``), and it can be run on its own too::
 What it does:
 
 - Its page is a customer portal with a form for **every template the bot
-  service has**. It asks FillerAI for them (``GET /v1/templates``) each time
+  service has**. It asks AIrForms for them (``GET /v1/templates``) each time
   the page loads, so a template added on the Bots tab is a form here on the
   next reload. The forms are ordinary forms: they are all on the page from
   the start, and can be filled and saved by hand.
 - The chat's turns go to **this** server first (``POST /api/chat``), which
   adds the customer's record as ``context.current`` and forwards them to
-  FillerAI's ``POST /v1/bot/turn`` with the API token. The token never
+  AIrForms's ``POST /v1/bot/turn`` with the API token. The token never
   reaches the browser, and the browser cannot claim to be someone else.
 - As the conversation goes, the page fills in the form the chat is on. When
   the chat says ``submit``, the page posts the values to this server's own
   submit path (``/api/submit/<template>``), which checks them against the
   template and its own rules, changes the record and hands back a
   reference; the page then tells the chat with a ``submitted`` event.
-  FillerAI never writes to this application.
+  AIrForms never writes to this application.
 
 Python 3 standard library only, like the rest of the repository.
 """
@@ -68,7 +68,7 @@ SEED = {
     "requests": [],
 }
 
-#: What the page may fetch from FillerAI through this server, and nothing else.
+#: What the page may fetch from AIrForms through this server, and nothing else.
 CLIENT_FILES = {"/fillerai.js": "/client/fillerai.js",
                 "/fillerai-chat.css": "/client/fillerai-chat.css"}
 
@@ -188,7 +188,7 @@ def _prefix(template: dict[str, Any]) -> str:
 
 
 class FillerAIService:
-    """What this application asks FillerAI for: templates, and chat turns."""
+    """What this application asks AIrForms for: templates, and chat turns."""
 
     def __init__(self, base: str, token: str = "", timeout: float = 30.0):
         self.base = base.rstrip("/")
@@ -219,10 +219,10 @@ class FillerAIService:
             try:
                 return error.code, json.loads(error.read())
             except ValueError:
-                return error.code, {"error": f"FillerAI answered {error.code}",
+                return error.code, {"error": f"AIrForms answered {error.code}",
                                     "code": "upstream"}
         except (urllib.error.URLError, OSError) as error:
-            return 502, {"error": f"can't reach FillerAI at {self.base} ({error})",
+            return 502, {"error": f"can't reach AIrForms at {self.base} ({error})",
                          "code": "unreachable"}
 
     post = call  # the name the first version of this example used
@@ -303,7 +303,7 @@ def make_server(fillerai: FillerAIService, portal: Portal, host: str = "127.0.0.
                 try:
                     data, kind = fillerai.client_file(CLIENT_FILES[path])
                 except (urllib.error.URLError, OSError) as error:
-                    return self._send(502, f"// can't reach FillerAI: {error}".encode(),
+                    return self._send(502, f"// can't reach AIrForms: {error}".encode(),
                                       "text/plain")
                 return self._send(200, data, kind)
             name = "index.html" if path == "/" else path.lstrip("/")
@@ -370,18 +370,18 @@ def main(argv: list[str] | None = None) -> int:
                                      description=__doc__.split("\n\n")[0])
     parser.add_argument("--fillerai", default=os.environ.get("FILLERAI_URL",
                                                              "http://localhost:8000"),
-                        help="the FillerAI server (default: %(default)s, or $FILLERAI_URL)")
+                        help="the AIrForms server (default: %(default)s, or $FILLERAI_URL)")
     parser.add_argument("--token", default=os.environ.get("FILLERAI_TOKEN", ""),
-                        help="a FillerAI API token (or $FILLERAI_TOKEN); not needed "
-                             "when FillerAI runs with --no-auth")
+                        help="an AIrForms API token (or $FILLERAI_TOKEN); not needed "
+                             "when AIrForms runs with --no-auth")
     parser.add_argument("--host", default="127.0.0.1",
                         help="where to listen (default: %(default)s). Another address "
                              "works, but browsers only allow the microphone on "
                              "localhost or https")
     parser.add_argument("--port", type=int, default=8100)
     parser.add_argument("--server-speech", action="store_true",
-                        help="record the microphone in the page and have FillerAI "
-                             "transcribe it (FillerAI must run with --bot-transcribe), "
+                        help="record the microphone in the page and have AIrForms "
+                             "transcribe it (AIrForms must run with --bot-transcribe), "
                              "for where the browser's speech service is blocked")
     parser.add_argument("--data", type=Path, default=Path("portal-data.json"),
                         help="where the customer record is kept (default: %(default)s)")
@@ -390,14 +390,14 @@ def main(argv: list[str] | None = None) -> int:
     fillerai = FillerAIService(args.fillerai, args.token)
     status, found = fillerai.templates()
     if status in (401, 403):
-        print(f"FillerAI refused the token ({status}). Issue one with "
+        print(f"AIrForms refused the token ({status}). Issue one with "
               "'fillerai tokens add <user>', or on Settings -> API tokens.", file=sys.stderr)
         return 1
     if status != 200:
-        print(found.get("error", f"FillerAI answered {status}"), file=sys.stderr)
+        print(found.get("error", f"AIrForms answered {status}"), file=sys.stderr)
         return 1
     if not found["templates"]:
-        print("  note: FillerAI has no bot templates yet, so there are no forms. Add "
+        print("  note: AIrForms has no bot templates yet, so there are no forms. Add "
               "some on the Bots tab, then reload the page.", file=sys.stderr)
 
     httpd = make_server(fillerai, Portal(args.data), host=args.host, port=args.port,

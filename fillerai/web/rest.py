@@ -1,6 +1,6 @@
 """The integration API: a trained model, over HTTP, for somebody else's app.
 
-Everything under ``/api`` is the FillerAI UI talking to its own server. It is
+Everything under ``/api`` is the AIrForms UI talking to its own server. It is
 shaped for that: one POST per button, a session cookie, a CSRF header, a
 model held in memory under a handle the browser was given a moment ago. None
 of that is usable by a claims system that wants to ask *what should go in
@@ -281,7 +281,7 @@ def _suggestions(model: AutofillModel, observed: dict[str, Any],
 
 def health(caller: Caller | None, params: dict[str, str],
            body: dict[str, Any]) -> dict[str, Any]:
-    """Reachable without a token: is this a FillerAI, and does it want one?"""
+    """Reachable without a token: is this an AIrForms, and does it want one?"""
     return {
         "service": "fillerai",
         "version": __version__,

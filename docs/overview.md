@@ -1,6 +1,6 @@
 # Technical overview
 
-The shortest complete description of FillerAI for an engineer meeting it for
+The shortest complete description of AIrForms for an engineer meeting it for
 the first time: what problem it solves, what the parts are, how a request
 travels through them, and where to read next. Every other document in this
 directory goes deeper into one of the boxes drawn here.
@@ -24,14 +24,14 @@ Checked against the code at version 0.15.0.
 
 A customer service agent fills in hundreds of fields across several screens
 for every case, and most of those values follow from the first few: a ZIP code
-gives a city and a state, a plan type gives a deductible. FillerAI learns
+gives a city and a state, a plan type gives a deductible. AIrForms learns
 those relationships and fills the rest of the form, saying how sure it is and
 leaving alone what it cannot predict.
 
 Two constraints shape everything else:
 
 - **The companies with the forms will not hand over real data to train on.**
-  So FillerAI reads the form itself (its HTML, or a short field spec),
+  So AIrForms reads the form itself (its HTML, or a short field spec),
   generates coherent synthetic records the form would accept, and trains on
   those. Real past submissions, where they exist, drop into the same training
   step with no change.
@@ -54,7 +54,7 @@ flowchart LR
         agent([Agent or customer<br/>in another app])
     end
 
-    subgraph fillerai[FillerAI process: python -m fillerai serve]
+    subgraph fillerai[AIrForms process: python -m fillerai serve]
         ui[Web UI<br/>static/index.html + app.js]
         api["/api<br/>cookie + CSRF"]
         v1["/v1<br/>bearer token"]
@@ -88,7 +88,7 @@ flowchart LR
 
 One process serves everything. `python -m fillerai serve` starts it on
 `127.0.0.1:8000`, and by default also starts the sample application on
-port 8100 as a second, independent program that reaches FillerAI only over
+port 8100 as a second, independent program that reaches AIrForms only over
 `/v1`, exactly as a customer's own application would.
 
 | Part | Code | What it does |
@@ -153,7 +153,7 @@ sequenceDiagram
     participant P as Person
     participant W as Chat window<br/>(fillerai.js)
     participant H as Host app server
-    participant B as FillerAI /v1/bot/turn
+    participant B as AIrForms /v1/bot/turn
     participant L as Library (templates)
 
     P->>W: types, speaks or clicks
@@ -241,7 +241,7 @@ with the test that holds it, is in [architecture.md](architecture.md) §9.
 | change something and know what it touches | [architecture.md](architecture.md), then [reference/modules.md](reference/modules.md) |
 | look up a command or option | [reference/cli.md](reference/cli.md) |
 | look up an endpoint | [reference/http-api.md](reference/http-api.md) |
-| read or write a file FillerAI produces | [reference/data-formats.md](reference/data-formats.md) |
+| read or write a file AIrForms produces | [reference/data-formats.md](reference/data-formats.md) |
 | call it from another application | [integration.md](integration.md), [bot-builder.md](bot-builder.md) |
 | install, run, back up or troubleshoot it | [operations.md](operations.md) |
 | know what could go wrong with data and credentials | [security.md](security.md) |

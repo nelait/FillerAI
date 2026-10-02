@@ -1,8 +1,8 @@
-# FillerAI — read a form, fill a form
+# AIrForms — read a form, fill a form
 
 Customer-facing agents fill hundreds of fields across many screens. Training
 anything to help with that needs data, and the companies that have the data
-usually cannot share it. So FillerAI starts by not needing any: point it at a
+usually cannot share it. So AIrForms starts by not needing any: point it at a
 form and it produces as many realistic, internally consistent records as you
 want, without a single real record ever being involved. Then it learns from
 those records how to finish the form from the first few fields an agent
@@ -12,6 +12,13 @@ Nothing here talks to a network, and there are no dependencies. Python 3.10
 or newer and the standard library is the whole requirement, which is the
 point — it has to run inside the locked-down environment where the real form
 lives.
+
+> **Formerly FillerAI.** The product is now called AIrForms. The code names
+> did not change, so nothing that already uses it breaks: the Python package
+> and command are still `fillerai`, the JavaScript client is still
+> `/client/fillerai.js` (its class is exported as both `AIrForms` and
+> `FillerAI`), the `/v1` paths, the `X-FillerAI-Token` header and every
+> `FILLERAI_*` environment variable are as they were.
 
 ```bash
 # The UI, if you would rather see it than type it.
@@ -885,7 +892,7 @@ data had to offer.
 
 ## Accounts, and where everything is kept
 
-Until now FillerAI was one person on one machine: no login, and a directory
+Until now AIrForms was one person on one machine: no login, and a directory
 of JSON called `.fillerai` holding every source, schema, dataset and model.
 That is still exactly what `--no-auth` gives you. But the moment a second
 person opens the same URL, two questions have to be answered — whose library
@@ -1063,7 +1070,7 @@ about to talk to. Its `bind()` does the part every integration would
 otherwise write for itself — ask after a pause rather than per keystroke,
 never overwrite what a person typed, and let editing a suggestion take it
 back. The full endpoint reference, the error codes and a React pattern are in
-[**Calling FillerAI from another application**](docs/integration.md).
+[**Calling AIrForms from another application**](docs/integration.md).
 
 ## Bot Builder: a chat that fills a request
 
@@ -1106,7 +1113,7 @@ what follows them, and by values whose shape gives them away. `serve
 same rules as a typed value; that is off unless asked for, because it sends
 what end users type. Where the browser's own speech service is blocked (a
 VPN, a corporate proxy), `serve --bot-transcribe` has the microphone record in
-the page and FillerAI transcribe it with an OpenAI key instead.
+the page and AIrForms transcribe it with an OpenAI key instead.
 `/client/chat.html` is a working host page to try it
 against, and the [sample application](fillerai/sampleapp/README.md), which
 `serve` starts next to the UI on port 8100 and links from its header, is a
@@ -1493,7 +1500,7 @@ would replace all of them.
 **Postgres is one subclass away.** The database interface exists for that
 one reason, and the two things a driver changes - connecting, and the
 parameter style - are the two things it is allowed to change. What is not
-there is the driver, and it will not be until FillerAI is allowed a
+there is the driver, and it will not be until AIrForms is allowed a
 dependency, which today it is not. Alongside it, the obvious next thing
 accounts want is a record of who did what: the schema has room for it and
 nothing needs it yet.
@@ -1668,7 +1675,7 @@ none of which has been measured with a stopwatch.
 built, each with its evidence and what it would take. Read this before picking
 up work.
 
-[**Calling FillerAI from another application**](docs/integration.md)
+[**Calling AIrForms from another application**](docs/integration.md)
 — the `/v1` REST service and the JavaScript client: every endpoint and what it
 answers, how an API token works and why it is not the UI's cookie, when a
 browser on another origin is let in and when it is not, and how to bind a

@@ -1,6 +1,6 @@
 # The algorithms, and why these ones
 
-How FillerAI learns to fill a form, why it uses the methods it does, how they
+How AIrForms learns to fill a form, why it uses the methods it does, how they
 differ from better-known ones such as K-means, and which others could be
 used instead. Part 1 is for anyone and assumes no maths. Part 2 is for
 engineers and says exactly what the code does.
@@ -39,7 +39,7 @@ kept, `78701`. Anyone who has done this job for a while already knows the
 city is Austin and the state is Texas. If they also type the coverage tier,
 they probably know which liability limits usually go with it.
 
-FillerAI learns those "if this, then probably that" relationships from past
+AIrForms learns those "if this, then probably that" relationships from past
 forms, then does what the experienced agent does: fills in what follows from
 what has been typed, says how sure it is, and leaves alone anything it
 cannot know. A claim number or a person's first name cannot be worked out
