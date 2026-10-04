@@ -10,9 +10,12 @@ python -m fillerai serve --host 0.0.0.0 --trust-proxy --no-sample-app
 - **Port.** `serve` reads `$PORT`, which Railway sets.
 - **Accounts stay on.** `--no-auth` is refused anywhere but localhost, and a
   public address is not localhost.
-- **Data.** Accounts, the library and the SQLite database live in
-  `FILLERAI_HOME`, which the image sets to `/data`. Without a volume mounted
-  there they are wiped at every deploy, and the server says so in its log.
+- **Data, two ways.** By default accounts, the library and the SQLite
+  database live in `FILLERAI_HOME`, which the image sets to `/data`; without a
+  volume mounted there they are wiped at every deploy, and the server says so
+  in its log. Or set `FILLERAI_DATABASE_URL` to a Railway Postgres database
+  and everything lives there instead, with no volume. The image carries the
+  Postgres driver (`psycopg`), so that variable is all it takes.
 - **First administrator.** `admin`, with the password in
   `FILLERAI_ADMIN_PASSWORD` (at least 8 characters). Without it, a generated
   one is printed once in the deploy log and must be changed at first sign-in.
@@ -25,14 +28,20 @@ python -m fillerai serve --host 0.0.0.0 --trust-proxy --no-sample-app
   `python -m fillerai.sampleapp --host 0.0.0.0` (it reads `$PORT` too) and the
   variables `FILLERAI_URL` (this service's https address) and
   `FILLERAI_TOKEN` (an API token made in Settings).
-- **One replica.** SQLite on a volume is one process's database.
+- **One replica.** SQLite on a volume is one process's database, and even with
+  Postgres a training run's live log is held in the process that runs it.
 
 ## Steps
 
 1. In Railway, **New Project → Deploy from GitHub repo**, and pick
    `nelait/fillerai`. It starts building from the Dockerfile.
-2. Open the service, then **Settings → Volumes** (or right-click the service
-   on the canvas → **Attach volume**), and mount it at **`/data`**.
+2. Choose where the data lives, one of:
+   - **Postgres (recommended).** On the project canvas, **+ New → Database →
+     Add PostgreSQL**. Then in the AIrForms service, **Variables → New
+     Variable**: `FILLERAI_DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
+     (Railway fills in the reference).
+   - **SQLite on a volume.** Right-click the AIrForms service on the canvas →
+     **Attach volume**, and mount it at **`/data`**.
 3. **Variables → New Variable**: `FILLERAI_ADMIN_PASSWORD` = a password of at
    least 8 characters. Optional: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` for
    the language-model features.
@@ -48,6 +57,7 @@ deploy log, under "No accounts yet".
 
 ## Backing up
 
-The volume holds everything. Railway's volume backups (service → Volume →
+With Postgres, Railway's database backups cover everything. With SQLite, the
+volume holds everything, and Railway's volume backups (service → Volume →
 Backups) copy it. To run a command against it, `railway ssh` into the
 service from the Railway CLI, then for example `python -m fillerai db status`.

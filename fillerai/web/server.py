@@ -52,7 +52,7 @@ from ..auth import (
     COOKIE, ROLES, Auth, AuthError, Session, User, hash_password,
     suggest_password, verify_password,
 )
-from ..db import Database, connect as connect_database
+from ..db import Database, connect as connect_database, safe_url
 from ..dbstore import DatabaseStore, import_store
 from ..extract import html_form, spec as spec_loader
 from ..generate.dataset import Dataset, Options, coherence_report, generate, validate
@@ -2190,6 +2190,15 @@ class Handler(BaseHTTPRequestHandler):
     # visitor chose to send.
     trust_proxy = False
 
+    def handle_one_request(self) -> None:
+        try:
+            super().handle_one_request()
+        finally:
+            # A request's thread is about to end; a pooled backend wants its
+            # connection back rather than one dropped per request.
+            if DATABASE is not None:
+                DATABASE.release()
+
     def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
         if not self.quiet:
             super().log_message(fmt, *args)
@@ -2772,13 +2781,14 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
     public = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
     if public:
         print(f"  public address: https://{public}/")
-    if os.environ.get("RAILWAY_ENVIRONMENT") and \
+    on_disk = DATABASE is None or DATABASE.url.startswith("sqlite://")
+    if on_disk and os.environ.get("RAILWAY_ENVIRONMENT") and \
             not os.environ.get("RAILWAY_VOLUME_MOUNT_PATH"):
         print("  WARNING: no Railway volume is attached, so accounts and the "
               "library are lost at every deploy. Attach one at "
               f"{LIBRARY.root}.")
     if DATABASE is not None:
-        print(f"  database: {DATABASE.url}")
+        print(f"  database: {safe_url(DATABASE.url)}")
     else:
         print(f"  library: {LIBRARY.root}")
     if AUTH is None:

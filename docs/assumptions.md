@@ -361,8 +361,12 @@ what lets `/v1` cache a loaded model without it going stale.
 
 Backend-specific surface is exactly two things: the parameter style and
 connecting. The DDL is in the SQL both accept, times are ISO 8601 strings
-because the two disagree about timezones. **The driver does not exist** and
-will not until a dependency is allowed.
+because the two disagree about timezones. Since 0.18.0 the subclass exists
+(`PostgresDatabase`), with psycopg as an **optional** extra,
+`fillerai[postgres]`: the default install still needs nothing, and the driver
+is imported only when a `postgresql://` URL is opened. Two behaviours differ
+from SQLite and live in the subclass: a read outside a transaction ends its
+transaction at once, and connections are pooled per request.
 
 ### 7.7 A shipped migration is never edited
 

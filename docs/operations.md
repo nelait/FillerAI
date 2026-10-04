@@ -117,7 +117,7 @@ defaults.
 | Variable | Used by | Meaning |
 |---|---|---|
 | `FILLERAI_HOME` | CLI, `serve` | The library directory. Default `./.fillerai`. |
-| `FILLERAI_DATABASE_URL` | `serve`, `users`, `tokens`, `db` | `sqlite://<path>`. Default `fillerai.db` in the library directory. |
+| `FILLERAI_DATABASE_URL` | `serve`, `users`, `tokens`, `db` | `sqlite://<path>`, or `postgresql://user:pass@host/db` with `pip install 'fillerai[postgres]'`. Default `fillerai.db` in the library directory. |
 | `FILLERAI_ADMIN_PASSWORD` | first `serve` | The first administrator's password instead of a generated one. |
 | `PORT` | `serve` | The port, as hosting platforms set it. Default 8000. |
 | `FILLERAI_TRUST_PROXY` | `serve` | `1` is the same as `--trust-proxy`: take the visitor's address and https from the proxy's headers. Only behind such a proxy. |

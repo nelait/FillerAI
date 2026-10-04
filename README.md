@@ -930,8 +930,9 @@ this project makes survives the change: nothing to install, nothing that
 leaves the machine. One file next to the library it replaces
 (`.fillerai/fillerai.db`), which `sqlite3` will open and read.
 
-Postgres is the stated next step, and the shape for it is already here.
-Everything goes through `fillerai.db.Database`, and what is actually specific
+Postgres works too, with one optional extra: `pip install
+'fillerai[postgres]'` and a `postgresql://` URL in `--database` or
+`$FILLERAI_DATABASE_URL`. Everything goes through `fillerai.db.Database`, and what is actually specific
 to a backend is small enough to name:
 
 - **The parameter style.** Callers write `?`; a backend that wants `%s`
@@ -943,8 +944,8 @@ to a backend is small enough to name:
   strings rather than as a timestamp type, because the two disagree about
   timezones in a way that is not worth a translation layer.
 
-So `postgresql://...` is one subclass, not a rewrite. Asking for one today
-says that in as many words rather than failing with a missing driver.
+So `postgresql://...` is one subclass, not a rewrite. Without the driver,
+asking for one says how to install it rather than failing with a traceback.
 
 Migrations run on every start and do nothing when there is nothing to do, so
 a database made by an older build catches up by itself.
@@ -1512,11 +1513,8 @@ assumptions in `fillerai/simulate/effort.py`: every number in the saving is
 only as good as those five constants, and a stopwatch on ten real forms
 would replace all of them.
 
-**Postgres is one subclass away.** The database interface exists for that
-one reason, and the two things a driver changes - connecting, and the
-parameter style - are the two things it is allowed to change. What is not
-there is the driver, and it will not be until AIrForms is allowed a
-dependency, which today it is not. Alongside it, the obvious next thing
+**Postgres is there**, as an optional extra (`fillerai[postgres]`), so the
+default install still needs nothing. Alongside it, the obvious next thing
 accounts want is a record of who did what: the schema has room for it and
 nothing needs it yet.
 

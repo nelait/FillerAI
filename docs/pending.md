@@ -93,13 +93,12 @@ and unbuilt:
 Each phase has a measured gate it must clear before the next starts; §6 of the
 plan has the order.
 
-### 1.4 🟡 Postgres is one subclass away, and the subclass is not there
+### 1.4 ✅ Postgres (done in 0.18.0)
 
-`fillerai/db.py` exists so this is a subclass rather than a rewrite: the only
-backend-specific surface is the parameter style and connecting, the DDL uses
-the SQL both accept, and times are ISO 8601 strings. What is missing is the
-driver, and it stays missing until AIrForms is allowed a dependency
-([assumptions.md](assumptions.md) §1.2).
+`PostgresDatabase` in `fillerai/db.py`, with psycopg as the optional extra
+`fillerai[postgres]`. `tests/test_postgres.py` reruns the database-backed
+suites against a real Postgres when `FILLERAI_TEST_POSTGRES_URL` is set;
+without it, only its driver-free checks run.
 
 ### 1.5 🟡 The effort constants have never been measured
 
