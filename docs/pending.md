@@ -61,10 +61,12 @@ model. A decision tree that can represent "family policy *and* dependent
 claimant therefore relationship is child" has nothing to represent when the
 generator never put such a rule in.
 
-**What it takes: nothing in the pipeline.** A dataset is a dataset — that was
-the point of keeping generation and training on opposite sides of the schema.
-Point `train` at a directory of real submissions inside the environment that
-holds them, run `--compare`, and run `simulate` against the same forms.
+**What it takes: real records, and nothing more in the pipeline.** Since
+0.19.0 the way in exists: upload an export on the Data step (or `fillerai
+clean`), and it is mapped, cleaned and kept as a real dataset; Train learns
+from it, and the Simulate step's **Test on real records** scores any model on
+it. See [real-data.md](real-data.md). What is still missing is the data
+itself and somebody running it inside the environment that holds it.
 
 Until that happens, the honest claim for this project is "3–32% on synthetic
 data, depending entirely on how much of the form's business logic was written

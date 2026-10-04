@@ -25,6 +25,9 @@ const state = {
   // Library ids for what is on screen, so each stage records what it came
   // from instead of a pile of unrelated entries.
   ids: { source: null, schema: null, dataset: null, model: null },
+  // Where the records on screen came from: null for generated ones, or
+  // { file, headline } for real ones that were uploaded and cleaned.
+  origin: null,
   // Who is signed in, when the server is running with accounts. Null means
   // it is not, which is the single-user tool: no login, one library.
   user: null,
@@ -143,25 +146,38 @@ document.getElementById('steps').addEventListener('click', (event) => {
 
 // ---------------------------------------------------------------- source
 
-document.querySelectorAll('.seg-btn').forEach((button) => {
-  button.addEventListener('click', () => {
-    document.querySelectorAll('.seg-btn').forEach((b) => b.classList.remove('is-on'));
-    button.classList.add('is-on');
-    state.kind = button.dataset.kind;
-    $('source').placeholder = state.kind === 'html'
-      ? 'Paste an HTML form here, or drop a .html file onto this box.'
-      : 'Paste a field spec, or a schema you saved earlier.';
+const SOURCE_HINTS = {
+  html: 'Paste an HTML form here, or drop a .html file onto this box.',
+  spec: 'Paste a field spec, or a schema you saved earlier.',
+  data: 'No form to hand? Drop a CSV of past submissions here: each column '
+    + 'becomes a field, and the records are waiting on the Data step to be cleaned.',
+};
+
+function setSourceKind(kind) {
+  state.kind = kind;
+  document.querySelectorAll('.seg-btn[data-kind]').forEach((b) => {
+    b.classList.toggle('is-on', b.dataset.kind === kind);
   });
+  $('source').placeholder = SOURCE_HINTS[kind] || SOURCE_HINTS.html;
+}
+
+document.querySelectorAll('.seg-btn[data-kind]').forEach((button) => {
+  button.addEventListener('click', () => setSourceKind(button.dataset.kind));
 });
 
+// A file's kind, from its name: a form, a spec, or records.
+const DATA_FILE = /\.(csv|tsv|txt|ndjson|jsonl)$/i;
+
+function kindOfFile(name) {
+  if (DATA_FILE.test(name)) return 'data';
+  return /\.json$/i.test(name) ? 'spec' : 'html';
+}
+
 function loadText(text, kind, name) {
-  state.sourceName = name ? name.replace(/\.(html?|fields\.json|json)$/i, '') : '';
-  if (kind) {
-    state.kind = kind;
-    document.querySelectorAll('.seg-btn').forEach((b) => {
-      b.classList.toggle('is-on', b.dataset.kind === kind);
-    });
-  }
+  state.sourceName = name
+    ? name.replace(/\.(html?|fields\.json|json|csv|tsv|txt|ndjson|jsonl)$/i, '') : '';
+  state.sourceFile = name || '';
+  if (kind) setSourceKind(kind);
   $('source').value = text;
 }
 
@@ -169,7 +185,7 @@ $('file').addEventListener('change', async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   const text = await file.text();
-  loadText(text, /\.json$/i.test(file.name) ? 'spec' : 'html', file.name);
+  loadText(text, kindOfFile(file.name), file.name);
   toast(`loaded ${file.name}`);
   event.target.value = '';
 });
@@ -192,7 +208,7 @@ drop.addEventListener('drop', async (event) => {
   const file = event.dataTransfer.files[0];
   if (!file) return;
   const text = await file.text();
-  loadText(text, /\.json$/i.test(file.name) ? 'spec' : 'html', file.name);
+  loadText(text, kindOfFile(file.name), file.name);
   toast(`loaded ${file.name}`);
 });
 
@@ -203,15 +219,26 @@ $('clear').addEventListener('click', () => {
 
 $('extract').addEventListener('click', () => withBusy($('extract'), 'Reading...', async () => {
   const content = $('source').value;
-  const result = await api('/api/extract', {
-    kind: state.kind, content, name: state.sourceName || 'form',
-  });
-  state.sourceText = content;
+  // Records with no form: the columns are the form, and the same text is
+  // the upload waiting on the Data step.
+  const fromData = state.kind === 'data';
+  const result = fromData
+    ? await api('/api/data/schema', {
+      text: content, filename: state.sourceFile || 'records.csv',
+      name: state.sourceName || 'form',
+    })
+    : await api('/api/extract', {
+      kind: state.kind, content, name: state.sourceName || 'form',
+    });
+  // What is kept is the spec the columns were read into, not the records.
+  state.sourceText = fromData ? result.spec : content;
+  resetReal(fromData ? { text: content, filename: state.sourceFile || 'records.csv' } : null);
   state.schema = result.schema;
   state.summary = result.summary;
   state.edited = new Set();
   state.records = [];
   state.problems = [];
+  state.origin = null;
   // A new form makes the model on screen another form's.
   state.model = null;
   ['tryIt', 'trainReport', 'trainStats', 'voterPanel', 'treePanel', 'runPanel']
@@ -226,6 +253,7 @@ $('extract').addEventListener('click', () => withBusy($('extract'), 'Reading...'
   renderSchema();
   unlock('schema');
   unlock('generate');
+  if (fromData) setDataMode('real');
   showPanel('schema');
   const review = result.summary.needs_review.length;
   toast(review
@@ -372,6 +400,7 @@ $('run').addEventListener('click', () => withBusy($('run'), 'Generating...', asy
   state.records = result.records;
   state.columns = result.columns;
   state.problems = result.problems;
+  state.origin = null;
   state.ids.dataset = result.dataset_id || null;
   if (result.schema_id) state.ids.schema = result.schema_id;
   // A new dataset makes the old model stale: clear it rather than leave a
@@ -391,7 +420,12 @@ $('run').addEventListener('click', () => withBusy($('run'), 'Generating...', asy
 function renderData() {
   const status = $('genStatus');
   status.hidden = false;
-  if (state.problems.length) {
+  if (state.origin) {
+    status.className = 'status ok';
+    status.textContent = `${state.records.length} real records`
+      + `${state.origin.file ? ' from ' + state.origin.file : ''}`
+      + `${state.origin.headline ? ': ' + state.origin.headline : ''}.`;
+  } else if (state.problems.length) {
     const shown = state.problems.slice(0, 12).map((p) => `<li>${escapeHtml(p)}</li>`).join('');
     const more = state.problems.length > 12
       ? `<li>... and ${state.problems.length - 12} more</li>` : '';
@@ -441,6 +475,281 @@ document.querySelectorAll('[data-export]').forEach((button) => {
     download(result.filename, result.text, `${mime};charset=utf-8`);
   }));
 });
+
+// ---------------------------------------------------------- real records
+//
+// The other way records arrive: a file of past submissions. The browser
+// keeps the file and the choices made about it; the server reads, maps and
+// cleans it fresh on every change, so what the preview shows is exactly
+// what Save will keep. Nothing is stored until Save.
+
+const real = {
+  text: '',          // the file, as uploaded
+  filename: '',
+  columns: [],
+  preview: [],       // raw rows, for the "looks like" column
+  rows: 0,
+  mapping: {},       // column -> field name, '' for left out
+  fields: [],        // the form's fillable fields, for the pickers
+  fixes: [],         // [{ key, label, on }]
+  report: null,      // the last cleaning report
+  timer: null,
+  asked: 0,          // request counter, so a slow old preview cannot win
+};
+
+function resetReal(file) {
+  Object.assign(real, {
+    text: '', filename: '', columns: [], preview: [], rows: 0, mapping: {},
+    fields: [], fixes: [], report: null,
+  });
+  $('realWork').hidden = true;
+  $('realFileLine').textContent = 'A CSV, JSON or NDJSON export of past '
+    + 'submissions. Drop it here. It stays on this server.';
+  if (file) {
+    real.text = file.text;
+    real.filename = file.filename;
+  }
+}
+
+function setDataMode(mode) {
+  document.querySelectorAll('.seg-btn[data-mode]').forEach((b) => {
+    b.classList.toggle('is-on', b.dataset.mode === mode);
+  });
+  const isReal = mode === 'real';
+  $('realMode').hidden = !isReal;
+  $('genControls').hidden = isReal;
+  $('genStatus').hidden = isReal || !state.records.length;
+  $('genResult').hidden = isReal;
+  $('dataSub').textContent = isReal
+    ? 'Past submissions, cleaned in the open: every fix says what it changed '
+      + 'before anything is kept. Train on them, or test a model with them.'
+    : 'Every generated record is one coherent imaginary person. Values respect '
+      + 'the constraints the form declares, and are checked before you see them.';
+  // Records handed over by the Source step are read the first time this shows.
+  if (isReal && real.text && !real.columns.length && state.schema) readReal();
+}
+
+document.querySelectorAll('.seg-btn[data-mode]').forEach((button) => {
+  button.addEventListener('click', () => setDataMode(button.dataset.mode));
+});
+
+async function loadRealFile(file) {
+  if (!file) return;
+  if (!state.schema) { toast('read a form first', true); return; }
+  real.text = await file.text();
+  real.filename = file.name;
+  real.columns = [];
+  await readReal();
+}
+
+$('realFile').addEventListener('change', async (event) => {
+  await loadRealFile(event.target.files[0]);
+  event.target.value = '';
+});
+
+const realDrop = $('realDrop');
+['dragenter', 'dragover'].forEach((type) => {
+  realDrop.addEventListener(type, (event) => {
+    event.preventDefault();
+    realDrop.classList.add('is-over');
+  });
+});
+['dragleave', 'drop'].forEach((type) => {
+  realDrop.addEventListener(type, (event) => {
+    event.preventDefault();
+    if (type === 'dragleave' && realDrop.contains(event.relatedTarget)) return;
+    realDrop.classList.remove('is-over');
+  });
+});
+realDrop.addEventListener('drop', (event) => loadRealFile(event.dataTransfer.files[0]));
+
+async function readReal() {
+  let result;
+  try {
+    result = await api('/api/data/read', {
+      schema: state.schema, text: real.text, filename: real.filename,
+    });
+  } catch (error) {
+    toast(error.message, true);
+    return;
+  }
+  real.columns = result.columns;
+  real.preview = result.preview;
+  real.rows = result.rows;
+  real.mapping = result.mapping;
+  real.fields = result.fields;
+  real.fixes = result.fixes;
+  $('realFileLine').textContent =
+    `${real.filename}: ${result.rows} rows, ${result.columns.length} columns (${result.format}).`;
+  $('realWork').hidden = false;
+  renderRealMapping();
+  renderRealFixes();
+  await cleanReal();
+}
+
+function looksLike(column) {
+  const seen = [];
+  for (const row of real.preview) {
+    const value = String(row[column] ?? '').trim();
+    if (value && !seen.includes(value)) seen.push(value);
+    if (seen.length === 3) break;
+  }
+  return seen.join(', ');
+}
+
+function renderRealMapping() {
+  const options = (chosen) => ['<option value="">- leave out -</option>']
+    .concat(real.fields.map((f) => `<option value="${escapeAttr(f.name)}"`
+      + `${f.name === chosen ? ' selected' : ''}>${escapeHtml(f.label)}`
+      + `${f.label !== f.name ? ' (' + escapeHtml(f.name) + ')' : ''}</option>`))
+    .join('');
+  $('realMapBody').innerHTML = real.columns.map((column) => `
+    <tr class="${real.mapping[column] ? '' : 'is-off'}">
+      <td class="name">${escapeHtml(column)}</td>
+      <td class="muted looks" title="${escapeAttr(looksLike(column))}">${escapeHtml(looksLike(column))}</td>
+      <td><select data-column="${escapeAttr(column)}">${options(real.mapping[column])}</select></td>
+    </tr>`).join('');
+}
+
+$('realMapBody').addEventListener('change', (event) => {
+  const select = event.target.closest('select[data-column]');
+  if (!select) return;
+  const column = select.dataset.column;
+  // One column per field: taking a field from another column leaves that
+  // one out, rather than sending a mapping the server will refuse.
+  if (select.value) {
+    Object.keys(real.mapping).forEach((other) => {
+      if (other !== column && real.mapping[other] === select.value) real.mapping[other] = '';
+    });
+  }
+  real.mapping[column] = select.value;
+  renderRealMapping();
+  scheduleClean();
+});
+
+function renderRealFixes() {
+  const counted = {};
+  ((real.report && real.report.fixes) || []).forEach((f) => { counted[f.key] = f; });
+  $('realFixes').innerHTML = real.fixes.map((fix) => {
+    const found = counted[fix.key];
+    const count = found ? found.count : 0;
+    const unit = found && found.unit === 'rows' ? 'row' : 'cell';
+    const examples = found && found.examples.length
+      ? found.examples.map((e) => (e.field ? `${e.field}: ` : '')
+        + `"${e.before}" → "${e.after}"`).join('\n') : '';
+    const verb = fix.on ? (unit === 'row' ? 'dropped' : 'fixed') : 'found';
+    return `<li class="${count ? '' : 'is-quiet'}">
+      <label class="check" title="${escapeAttr(examples)}">
+        <input type="checkbox" data-fix="${escapeAttr(fix.key)}"${fix.on ? ' checked' : ''}>
+        ${escapeHtml(fix.label)}
+      </label>
+      <span class="pill ${count && fix.on ? 'good' : count ? 'warn' : ''}">`
+      + `${count ? `${count} ${unit}${count === 1 ? '' : 's'} ${verb}` : 'nothing to do'}</span>
+      ${examples ? `<span class="fix-eg muted">${escapeHtml(examples.split('\n')[0])}</span>` : ''}
+    </li>`;
+  }).join('');
+}
+
+$('realFixes').addEventListener('change', (event) => {
+  const box = event.target.closest('[data-fix]');
+  if (!box) return;
+  const fix = real.fixes.find((f) => f.key === box.dataset.fix);
+  if (fix) fix.on = box.checked;
+  scheduleClean();
+});
+
+function scheduleClean() {
+  clearTimeout(real.timer);
+  real.timer = setTimeout(cleanReal, 200);
+}
+
+function realRequest(save) {
+  return {
+    schema: state.schema,
+    schema_id: state.ids.schema,
+    text: real.text,
+    filename: real.filename,
+    mapping: real.mapping,
+    fixes: real.fixes.filter((f) => f.on).map((f) => f.key),
+    save,
+  };
+}
+
+async function cleanReal() {
+  const asked = ++real.asked;
+  $('realSave').disabled = true;
+  let result;
+  try {
+    result = await api('/api/data/clean', realRequest(false));
+  } catch (error) {
+    if (asked !== real.asked) return;
+    $('realHeadline').textContent = error.message;
+    return;
+  }
+  if (asked !== real.asked) return;
+  real.report = result.report;
+  renderRealFixes();
+  renderRealReport(result);
+  $('realSave').disabled = !result.count;
+}
+
+function renderRealReport(result) {
+  const report = result.report;
+  $('realHeadline').textContent = report.headline;
+  $('realMissing').hidden = !report.missing.length;
+  $('realMissing').textContent = report.missing.length
+    ? `Not in the file, so always empty: ${report.missing.join(', ')}.` : '';
+
+  const problems = report.problems;
+  $('realProblems').hidden = !problems.length;
+  $('realProblems').innerHTML = problems.length ? `
+    <p class="sub">Still wrong after cleaning. Fix the column mapping, or tick
+       <em>Empty values the form would still reject</em>.</p>
+    <ul class="problems">${problems.slice(0, 8).map((p) => `<li>
+      <b>${escapeHtml(p.field)}</b> ${escapeHtml(p.kind)} in ${p.count} row${p.count === 1 ? '' : 's'}
+      <span class="muted">e.g. ${p.examples.map((e) => `"${escapeHtml(e)}"`).join(', ')}</span>
+    </li>`).join('')}${problems.length > 8 ? `<li class="muted">and ${problems.length - 8} more</li>` : ''}</ul>`
+    : '';
+
+  const dropped = [];
+  if (report.empty_rows) dropped.push(`${report.empty_rows} empty`);
+  if (report.truncated) {
+    dropped.push(`${report.truncated} over the ${result.max_records}-record limit `
+      + '(the command line has none: fillerai clean)');
+  }
+  $('realPreviewLine').textContent = `${result.count} of ${report.rows_in} rows`
+    + `${dropped.length ? ' (left out: ' + dropped.join('; ') + ')' : ''}`
+    + `${result.count > result.records.length ? `; the first ${result.records.length} shown` : ''}.`;
+
+  const columns = result.columns;
+  $('realHead').innerHTML =
+    `<tr>${columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
+  $('realBody').innerHTML = result.records.map((record) => `<tr>${
+    columns.map((column) => {
+      const value = record[column];
+      if (value === '' || value === null || value === undefined) return '<td class="empty">-</td>';
+      if (typeof value === 'boolean') return `<td>${value ? 'yes' : 'no'}</td>`;
+      return `<td>${escapeHtml(value)}</td>`;
+    }).join('')
+  }</tr>`).join('');
+}
+
+$('realSave').addEventListener('click', () => withBusy($('realSave'), 'Saving...', async () => {
+  const result = await api('/api/data/clean', realRequest(true));
+  state.records = result.records;
+  state.columns = result.columns;
+  state.problems = [];
+  state.origin = { file: real.filename, headline: result.report.headline };
+  state.ids.dataset = result.dataset_id || null;
+  if (result.schema_id) state.ids.schema = result.schema_id;
+  // The model on screen is kept: real records are as often here to test it
+  // as to train a new one, and the next step offers both.
+  unlock('train');
+  renderData();
+  $('genStatus').hidden = true;
+  renderFlow();
+  toast(`${result.count} real records saved to the library`);
+}));
 
 // ----------------------------------------------------------------- train
 //
@@ -955,6 +1264,8 @@ const sim = {
   modelId: null,    // the model the form on screen was drawn for
   page: 0,
   sweep: null,
+  schemaId: null,   // the library schema behind the model, when it was kept
+  pendingTest: null, // a dataset to test on as soon as the list is drawn
 };
 
 function simThreshold() {
@@ -982,7 +1293,10 @@ async function renderSimulate() {
   }
   // Same model as the form already on screen: leave the run as it is, so
   // stepping away to another panel and back does not wipe the board.
-  if (sim.modelId === state.model.model_id && sim.layout) return;
+  if (sim.modelId === state.model.model_id && sim.layout) {
+    loadTestData();
+    return;
+  }
 
   status.hidden = false;
   status.className = 'status';
@@ -1000,6 +1314,11 @@ async function renderSimulate() {
     $('simAssumptions').innerHTML =
       form.assumptions.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
     renderSimModel(form.model);
+    const schemaEntry = ((form.model && form.model.lineage) || [])
+      .find((entry) => entry.kind === 'schema');
+    sim.schemaId = schemaEntry ? schemaEntry.id : state.ids.schema;
+    $('testOut').hidden = true;
+    loadTestData();
     $('simControls').hidden = false;
     $('simBody').hidden = false;
     drawPages();
@@ -1013,6 +1332,120 @@ async function renderSimulate() {
     $('simBody').hidden = true;
   }
 }
+
+// -- testing on real records -------------------------------------------
+//
+// Fresh generated forms say what the model does on the world it was taught.
+// Real records say what it does on the world, which is the number anybody
+// deciding whether to use it needs. Any dataset in the library can be
+// chosen; real ones are listed first, and the ones for this model's form
+// before the rest.
+
+function datasetLabel(entry) {
+  const meta = entry.meta || {};
+  const what = meta.origin === 'real' ? 'real' : 'generated';
+  return `${entry.name} · ${what}${meta.file ? ' · ' + meta.file : ''} · ${whenText(entry.created)}`;
+}
+
+async function loadTestData() {
+  let listing;
+  try {
+    listing = await api('/api/library', { kind: 'dataset', limit: 300 });
+  } catch (error) {
+    return;
+  }
+  const entries = listing.entries || [];
+  const isReal = (e) => (e.meta || {}).origin === 'real';
+  const ours = (e) => sim.schemaId && (e.lineage || []).includes(sim.schemaId);
+  const rank = (e) => (ours(e) ? 0 : 2) + (isReal(e) ? 0 : 1);
+  entries.sort((a, b) => rank(a) - rank(b));
+
+  const group = (label, list) => (list.length
+    ? `<optgroup label="${escapeAttr(label)}">${list.map((e) => `<option value="${escapeAttr(e.id)}">`
+      + `${escapeHtml(datasetLabel(e))}</option>`).join('')}</optgroup>` : '');
+  $('testData').innerHTML = group('This form', entries.filter(ours))
+    + group(sim.schemaId ? 'Other forms' : 'Datasets', entries.filter((e) => !ours(e)));
+
+  const wanted = sim.pendingTest
+    || (state.origin && state.ids.dataset)
+    || (entries.find((e) => isReal(e) && ours(e)) || entries.find(isReal) || {}).id;
+  if (wanted && entries.some((e) => e.id === wanted)) $('testData').value = wanted;
+
+  const anyReal = entries.some(isReal);
+  $('testNone').hidden = anyReal;
+  $('testRun').disabled = !entries.length;
+  if (sim.pendingTest) {
+    sim.pendingTest = null;
+    runTest();
+  }
+}
+
+function testOn(datasetId) {
+  sim.pendingTest = datasetId;
+  // The panel may already be showing this model, in which case nothing will
+  // reload the list by itself.
+  if (sim.modelId === (state.model && state.model.model_id) && sim.layout) loadTestData();
+}
+
+$('testUpload').addEventListener('click', () => {
+  setDataMode('real');
+  showPanel('generate');
+});
+
+async function runTest() {
+  const datasetId = $('testData').value;
+  if (!datasetId || !state.model) return;
+  await withBusy($('testRun'), 'Testing...', async () => {
+    const result = await api('/api/evaluate', {
+      model_id: state.model.model_id,
+      dataset_id: datasetId,
+      seeds: sim.seeds,
+      threshold: simThreshold(),
+    });
+    const evaluation = result.evaluation;
+    const sweep = result.sweep;
+    $('testOut').hidden = false;
+
+    const warnings = [];
+    if (result.learned_from) {
+      warnings.push('This model learned from these records, so this measures '
+        + 'what it remembers rather than how it does on forms it has not seen.');
+    }
+    if (result.fields_present < result.fields_total) {
+      warnings.push(`Only ${result.fields_present} of the ${result.fields_total} `
+        + 'fields this model answers for have any values in these records; the '
+        + 'rest cannot be scored.');
+    }
+    if (result.total > result.records) {
+      warnings.push(`Scored on the first ${result.records} of ${result.total} records.`);
+    }
+    $('testWarn').hidden = !warnings.length;
+    $('testWarn').textContent = warnings.join(' ');
+
+    $('testStats').innerHTML = `
+      <div class="stat"><b>${Math.round(evaluation.coverage * 100)}%</b><span>of the rest filled</span></div>
+      <div class="stat ${evaluation.accepted_accuracy >= 0.9 ? 'good' : 'warn'}">
+        <b>${Math.round(evaluation.accepted_accuracy * 100)}%</b><span>right when it fills</span></div>
+      <div class="stat ${sweep.share_saved >= 0.3 ? 'good' : 'warn'}">
+        <b>${Math.round(sweep.share_saved * 100)}%</b><span>less work</span></div>
+      <div class="stat"><b>${result.records}</b><span>records</span></div>`;
+    $('testLine').textContent = `Typing ${result.seeds.join(', ')}: ${evaluation.headline}.`;
+
+    // Where real records and the model disagree most: the fields to look at
+    // first, whether the fix is more data, a rule, or a higher bar.
+    const weak = evaluation.fields
+      .filter((f) => f.attempted >= 3 && f.accuracy < 0.9)
+      .sort((a, b) => a.accuracy - b.accuracy)
+      .slice(0, 5);
+    $('testWeak').innerHTML = weak.length
+      ? '<li class="muted">Weakest fields</li>' + weak.map((f) => `<li>
+          <span class="name">${escapeHtml(f.name)}</span>
+          <span class="muted">${f.correct} of ${f.attempted} right</span></li>`).join('')
+      : '';
+  });
+}
+
+$('testRun').addEventListener('click', runTest);
 
 // -- which model is doing the filling ------------------------------------
 //
@@ -1739,6 +2172,8 @@ async function openFromLibrary(id) {
     state.columns = Object.keys(result.records[0] || {});
     state.problems = [];
     state.ids.dataset = result.entry.id;
+    const meta = result.entry.meta || {};
+    state.origin = meta.origin === 'real' ? { file: meta.file || '', headline: '' } : null;
     renderData();
   } else if (result.dataset_id) {
     state.ids.dataset = result.dataset_id;
@@ -1768,9 +2203,14 @@ async function openFromLibrary(id) {
     await refillPreview();
     showPanel('train');
   } else if (kind === 'dataset') {
-    // A different dataset makes any model on screen someone else's.
-    state.model = null;
-    state.ids.model = null;
+    // A different dataset makes any model on screen someone else's - unless
+    // it is real records, which are as often opened to test that model as
+    // to train another.
+    if (!state.origin) {
+      state.model = null;
+      state.ids.model = null;
+    }
+    setDataMode('generate');
     showPanel('generate');
   } else {
     showPanel('schema');
@@ -2816,7 +3256,8 @@ function renderFlow() {
     parts.push(trailChip('schema', 'Form', formName(), panel === 'schema'));
   }
   if (state.records.length) {
-    parts.push(trailChip('generate', 'Records', String(state.records.length), panel === 'generate'));
+    parts.push(trailChip('generate', state.origin ? 'Real records' : 'Records',
+                         String(state.records.length), panel === 'generate'));
   }
   if (state.model) {
     const algo = (state.algorithms.find((a) => a.name === state.model.algorithm) || {}).label
@@ -2826,14 +3267,22 @@ function renderFlow() {
   trail.hidden = !parts.length || !STAGE_PANELS.includes(panel);
   trail.innerHTML = parts.join('<span class="trail-sep" aria-hidden="true">›</span>');
 
-  // Generate: the records are here, so is the way to train on them.
+  // Data: the records are here, so is the way to train on them - and, when
+  // they are real and a model is already loaded, the way to test it on them.
   const records = state.records.length;
+  const kind = state.origin ? 'real records' : 'records';
+  const testable = state.origin && state.model && state.ids.dataset;
   setNext('nextGenerate', records ? `
     <div class="next-copy"><span class="next-kicker">Next step</span>
-      <strong>Train a model on these ${records} records</strong>
-      <span class="muted">It learns ${escapeHtml(formName())} from exactly what is in the table below.</span></div>
+      <strong>${testable ? `Test your model on these ${records} real records, or train a new one`
+                         : `Train a model on these ${records} ${kind}`}</strong>
+      <span class="muted">${state.origin
+        ? 'Saved in the Library as real records, under ' + escapeHtml(formName()) + '.'
+        : 'It learns ' + escapeHtml(formName()) + ' from exactly what is in the table below.'}</span></div>
     <div class="next-actions">
       ${nextButton('schema', '← Schema', false)}
+      ${testable ? nextButton('simulate', 'Test the current model', false,
+                              ` data-test="${escapeAttr(state.ids.dataset)}"`) : ''}
       ${nextButton('train', 'Train now', false, ' data-start="train"')}
       ${nextButton('train', 'Go to Train →', true)}
     </div>` : '');
@@ -2854,7 +3303,7 @@ function renderFlow() {
     train = `
     <div class="next-copy"><span class="next-kicker">Before you train</span>
       <strong>There are no records to learn from yet</strong>
-      <span class="muted">${state.schema ? 'Generate sample records for ' + escapeHtml(formName()) + ' first.' : 'Read a form, then generate records for it.'}</span></div>
+      <span class="muted">${state.schema ? 'Generate sample records for ' + escapeHtml(formName()) + ', or upload real ones.' : 'Read a form, then generate records for it or upload real ones.'}</span></div>
     <div class="next-actions">
       ${state.schema ? nextButton('generate', 'Generate records →', true) : nextButton('source', 'Read a form →', true)}
     </div>`;
@@ -2899,6 +3348,7 @@ document.addEventListener('click', (event) => {
   showPanel(target);
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (go.dataset.start === 'train') $('trainRun').click();
+  if (go.dataset.test) testOn(go.dataset.test);
 });
 
 // ------------------------------------------------------------- the help panel

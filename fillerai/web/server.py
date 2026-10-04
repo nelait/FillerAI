@@ -47,7 +47,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from .. import __version__, extract_html, extract_spec
+from .. import __version__, extract_html, extract_spec, realdata
 from ..auth import (
     COOKIE, ROLES, Auth, AuthError, Session, User, hash_password,
     suggest_password, verify_password,
@@ -63,7 +63,7 @@ from ..simulate.form import layout as form_layout
 from ..simulate.run import run as simulate, sweep as simulate_many
 from ..store import KINDS, Store, StoreError
 from ..tokens import MAX_NAME as MAX_TOKEN_NAME, TokenError, Tokens
-from ..train import algos, script as script_writer
+from ..train import algos, features, script as script_writer
 from ..train.evaluate import evaluate, suggest_seed_fields
 from ..train.model import ACCEPT_ABOVE, AutofillModel, TrainOptions, split_records, train
 from ..train.trace import Trace
@@ -86,6 +86,8 @@ CLIENT_DIR = STATIC_DIR / "client"
 # rather than exhaust the process.
 MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_RECORDS = 5000
+# Rows of a cleaning preview sent back before the records are saved.
+PREVIEW_ROWS = 100
 
 # Trained models are held here rather than shipped to the browser and posted
 # back on every keystroke: a model over a dense form is a few hundred
@@ -477,6 +479,204 @@ def _parent_schema(payload: dict[str, Any], schema: FormSchema) -> str:
     if given and library().has(str(given)):
         return str(given)
     return library().save_schema(schema).id
+
+
+# ----------------------------------------------------------------------
+# real records
+# ----------------------------------------------------------------------
+#
+# The browser keeps the uploaded file and sends it with each request, so
+# nothing about an upload is held here between calls: reading, previewing a
+# clean and saving the result are three questions about the same text. The
+# file is the user's own data and lives in this process only for as long as
+# one request takes; what is kept is the cleaned dataset, and only when they
+# say save.
+
+
+def _table_from(payload: dict[str, Any]) -> realdata.Table:
+    text = _require(payload, "text")
+    if not isinstance(text, str):
+        raise ApiError("text must be the file's contents")
+    try:
+        return realdata.read_table(text, str(payload.get("filename") or ""))
+    except realdata.DataError as error:
+        raise ApiError(str(error)) from error
+
+
+def _fixes_from(payload: dict[str, Any]) -> frozenset[str]:
+    given = payload.get("fixes")
+    if given is None:
+        return realdata.DEFAULT_FIXES
+    if not isinstance(given, list):
+        raise ApiError("fixes must be a list of fix names")
+    unknown = [str(g) for g in given if str(g) not in realdata.FIX_NAMES]
+    if unknown:
+        raise ApiError(f"there is no fix called {unknown[0]!r}")
+    return frozenset(str(g) for g in given)
+
+
+def api_data_read(payload: dict[str, Any]) -> dict[str, Any]:
+    """What is in an uploaded file, and which field each column looks like."""
+    table = _table_from(payload)
+    out: dict[str, Any] = {
+        "format": table.format,
+        "columns": table.columns,
+        "rows": len(table.rows),
+        "preview": table.preview(),
+        "fixes": [{"key": key, "label": label, "on": key in realdata.DEFAULT_FIXES}
+                  for key, label in realdata.FIXES],
+    }
+    if payload.get("schema"):
+        schema = _schema_from(payload)
+        out["mapping"] = realdata.suggest_mapping(schema, table.columns)
+        out["fields"] = [{"name": f.name, "label": f.label or f.name}
+                         for f in realdata.fillable(schema)]
+    return out
+
+
+def api_data_clean(payload: dict[str, Any]) -> dict[str, Any]:
+    """Clean an uploaded file against the form, and keep it if asked.
+
+    Without ``save`` this is the preview: the report and the first rows, so
+    the fixes can be switched on and off and looked at before anything is
+    stored. With it, the records go into the library as a dataset under the
+    form's schema - marked as real, with the file they came from and what
+    cleaning did - and come back whole, ready for Train or for testing a
+    model. The cap is the one Train has, said out loud when it bites.
+    """
+    schema = _schema_from(payload)
+    table = _table_from(payload)
+    mapping = payload.get("mapping")
+    if mapping is not None and not isinstance(mapping, dict):
+        raise ApiError("mapping must be an object of column names to field names")
+    try:
+        cleaned = realdata.clean(schema, table, mapping, _fixes_from(payload),
+                                 limit=MAX_RECORDS)
+    except realdata.DataError as error:
+        raise ApiError(str(error)) from error
+
+    report = cleaned.report()
+    save = bool(payload.get("save"))
+    out: dict[str, Any] = {
+        "report": report,
+        "columns": [f.name for f in realdata.fillable(schema)],
+        "count": cleaned.rows_out,
+        "records": cleaned.records if save else cleaned.records[:PREVIEW_ROWS],
+        "max_records": MAX_RECORDS,
+    }
+    if save:
+        if not cleaned.records:
+            raise ApiError("cleaning left no rows to keep")
+        parent = _parent_schema(payload, schema)
+        filename = str(payload.get("filename") or "upload")[:120]
+        fixed = sum(f["count"] for f in report["fixes"]
+                    if f["on"] and f["unit"] == "cells")
+        out["schema_id"] = parent
+        out["dataset_id"] = library().save_dataset(
+            cleaned.records, parent=parent,
+            name=f"{schema.name or 'form'}: {cleaned.rows_out} real records",
+            meta={"origin": "real", "file": filename,
+                  "rows": f"{cleaned.rows_out} of {report['rows_in']}",
+                  "fixed": fixed, "rejected": sum(p["count"] for p in report["problems"])},
+        ).id
+    return out
+
+
+def api_data_schema(payload: dict[str, Any]) -> dict[str, Any]:
+    """A form read off a file's columns, for records that arrive without one.
+
+    What comes back is what ``/api/extract`` returns, because it is the same
+    thing: a field spec, read and inferred like any other, kept in the
+    library as a spec source with its schema under it. The mapping that goes
+    with it is trivially every column to its own field.
+    """
+    table = _table_from(payload)
+    name = str(payload.get("name") or "form")
+    spec = realdata.spec_from_table(table, name)
+    schema = infer(spec_loader.load(spec, source={"kind": "spec", "from": "data"}))
+    content = json.dumps(spec, indent=2, ensure_ascii=False)
+    out = {
+        "schema": schema.to_dict(),
+        "summary": _summarise(schema),
+        "spec": content,
+        "mapping": realdata.suggest_mapping(schema, table.columns),
+    }
+    if payload.get("save", True):
+        source = library().save_source(content, kind="spec", name=name)
+        out["source_id"] = source.id
+        out["schema_id"] = library().save_schema(schema, parent=source.id).id
+    return out
+
+
+# Records a test scores. Every one is a full form filled twice over - once
+# to score the fields, once to cost the time - so this is where the wait is.
+MAX_TEST_RECORDS = 1000
+
+
+def api_evaluate(payload: dict[str, Any]) -> dict[str, Any]:
+    """Test a model on records it was not trained on - real ones, usually.
+
+    Two measurements of the same thing, because each answers a question the
+    other cannot. :func:`evaluate` says, field by field, how often the model
+    was right and whether its confidence meant anything; the sweep says what
+    that was worth in an agent's time. Both fill each record from its own
+    seed fields, which is the honest test: the model sees only what an agent
+    would have typed.
+
+    A test on the very records a model learned from is allowed and flagged,
+    because it measures memory rather than the form.
+    """
+    token = str(_require(payload, "model_id"))
+    model = _recall(token)
+    dataset_id = str(payload.get("dataset_id") or "")
+    if dataset_id:
+        if not library().has(dataset_id):
+            raise ApiError(f"there is nothing in the library called {dataset_id}",
+                           status=404)
+        try:
+            records = library().load_records(dataset_id)
+        except StoreError as error:
+            raise ApiError(str(error), status=404) from error
+    else:
+        records = _records_from(payload)
+    if not records:
+        raise ApiError("there are no records to test on")
+    total = len(records)
+    records = records[:MAX_TEST_RECORDS]
+
+    present = [name for name in model.targets()
+               if any(features.normalise(r.get(name)) for r in records)]
+    if not present:
+        raise ApiError("none of these records' fields are on this model's form - "
+                       "were they cleaned against another form?")
+
+    given = payload.get("seeds")
+    if isinstance(given, list) and given:
+        seeds = [str(s) for s in given if str(s) in model.profiles]
+    else:
+        seeds = suggest_seed_fields(model, _bounded_int(payload, "ask", 3, 1, 8))
+    threshold = _threshold_from(payload)
+
+    report = evaluate(model, records, seeds=seeds, threshold=threshold).to_dict()
+    swept = simulate_many(model, records, seeds, threshold=threshold).to_dict()
+
+    entry_id = _MODEL_ENTRIES.get(token)
+    learned_from = bool(dataset_id and entry_id and any(
+        e.id == dataset_id for e in library().lineage(entry_id)))
+    out: dict[str, Any] = {
+        "evaluation": report,
+        "sweep": swept,
+        "seeds": seeds,
+        "records": len(records),
+        "total": total,
+        "fields_present": len(present),
+        "fields_total": len(model.targets()),
+        "learned_from": learned_from,
+    }
+    if dataset_id:
+        entry = library().get(dataset_id)
+        out["dataset"] = entry.to_dict()
+    return out
 
 
 # ----------------------------------------------------------------------
@@ -2141,6 +2341,10 @@ ROUTES: dict[str, Route] = {
     "/api/reinfer": Route(api_reinfer),
     "/api/generate": Route(api_generate),
     "/api/export": Route(api_export),
+    "/api/data/read": Route(api_data_read),
+    "/api/data/clean": Route(api_data_clean),
+    "/api/data/schema": Route(api_data_schema),
+    "/api/evaluate": Route(api_evaluate),
     "/api/train": Route(api_train),
     "/api/train/start": Route(api_train_start),
     "/api/train/log": Route(api_train_log),

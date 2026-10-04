@@ -24,7 +24,9 @@ what each field is.
    **Choose file**.
 2. If you only have a list of fields, switch to **Field spec (JSON)** first.
    A schema you downloaded earlier works here too.
-3. No form to hand? Pick one of the **Examples** on the right.
+3. No form to hand? Pick one of the **Examples** on the right, or switch to
+   **Records (CSV)** and drop a file of past submissions: each column becomes
+   a field, and the records wait on the Data step to be cleaned.
 4. Press **Read the form**. You land on the Schema screen with every field
    it found.
 
@@ -64,16 +66,19 @@ can learn. This is where you confirm it.
   is what the model learns from. A form with good rules autofills far more.
 - **Download schema** saves the JSON contract every later stage uses.
 
-**Next:** Generate, to make sample records from this schema.
+**Next:** Data, to generate sample records from this schema or upload real
+ones.
 
 <!-- panel: generate -->
-## Generate: make sample records
+## Data: generate sample records, or upload real ones
 
-**What this screen is for.** Companies rarely share real form data, so
-AIrForms invents it. Every record is one coherent imaginary person whose
-values fit the form's constraints and its rules.
+**What this screen is for.** The records a model learns from. Companies
+rarely share real form data, so AIrForms can invent it: every generated
+record is one coherent imaginary person whose values fit the form's
+constraints and its rules. When real past submissions do arrive, upload them
+here instead, to train on them or to test a model with them.
 
-### How to
+### How to: generate
 
 1. Choose how many **Records** you want. A few hundred is a good start for
    training; twenty is enough to look at.
@@ -86,11 +91,27 @@ values fit the form's constraints and its rules.
 5. Press **Generate**. Every record is checked before you see it, and any
    problem is listed above the table.
 
+### How to: upload real records
+
+1. Switch to **Upload real records** and choose or drop a CSV, JSON or
+   NDJSON file.
+2. Check **Which field is each column?** Columns are matched by name and
+   label; change any guess, or pick *leave out*.
+3. Read **Cleaning**. Each fix says how many cells or rows it changed, with an
+   example. Untick any you do not want. *Empty values the form would still
+   reject* and *Drop rows missing a required field* throw information away,
+   so they are off until you tick them.
+4. Anything still wrong is listed under the fixes, usually a column mapped to
+   the wrong field.
+5. Press **Save cleaned records**. They go into the Library as real records
+   under this form.
+
 ### When it is done
 
-A bar appears under the controls with **Train a model on these records**. It
-takes the records straight to Train, so the model is trained on exactly what
-you just made. You can also export them as CSV, JSON or NDJSON.
+A bar appears with **Train a model on these records**. It takes the records
+straight to Train. With real records and a model already loaded, it also
+offers **Test the current model**, which scores that model on them on the
+Simulate step. You can export generated records as CSV, JSON or NDJSON.
 
 **Next:** Train, to learn the form from these records.
 
@@ -148,6 +169,9 @@ counts what the model saved.
   made from. Each name opens that entry in the Library.
 - The seconds are modelled from keystrokes and fixed assumptions, listed at
   the bottom. They are an estimate, not a stopwatch.
+- **Test on real records** scores the model on records that were really
+  submitted: pick a dataset, press **Test**. Upload real records on the Data
+  step first. It warns you if the model learned from those same records.
 
 **Next:** back to Train to try another engine, or Bots to put the model
 behind a chat.
@@ -162,7 +186,7 @@ script and bot template is kept, with what it was made from.
 
 1. Filter by kind with the buttons along the top.
 2. **Open** an entry to pick up where you left off. A dataset opens on
-   Generate, a model on Train, a template on Bots.
+   Data, a model on Train, a template on Bots.
 3. **Download** an entry to keep a copy, or **Delete** one you no longer
    need. Deleting a model takes its training script with it.
 
