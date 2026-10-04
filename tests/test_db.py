@@ -58,12 +58,6 @@ class TestConnecting(unittest.TestCase):
         self.addCleanup(db.close)
         self.assertIsInstance(db, SQLiteDatabase)
 
-    def test_postgres_is_refused_with_the_reason_rather_than_a_traceback(self):
-        with self.assertRaises(DatabaseError) as caught:
-            connect("postgresql://user@host/fillerai")
-        self.assertIn("driver", str(caught.exception))
-        self.assertIn("Database", str(caught.exception))
-
     def test_something_that_is_not_a_database_says_so(self):
         with self.assertRaises(DatabaseError) as caught:
             connect("redis://localhost")

@@ -67,6 +67,9 @@ server and what it prints, every environment variable, where the data is and
 how to back it up, upgrading, the sample application, and a troubleshooting
 table of the problems actually met so far.
 
+**[deploy-railway.md](deploy-railway.md)** — putting it on Railway: the
+Dockerfile, the volume that keeps the database, and the variables to set.
+
 **[security.md](security.md)** — what is protected and how, exactly what can
 leave the machine and under which switch, passwords, sessions, tokens and
 keys, the two HTTP surfaces, data at rest, and a checklist for exposing it

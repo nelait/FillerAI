@@ -82,8 +82,8 @@ in the database instead; see [serve](#serve) and [db import](#db-import).
 `--database URL` if given, else `$FILLERAI_DATABASE_URL`, else
 `sqlite://<library>/fillerai.db`, where `<library>` is resolved as above. A URL
 is `sqlite://<path>`, `sqlite://:memory:`, or a bare path. `postgresql://...`
-is recognised and refused with an explanation, because the standard library
-has no driver for it. The file and its tables are created on first use.
+works when the optional driver is installed (`pip install 'fillerai[postgres]'`)
+and is refused with that instruction when it is not. The file and its tables are created on first use.
 
 **Options on a command group.** For `bot`, `library`, `users`, `tokens` and
 `db`, the options `--library` and `--database` belong to the group, so they go

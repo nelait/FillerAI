@@ -651,7 +651,7 @@ is in [architecture.md §5](../architecture.md#5-storage--dbpy).
 |---|---|
 | URL variable | `FILLERAI_DATABASE_URL` |
 | Default | `sqlite://<library root>/fillerai.db`, the library root being `./.fillerai` unless given |
-| Accepted URLs | `sqlite://<path>`, `sqlite://:memory:`, or a bare filesystem path. `postgres://` and `postgresql://` are recognised and refused with the reason (no driver). |
+| Accepted URLs | `sqlite://<path>`, `sqlite://:memory:`, or a bare filesystem path. `postgres://` and `postgresql://` with the optional psycopg driver (`fillerai[postgres]`); without it, refused with how to install it. |
 | Connection pragmas | `foreign_keys = ON`, `busy_timeout = 10000`, `journal_mode = WAL` (files only), `synchronous = NORMAL` |
 
 Every column is `TEXT` or `INTEGER`. Times are ISO 8601 strings. Booleans are

@@ -196,6 +196,8 @@ class Database:
                 quoted = not quoted
             if char == "?" and not quoted:
                 out.append("%s")
+            elif char == "%":
+                out.append("%%")
             else:
                 out.append(char)
         return "".join(out)
@@ -217,6 +219,17 @@ class Database:
         if existing is not None:
             existing.close()
             self._local.connection = None
+
+    def release(self) -> None:
+        """This thread is done for now; called at the end of each request.
+
+        Nothing to do for SQLite, where a connection is a file handle. A
+        backend whose connections cost a round trip hands it back to a pool.
+        """
+
+    @property
+    def _in_transaction(self) -> bool:
+        return bool(getattr(self._local, "depth", 0))
 
     # -- running statements ------------------------------------------------
 
@@ -257,6 +270,7 @@ class Database:
         an entry and its payload, or a user and everything scoped to them.
         """
         connection = self.connection
+        self._local.depth = getattr(self._local, "depth", 0) + 1
         try:
             yield _Batch(self, connection)
         except Exception:
@@ -264,6 +278,8 @@ class Database:
             raise
         else:
             connection.commit()
+        finally:
+            self._local.depth -= 1
 
     # -- small stored values -----------------------------------------------
 
@@ -395,6 +411,130 @@ class SQLiteDatabase(Database):
 
 
 # ----------------------------------------------------------------------
+# Postgres, when the driver is installed
+# ----------------------------------------------------------------------
+
+
+class PostgresDatabase(Database):
+    """The same tables in Postgres, through psycopg 3.
+
+    The one exception to "no dependencies", and an optional one:
+    ``pip install 'fillerai[postgres]'``. Nothing imports the driver until a
+    ``postgresql://`` URL is actually opened, so a SQLite install never needs
+    it. Where it earns its place: a hosted platform's managed database, with
+    its backups, instead of a file on a volume.
+
+    Two things differ from SQLite and are handled here rather than above:
+
+    - **A read opens a transaction** in Postgres, and an idle one left open
+      holds its snapshot and its locks. So a query outside
+      :meth:`Database.transaction` ends its transaction straight away, and a
+      failed one rolls back, since Postgres refuses everything after an error
+      until it does.
+    - **A connection costs a round trip**, and the web server makes a thread
+      per request. So a finished request hands its connection back to a small
+      pool rather than dropping it.
+    """
+
+    paramstyle = "format"
+    POOL = 8
+
+    def __init__(self, url: str) -> None:
+        super().__init__(url)
+        self._pool: list[Any] = []
+        self._pool_lock = threading.Lock()
+        try:
+            import psycopg  # noqa: F401 - checked here so the error is ours
+        except ImportError:
+            raise DatabaseError(
+                "a postgresql:// database needs the psycopg driver, which "
+                "AIrForms does not install by default: "
+                "pip install 'fillerai[postgres]' (or 'psycopg[binary]')"
+            ) from None
+
+    def _connect(self) -> Any:
+        import psycopg
+
+        try:
+            return psycopg.connect(self.url, connect_timeout=10)
+        except psycopg.Error as error:
+            raise DatabaseError(f"could not reach {safe_url(self.url)}: {error}") from None
+
+    @property
+    def connection(self) -> Any:
+        existing = getattr(self._local, "connection", None)
+        if existing is not None and (existing.closed or existing.broken):
+            existing = None
+        if existing is None:
+            with self._pool_lock:
+                while self._pool and existing is None:
+                    candidate = self._pool.pop()
+                    if not (candidate.closed or candidate.broken):
+                        existing = candidate
+            if existing is None:
+                existing = self._connect()
+            self._local.connection = existing
+        return existing
+
+    def release(self) -> None:
+        existing = getattr(self._local, "connection", None)
+        if existing is None:
+            return
+        self._local.connection = None
+        if existing.closed or existing.broken:
+            return
+        try:
+            existing.rollback()
+        except Exception:  # noqa: BLE001 - a connection that cannot reset is dropped
+            existing.close()
+            return
+        with self._pool_lock:
+            if len(self._pool) < self.POOL:
+                self._pool.append(existing)
+                return
+        existing.close()
+
+    def query(self, sql: str, params: Sequence[Any] = ()) -> list[dict[str, Any]]:
+        try:
+            rows = super().query(sql, params)
+        except DatabaseError:
+            if not self._in_transaction:
+                self.connection.rollback()
+            raise
+        if not self._in_transaction:
+            self.connection.commit()
+        return rows
+
+    def tables(self) -> list[str]:
+        return [row["table_name"] for row in self.query(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = current_schema() ORDER BY table_name")]
+
+    def describe(self) -> dict[str, Any]:
+        described = super().describe()
+        described["url"] = safe_url(self.url)
+        return described
+
+    def dispose(self) -> None:
+        """Close this thread's connection and every pooled one."""
+        self.close()
+        with self._pool_lock:
+            pooled, self._pool = self._pool, []
+        for connection in pooled:
+            connection.close()
+
+
+def safe_url(url: str) -> str:
+    """The URL with any password taken out, for logs and screens."""
+    scheme, sep, rest = url.partition("://")
+    if not sep or "@" not in rest:
+        return url
+    credentials, _, host = rest.rpartition("@")
+    user = credentials.split(":", 1)[0]
+    return f"{scheme}://{user}:***@{host}" if ":" in credentials else url
+
+
+# ----------------------------------------------------------------------
 # choosing one
 # ----------------------------------------------------------------------
 
@@ -412,10 +552,9 @@ def connect(url: str | None = None, *, library_root: str | Path | None = None,
             migrate: bool = True) -> Database:
     """Open the database a URL names, creating and updating it as needed.
 
-    Accepted: ``sqlite://<path>``, ``sqlite://:memory:``, or a bare filesystem
-    path. ``postgresql://...`` is recognised and refused with the reason,
-    because "no driver" read as a stack trace helps nobody - the shape for it
-    is here, the driver is the part that is not in the standard library.
+    Accepted: ``sqlite://<path>``, ``sqlite://:memory:``, a bare filesystem
+    path, or ``postgresql://...`` when the optional psycopg driver is
+    installed (without it, an error that says how to install it).
     """
     url = url or default_url(library_root)
     scheme, _, rest = url.partition("://")
@@ -425,12 +564,7 @@ def connect(url: str | None = None, *, library_root: str | Path | None = None,
     if scheme == "sqlite":
         database = SQLiteDatabase(rest)
     elif scheme in ("postgres", "postgresql"):
-        raise DatabaseError(
-            "Postgres needs a driver, and AIrForms has no dependencies. "
-            "The storage interface is ready for it: subclass Database with "
-            "paramstyle 'pyformat' and a _connect that returns a psycopg "
-            "connection, and nothing above fillerai.db has to change."
-        )
+        database = PostgresDatabase(url)
     else:
         raise DatabaseError(
             f"{scheme!r} is not a database AIrForms knows; "

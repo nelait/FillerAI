@@ -378,7 +378,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="where to listen (default: %(default)s). Another address "
                              "works, but browsers only allow the microphone on "
                              "localhost or https")
-    parser.add_argument("--port", type=int, default=8100)
+    raw_port = os.environ.get("PORT", "").strip()
+    parser.add_argument("--port", type=int,
+                        default=int(raw_port) if raw_port.isdigit() else 8100,
+                        help="default: $PORT if set, as hosting platforms say, else 8100")
     parser.add_argument("--server-speech", action="store_true",
                         help="record the microphone in the page and have AIrForms "
                              "transcribe it (AIrForms must run with --bot-transcribe), "

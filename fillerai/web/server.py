@@ -52,7 +52,7 @@ from ..auth import (
     COOKIE, ROLES, Auth, AuthError, Session, User, hash_password,
     suggest_password, verify_password,
 )
-from ..db import Database, connect as connect_database
+from ..db import Database, connect as connect_database, safe_url
 from ..dbstore import DatabaseStore, import_store
 from ..extract import html_form, spec as spec_loader
 from ..generate.dataset import Dataset, Options, coherence_report, generate, validate
@@ -2183,6 +2183,21 @@ class Handler(BaseHTTPRequestHandler):
     server_version = f"AIrForms/{__version__}"
     # Quiet by default; the console is for the user's own output.
     quiet = True
+    # Set by ``serve --trust-proxy``: a platform such as Railway puts its own
+    # proxy in front, so the connection always comes from that proxy and the
+    # visitor's address and scheme are only in the headers it adds. Off by
+    # default, because without such a proxy those headers are whatever the
+    # visitor chose to send.
+    trust_proxy = False
+
+    def handle_one_request(self) -> None:
+        try:
+            super().handle_one_request()
+        finally:
+            # A request's thread is about to end; a pooled backend wants its
+            # connection back rather than one dropped per request.
+            if DATABASE is not None:
+                DATABASE.release()
 
     def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
         if not self.quiet:
@@ -2221,13 +2236,17 @@ class Handler(BaseHTTPRequestHandler):
         would simply never be stored.
         """
         headers = []
+        # Behind a trusted proxy that took the request over https, Secure is
+        # both possible and right: the cookie then never travels in the clear.
+        secure = "; Secure" if self._forwarded_https() else ""
         value = context().cookie
         if value == "":
             headers.append(("Set-Cookie",
-                            f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"))
+                            f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; "
+                            f"SameSite=Strict{secure}"))
         elif value is not None:
             headers.append(("Set-Cookie",
-                            f"{COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict"))
+                            f"{COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict{secure}"))
         docs = context().docs_cookie
         if docs:
             # Lax rather than Strict: following a link to the docs from
@@ -2235,8 +2254,31 @@ class Handler(BaseHTTPRequestHandler):
             # /docs changes anything, so there is nothing for Lax to expose.
             headers.append(("Set-Cookie",
                             f"{DOCS_COOKIE}={docs}; Path=/docs; "
-                            f"Max-Age={DOCS_COOKIE_DAYS * 86400}; HttpOnly; SameSite=Lax"))
+                            f"Max-Age={DOCS_COOKIE_DAYS * 86400}; HttpOnly; "
+                            f"SameSite=Lax{secure}"))
         return headers
+
+    def _forwarded_https(self) -> bool:
+        if not self.trust_proxy:
+            return False
+        proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0]
+        return proto.strip().lower() == "https"
+
+    def _visitor_address(self) -> str:
+        """Who is asking: the connection, or what a trusted proxy says.
+
+        X-Real-IP first, then the last X-Forwarded-For entry - the one the
+        proxy itself appended, not the ones the visitor may have sent ahead.
+        """
+        if self.trust_proxy:
+            real = (self.headers.get("X-Real-IP") or "").strip()
+            if real:
+                return real
+            chain = [a.strip() for a in
+                     (self.headers.get("X-Forwarded-For") or "").split(",") if a.strip()]
+            if chain:
+                return chain[-1]
+        return self.client_address[0] if self.client_address else ""
 
     def _session_cookie(self, name: str = COOKIE) -> str:
         raw = self.headers.get("Cookie") or ""
@@ -2253,7 +2295,7 @@ class Handler(BaseHTTPRequestHandler):
     def _sign_in(self) -> Context:
         """Work out who is asking, before deciding whether they may."""
         holder = Context()
-        _ADDRESS.set(self.client_address[0] if self.client_address else "")
+        _ADDRESS.set(self._visitor_address())
         if AUTH is not None:
             found = AUTH.resolve(self._session_cookie())
             if found is not None:
@@ -2567,7 +2609,13 @@ def _first_run(auth: Auth) -> None:
     """
     if auth.count():
         return
-    user, generated = auth.bootstrap()
+    try:
+        user, generated = auth.bootstrap()
+    except AuthError as exc:
+        # Most likely $FILLERAI_ADMIN_PASSWORD is too short. Say which, rather
+        # than a traceback in a hosting platform's log.
+        raise SystemExit(f"Could not create the first administrator: {exc}.\n"
+                         f"Check $FILLERAI_ADMIN_PASSWORD.") from None
     print("")
     print("  No accounts yet, so one administrator was created:")
     print(f"    username: {user.username}")
@@ -2688,10 +2736,12 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
           database: str | None = None, accounts: bool = True,
           cors_origins: list[str] | None = None, bot_llm: bool | None = None,
           bot_transcribe: bool | None = None, sample_app: bool = True,
-          sample_port: int = 8100, sample_user: str | None = None) -> int:
+          sample_port: int = 8100, sample_user: str | None = None,
+          trust_proxy: bool = False) -> int:
     global LIBRARY, CORS_ALLOW, SAMPLE_APP_PORT
 
     Handler.quiet = not verbose
+    Handler.trust_proxy = trust_proxy
     use_bot_llm(_flag(bot_llm, BOT_LLM_VARIABLE))
     use_bot_transcribe(_flag(bot_transcribe, BOT_TRANSCRIBE_VARIABLE))
     if cors_origins is not None:
@@ -2728,8 +2778,17 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
             SAMPLE_APP_PORT = sample_httpd.server_address[1]
 
     print(f"AIrForms on {url}  (app: {url}app, docs: {url}docs)")
+    public = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+    if public:
+        print(f"  public address: https://{public}/")
+    on_disk = DATABASE is None or DATABASE.url.startswith("sqlite://")
+    if on_disk and os.environ.get("RAILWAY_ENVIRONMENT") and \
+            not os.environ.get("RAILWAY_VOLUME_MOUNT_PATH"):
+        print("  WARNING: no Railway volume is attached, so accounts and the "
+              "library are lost at every deploy. Attach one at "
+              f"{LIBRARY.root}.")
     if DATABASE is not None:
-        print(f"  database: {DATABASE.url}")
+        print(f"  database: {safe_url(DATABASE.url)}")
     else:
         print(f"  library: {LIBRARY.root}")
     if AUTH is None:
