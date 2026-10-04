@@ -183,6 +183,14 @@ user's templates and submit to the demo customer's record, from the chat or
 by opening any form from its menu. On a shared host
 start the server with `--no-sample-app`, or keep it on loopback.
 
+The same demo is also passed through at `/sample/` on AIrForms' own port.
+There it **does** need an AIrForms sign-in (a GET is sent to `/login`, any
+other request gets a 401), unless `--sample-public` /
+`FILLERAI_SAMPLE_PUBLIC=1` opens it on purpose. Its POSTs need no CSRF token:
+the session cookie is `SameSite=Strict`, so another site's request arrives
+without it and is refused. On a host that exposes only one port (Railway),
+`/sample/` is the only way in.
+
 ## 10. Before exposing it beyond localhost
 
 AIrForms is built as a local working tool ([assumptions.md](assumptions.md)

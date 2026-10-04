@@ -208,7 +208,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
                  bot_llm=True if args.bot_llm else None,
                  bot_transcribe=True if args.bot_transcribe else None,
                  sample_app=not args.no_sample_app, sample_port=args.sample_port,
-                 sample_user=args.sample_user, trust_proxy=args.trust_proxy)
+                 sample_user=args.sample_user, trust_proxy=args.trust_proxy,
+                 sample_public=args.sample_public)
 
 
 def _env_port() -> int:
@@ -1227,6 +1228,10 @@ def build_parser() -> argparse.ArgumentParser:
                             "that normally runs next to the UI")
     serve.add_argument("--sample-port", type=int, default=8100,
                        help="the sample application's port (default: %(default)s)")
+    serve.add_argument("--sample-public", action="store_true", default=None,
+                       help="let visitors who are not signed in use the sample "
+                            "application at /sample/ (or $FILLERAI_SAMPLE_PUBLIC=1). "
+                            "Off by default: its chat uses an administrator's token")
     serve.add_argument("--sample-user", metavar="USERNAME",
                        help="whose bot templates the sample application shows "
                             "(default: the first administrator)")

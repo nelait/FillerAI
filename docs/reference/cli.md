@@ -744,6 +744,7 @@ python -m fillerai serve [-p PORT] [--host HOST] [--open] [-v] [--library PATH]
 | `--no-sample-app` | off | Do not start the sample application (Northwind Mutual). |
 | `--sample-port` | `8100` | The sample application's port. |
 | `--sample-user USERNAME` | first active administrator | Whose bot templates the sample application shows. |
+| `--sample-public` | off (`$FILLERAI_SAMPLE_PUBLIC`) | Let visitors who are not signed in use the sample application at `/sample/`. |
 
 **Environment.** `FILLERAI_HOME`, `FILLERAI_DATABASE_URL`,
 `FILLERAI_ADMIN_PASSWORD`, `FILLERAI_BOT_LLM`, `FILLERAI_BOT_TRANSCRIBE`, and

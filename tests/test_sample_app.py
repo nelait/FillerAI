@@ -258,12 +258,76 @@ class TestSampleApp(RestCase):
                 if token.name == server_module.SAMPLE_APP_TOKEN:
                     Tokens(server_module.DATABASE).forget(token.id)
 
+    def test_it_is_also_reached_under_sample_on_the_same_port(self):
+        """For a host that exposes one port: /sample/ passes through to it."""
+        import http.cookiejar
+        from fillerai.store import Store
+
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs):
+                return None
+
+        was = server_module.LIBRARY, server_module.SAMPLE_APP_PORT, server_module.SAMPLE_PUBLIC
+        server_module.LIBRARY = Store(self.dir / "library")
+        port = int(self.base.rsplit(":", 1)[1])
+        httpd, line = server_module.start_sample_app("127.0.0.1", port, port=0)
+        self.assertIsNotNone(httpd, line)
+        try:
+            server_module.SAMPLE_APP_PORT = httpd.server_address[1]
+            server_module.SAMPLE_PUBLIC = False
+
+            # Signed out, it sends people to sign in first.
+            plain = urllib.request.build_opener(NoRedirect())
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                plain.open(self.base + "/sample/")
+            self.assertEqual((caught.exception.code, caught.exception.headers["Location"]),
+                             (302, "/login"))
+
+            jar = http.cookiejar.CookieJar()
+            browser = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+            browser.open(urllib.request.Request(
+                self.base + "/api/auth/login",
+                data=json.dumps({"username": "krishna", "password": self.password}).encode(),
+                headers={"Content-Type": "application/json"}))
+
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                browser.open(self.base + "/sample")
+            self.assertEqual(caught.exception.headers["Location"], "/sample/")
+            with browser.open(self.base + "/sample/") as response:
+                page = response.read().decode()
+            # Relative links, so they resolve under /sample/ as well as at /.
+            self.assertIn('src="app.js"', page)
+            self.assertNotIn('src="/app.js"', page)
+            with browser.open(self.base + "/sample/api/me") as response:
+                me = json.loads(response.read())
+            self.assertEqual(me["fillerai_page"], "/app")
+            with browser.open(self.base + "/sample/fillerai.js") as response:
+                self.assertIn("javascript", response.headers["Content-Type"])
+            request = urllib.request.Request(
+                self.base + "/sample/api/chat",
+                data=json.dumps({"input": {"type": "text", "text":
+                                 "please change my city to Irvine"}}).encode(),
+                headers={"Content-Type": "application/json"})
+            with browser.open(request) as response:
+                self.assertEqual(json.loads(response.read())["intent"]["template"],
+                                 "address_change")
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            (server_module.LIBRARY, server_module.SAMPLE_APP_PORT,
+             server_module.SAMPLE_PUBLIC) = was
+            for token in Tokens(server_module.DATABASE).list(self.user.id):
+                if token.name == server_module.SAMPLE_APP_TOKEN:
+                    Tokens(server_module.DATABASE).forget(token.id)
+
     def test_the_ui_links_to_it_when_it_is_running(self):
         was = server_module.SAMPLE_APP_PORT, server_module.AUTH
         try:
             # As the single-user tool, where meta answers in full signed out.
             server_module.SAMPLE_APP_PORT, server_module.AUTH = 8100, None
             self.assertEqual(server_module.api_meta({})["sample_app_port"], 8100)
+            self.assertEqual(server_module.api_meta({})["sample_app_path"], "/sample/")
         finally:
             server_module.SAMPLE_APP_PORT, server_module.AUTH = was
         page = (ROOT / "fillerai/web/static/index.html").read_text(encoding="utf-8")

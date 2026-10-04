@@ -25,6 +25,7 @@ COPY README.md ./
 # instead and no volume is needed. (No VOLUME line: Railway refuses one.)
 
 # $PORT is read by `serve` itself. 0.0.0.0 so the platform's proxy can reach
-# it; accounts stay on (--no-auth is refused off loopback). The sample app is
-# off: it needs a second port and Railway gives a service one.
-CMD ["python", "-m", "fillerai", "serve", "--host", "0.0.0.0", "--trust-proxy", "--no-sample-app"]
+# it; accounts stay on (--no-auth is refused off loopback). The sample app
+# runs inside and is reached at /sample/ on the same address, signed in;
+# FILLERAI_SAMPLE_PUBLIC=1 opens it to anyone.
+CMD ["python", "-m", "fillerai", "serve", "--host", "0.0.0.0", "--trust-proxy"]

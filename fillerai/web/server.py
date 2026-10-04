@@ -140,6 +140,13 @@ BOT_TRANSCRIBE = False
 #: The port the sample application listens on when ``serve`` started it,
 #: for the UI to link to; ``None`` when it isn't running.
 SAMPLE_APP_PORT: int | None = None
+#: The sample application is also served on this server, under this path,
+#: so a host that exposes one port (Railway and the like) can still demo it.
+SAMPLE_PATH = "/sample"
+#: Whether /sample/ is open to visitors who are not signed in. Off by
+#: default: the sample app talks to the bot with an administrator's token.
+SAMPLE_PUBLIC = False
+SAMPLE_PUBLIC_VARIABLE = "FILLERAI_SAMPLE_PUBLIC"
 #: What the sample application's token is called, so a restart replaces it.
 SAMPLE_APP_TOKEN = "Sample application"
 BOT_TRANSCRIBE_VARIABLE = "FILLERAI_BOT_TRANSCRIBE"
@@ -309,6 +316,7 @@ def api_meta(_: dict[str, Any]) -> dict[str, Any]:
         "bot_llm": BOT_LLM,
         "bot_transcribe": BOT_TRANSCRIBE,
         "sample_app_port": SAMPLE_APP_PORT,
+        "sample_app_path": f"{SAMPLE_PATH}/" if SAMPLE_APP_PORT else None,
     })
     return base
 
@@ -2455,8 +2463,57 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- verbs ----------------------------------------------------------
 
+    def _sample(self, path: str) -> None:
+        """Pass a /sample/ request through to the sample application.
+
+        It runs in this process on its own port; this is what lets it be
+        reached on the one port a hosting platform exposes. Signed-in people
+        only, unless opened up: its chat speaks with an administrator's token.
+        """
+        if SAMPLE_APP_PORT is None:
+            self._send(404, b"the sample application is not running here",
+                       "text/plain; charset=utf-8")
+            return
+        holder = self._sign_in()
+        if AUTH is not None and holder.user is None and not SAMPLE_PUBLIC:
+            if self.command == "GET":
+                self._redirect("/login")
+            else:
+                self._send_json(401, {"error": "sign in to AIrForms first"})
+            return
+        if path == SAMPLE_PATH:
+            # Its pages use relative links, which need the trailing slash.
+            self._redirect(f"{SAMPLE_PATH}/")
+            return
+        import http.client
+
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length > 0 else None
+        target = self.path[len(SAMPLE_PATH):] or "/"
+        headers = {"X-Forwarded-Prefix": SAMPLE_PATH}
+        for name in ("Content-Type", "Accept"):
+            if self.headers.get(name):
+                headers[name] = self.headers[name]
+        connection = http.client.HTTPConnection("127.0.0.1", SAMPLE_APP_PORT, timeout=120)
+        try:
+            method = "GET" if self.command == "HEAD" else self.command
+            connection.request(method, target, body=body, headers=headers)
+            response = connection.getresponse()
+            payload = response.read()
+            kind = response.getheader("Content-Type") or "application/octet-stream"
+            extra = [("Location", f"{SAMPLE_PATH}{response.getheader('Location')}")] \
+                if (response.getheader("Location") or "").startswith("/") else []
+            self._send(response.status, payload, kind, extra)
+        except OSError as error:
+            self._send_json(502, {"error": f"the sample application did not answer: {error}"})
+        finally:
+            connection.close()
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        if path == SAMPLE_PATH or path.startswith(f"{SAMPLE_PATH}/"):
+            self._sample(path)
+            return
         # The integration API first, and without signing anybody in: it is a
         # different surface with a different credential, and letting a cookie
         # reach it would undo the reason it has one.
@@ -2513,6 +2570,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        if path.startswith(f"{SAMPLE_PATH}/"):
+            self._sample(path)
+            return
         if path == "/v1" or path.startswith(rest.PREFIX):
             self._rest("POST")
             return
@@ -2737,11 +2797,12 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
           cors_origins: list[str] | None = None, bot_llm: bool | None = None,
           bot_transcribe: bool | None = None, sample_app: bool = True,
           sample_port: int = 8100, sample_user: str | None = None,
-          trust_proxy: bool = False) -> int:
-    global LIBRARY, CORS_ALLOW, SAMPLE_APP_PORT
+          trust_proxy: bool = False, sample_public: bool | None = None) -> int:
+    global LIBRARY, CORS_ALLOW, SAMPLE_APP_PORT, SAMPLE_PUBLIC
 
     Handler.quiet = not verbose
     Handler.trust_proxy = trust_proxy
+    SAMPLE_PUBLIC = _flag(sample_public, SAMPLE_PUBLIC_VARIABLE)
     use_bot_llm(_flag(bot_llm, BOT_LLM_VARIABLE))
     use_bot_transcribe(_flag(bot_transcribe, BOT_TRANSCRIBE_VARIABLE))
     if cors_origins is not None:
@@ -2809,6 +2870,9 @@ def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False,
         print(f"  microphone: recordings are transcribed with OpenAI ({have})")
     if sample_line:
         print(f"  {sample_line}")
+    if SAMPLE_APP_PORT:
+        print(f"  sample application here too: {url}sample/  "
+              f"({'open to anyone' if SAMPLE_PUBLIC or AUTH is None else 'for signed-in people'})")
     print("  press Ctrl-C to stop")
 
     if open_browser:
