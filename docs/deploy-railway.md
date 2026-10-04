@@ -4,7 +4,7 @@ The repository deploys to [Railway](https://railway.com) as it is. Railway
 finds the `Dockerfile` (and `railway.json`), builds it, and runs:
 
 ```
-python -m fillerai serve --host 0.0.0.0 --trust-proxy --no-sample-app
+python -m fillerai serve --host 0.0.0.0 --trust-proxy
 ```
 
 - **Port.** `serve` reads `$PORT`, which Railway sets.
@@ -22,12 +22,12 @@ python -m fillerai serve --host 0.0.0.0 --trust-proxy --no-sample-app
 - **Proxy.** `--trust-proxy` takes the visitor's address and the https scheme
   from Railway's proxy headers, so the session cookie is marked `Secure` and
   the docs access-code limit counts each visitor rather than the proxy.
-- **The sample application is off.** It needs a second port and a Railway
-  service exposes one. Run it locally, or as a second Railway service from
-  the same repository with the start command
-  `python -m fillerai.sampleapp --host 0.0.0.0` (it reads `$PORT` too) and the
-  variables `FILLERAI_URL` (this service's https address) and
-  `FILLERAI_TOKEN` (an API token made in Settings).
+- **The sample application is at `/sample/`** on the same address (the
+  "Sample app" link in the header). It runs inside the same service, and
+  only signed-in people can open it, since its chat uses an administrator's
+  token. For a public demo, add the variable `FILLERAI_SAMPLE_PUBLIC` = `1`.
+  Its forms are the admin's bot templates, so add the starters on the Bots
+  tab first.
 - **One replica.** SQLite on a volume is one process's database, and even with
   Postgres a training run's live log is held in the process that runs it.
 

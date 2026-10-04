@@ -69,6 +69,9 @@ SEED = {
 }
 
 #: What the page may fetch from AIrForms through this server, and nothing else.
+#: Set by AIrForms when it passes a request through from its /sample/ path.
+PREFIX_HEADER = "X-Forwarded-Prefix"
+
 CLIENT_FILES = {"/fillerai.js": "/client/fillerai.js",
                 "/fillerai-chat.css": "/client/fillerai-chat.css"}
 
@@ -293,8 +296,12 @@ def make_server(fillerai: FillerAIService, portal: Portal, host: str = "127.0.0.
             if path == "/favicon.ico":
                 return self._send(204, b"", "image/x-icon")
             if path == "/api/me":
+                # Reached through AIrForms' /sample/ path, AIrForms is this
+                # same origin, so the link back is a path, not the internal
+                # address the two use between themselves.
+                page = "/app" if self.headers.get(PREFIX_HEADER) else fillerai_page
                 return self._json(200, {**portal.me(), "server_speech": server_speech,
-                                        "fillerai_page": fillerai_page})
+                                        "fillerai_page": page})
             if path == "/api/templates":
                 # Asked for on every page load, so the forms are whatever
                 # the bot service has now.

@@ -121,6 +121,7 @@ defaults.
 | `FILLERAI_ADMIN_PASSWORD` | first `serve` | The first administrator's password instead of a generated one. |
 | `PORT` | `serve` | The port, as hosting platforms set it. Default 8000. |
 | `FILLERAI_TRUST_PROXY` | `serve` | `1` is the same as `--trust-proxy`: take the visitor's address and https from the proxy's headers. Only behind such a proxy. |
+| `FILLERAI_SAMPLE_PUBLIC` | `serve` | `1` is the same as `--sample-public`: `/sample/` open to visitors who are not signed in. |
 | `FILLERAI_BOT_LLM` | `serve` | `1` is the same as `--bot-llm`. |
 | `FILLERAI_BOT_TRANSCRIBE` | `serve` | `1` is the same as `--bot-transcribe`. |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | LLM features | The provider's key. |
@@ -217,6 +218,13 @@ user's bot templates, so add the starters on the Bots tab or with
 `fillerai bot add --starter address_change` first. `--sample-user NAME`
 shows another user's templates, `--sample-port` moves it and
 `--no-sample-app` leaves it off.
+
+It is also served by AIrForms itself at `/sample/` (for example
+`http://localhost:8000/sample/`), which is what the "Sample app" link in the
+header opens. That is how it is demoed on a host that exposes one port, such
+as Railway. There it is for signed-in people only, since its chat talks to
+the bot with an administrator's token; `--sample-public` (or
+`FILLERAI_SAMPLE_PUBLIC=1`) opens it to anyone, for a public demo.
 
 One form is open at a time: the chat opens the one the conversation is
 about, and the menu at the top opens any of them to fill in and submit by

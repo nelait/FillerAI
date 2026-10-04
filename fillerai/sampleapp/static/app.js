@@ -5,7 +5,7 @@
 // the AIrForms bot service has, drawn from /api/templates when the page
 // loads. Only one is open at a time: the one the chat is talking about, or
 // the one picked from the menu to fill in by hand.
-import { BotChat, ChatWidget } from "/fillerai.js";
+import { BotChat, ChatWidget } from "./fillerai.js";
 
 const $ = (id) => document.getElementById(id);
 let me = null;
@@ -14,7 +14,7 @@ let templates = [];
 // ------------------------------------------------------------ the portal
 
 async function load() {
-  me = await (await fetch("/api/me")).json();
+  me = await (await fetch("api/me")).json();
   const c = me.customer;
   $("who").textContent = `${c.full_name} · ${c.customer_id}`;
   const shown = [
@@ -35,7 +35,7 @@ async function load() {
 
 // One card per template, after the two the page always has.
 async function drawForms() {
-  const response = await fetch("/api/templates");
+  const response = await fetch("api/templates");
   const body = await response.json();
   if (!response.ok) {
     showNoForms(`AIrForms didn't give this application its templates: ${body.error || response.status}.`);
@@ -221,7 +221,7 @@ function showChatForm(form, reply) {
 // The application's own submit path. The chat and the Submit buttons both
 // end up here, so there is one set of rules for what may be saved.
 async function submit(template, values) {
-  const response = await fetch(`/api/submit/${encodeURIComponent(template)}`, {
+  const response = await fetch(`api/submit/${encodeURIComponent(template)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ values }),
@@ -240,7 +240,7 @@ let chatOn = null;
 // record and the API token before passing it to AIrForms.
 const chat = new BotChat(null, {
   send: async (body) => {
-    const response = await fetch("/api/chat", {
+    const response = await fetch("api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -306,7 +306,7 @@ function openChat(open) {
       // With --server-speech the recording goes through this server to
       // AIrForms's /v1/bot/transcribe instead of the browser's recogniser.
       transcribe: me.server_speech ? async (audio) => {
-        const response = await fetch("/api/transcribe", {
+        const response = await fetch("api/transcribe", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(audio),
         });
@@ -346,7 +346,7 @@ function joinWords(words) {
   return words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} or ${words.at(-1)}`;
 }
 
-me = await (await fetch("/api/me")).json();
+me = await (await fetch("api/me")).json();
 await drawForms();
 await load();
 document.querySelectorAll(".form-card form").forEach(resetForm);
