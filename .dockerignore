@@ -1,0 +1,6 @@
+.git
+.fillerai
+**/__pycache__
+*.pyc
+tests
+livetests

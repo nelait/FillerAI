@@ -119,6 +119,8 @@ defaults.
 | `FILLERAI_HOME` | CLI, `serve` | The library directory. Default `./.fillerai`. |
 | `FILLERAI_DATABASE_URL` | `serve`, `users`, `tokens`, `db` | `sqlite://<path>`. Default `fillerai.db` in the library directory. |
 | `FILLERAI_ADMIN_PASSWORD` | first `serve` | The first administrator's password instead of a generated one. |
+| `PORT` | `serve` | The port, as hosting platforms set it. Default 8000. |
+| `FILLERAI_TRUST_PROXY` | `serve` | `1` is the same as `--trust-proxy`: take the visitor's address and https from the proxy's headers. Only behind such a proxy. |
 | `FILLERAI_BOT_LLM` | `serve` | `1` is the same as `--bot-llm`. |
 | `FILLERAI_BOT_TRANSCRIBE` | `serve` | `1` is the same as `--bot-transcribe`. |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | LLM features | The provider's key. |
@@ -133,6 +135,9 @@ defaults.
 `python -m fillerai llm status` prints which provider, model and key the
 language-model features would use and what decided it, without printing the
 key.
+
+Deploying to Railway, with a Dockerfile in the repository, is in
+[deploy-railway.md](deploy-railway.md).
 
 ## 5. Where the data is, and backing it up
 

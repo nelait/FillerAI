@@ -6,6 +6,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -207,7 +208,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
                  bot_llm=True if args.bot_llm else None,
                  bot_transcribe=True if args.bot_transcribe else None,
                  sample_app=not args.no_sample_app, sample_port=args.sample_port,
-                 sample_user=args.sample_user)
+                 sample_user=args.sample_user, trust_proxy=args.trust_proxy)
+
+
+def _env_port() -> int:
+    raw = os.environ.get("PORT", "").strip()
+    return int(raw) if raw.isdigit() else 8000
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -1178,9 +1184,17 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.set_defaults(func=cmd_inspect)
 
     serve = subparsers.add_parser("serve", help="open the AIrForms UI in a browser")
-    serve.add_argument("-p", "--port", type=int, default=8000)
+    serve.add_argument("-p", "--port", type=int, default=_env_port(),
+                       help="the port (default: $PORT if set, the way hosting "
+                            "platforms such as Railway say which one, else 8000)")
     serve.add_argument("--host", default="127.0.0.1",
                        help="bind address; the default keeps the UI on this machine")
+    serve.add_argument("--trust-proxy", action="store_true",
+                       default=os.environ.get("FILLERAI_TRUST_PROXY", "") in ("1", "true", "yes"),
+                       help="believe X-Forwarded-For/-Proto from the proxy in "
+                            "front (Railway and the like; or $FILLERAI_TRUST_PROXY=1). "
+                            "Only behind such a proxy: otherwise visitors could "
+                            "claim any address")
     serve.add_argument("--open", action="store_true", help="open a browser window")
     serve.add_argument("-v", "--verbose", action="store_true", help="log each request")
     serve.add_argument("--library", metavar="PATH",
