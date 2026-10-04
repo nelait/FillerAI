@@ -48,7 +48,7 @@ to resolve. Read this before picking up work.
 ## Real data
 
 **[real-data.md](real-data.md)** — once real past submissions arrive: reading
-a CSV or JSON export, mapping its columns onto the form, the seven named
+a CSV or JSON export, mapping its columns onto the form, the eight named
 cleaning fixes and what each changes, testing a model trained on generated
 records against the real ones, and training on them instead.
 

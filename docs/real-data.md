@@ -29,7 +29,7 @@ because the system fills them, not the person. The guess is shown and can be
 changed; a column left out is simply not used, and a field with no column is
 blank in every record.
 
-**Clean.** Seven named fixes run in this order. Every one reports how many
+**Clean.** Eight named fixes run in this order. Every one reports how many
 cells (or rows) it changed, with examples, and every one can be switched off.
 A fix that is off still counts what it *would* have done, so the report can
 say "229 rows miss a required field" before anybody decides to drop them.
