@@ -237,6 +237,26 @@ signals (`WEIGHT_AUTOCOMPLETE = 0.97` down to `WEIGHT_WEAK = 0.55`).
 **Before changing it:** the order of `RULES` is behaviour — "date of birth"
 must settle before the generic "date" rule is reached.
 
+### `realdata.py` — real records in
+
+Reads a CSV/TSV/JSON/NDJSON export, maps its columns onto a form's fields, and
+cleans it into records shaped exactly like generated ones. See
+[real-data.md](../real-data.md).
+
+- `read_table(text, filename) -> Table`; `suggest_mapping(schema, columns)`;
+  `clean(schema, table, mapping=None, fixes=None, limit=None) -> Cleaned`,
+  whose `report()` counts every fix, on or off; `spec_from_table(table, name)`
+  for a form read off the columns.
+- `FIXES` is ordered: a value is trimmed before it is compared with anything,
+  and only what survives every repair is judged `invalid`.
+
+**Imports:** `schema`, `generate.render` (for `date_format`, so a cleaned date
+has the generator's shape).
+
+**Before changing it:** `tests/test_realdata.py` round-trips every bundled
+example through CSV, JSON and NDJSON and expects it back unchanged. A fix that
+breaks that has started rewriting values that were already right.
+
 ### `store.py` — the library in a directory
 
 Every artefact a run produced, with a `parent` pointing at what it was made
@@ -761,7 +781,7 @@ The full list of invariants is [architecture.md](../architecture.md) §9.
 
 ## 14. Tests
 
-`python -m unittest discover -s tests` — 868 tests, offline, standard library
+`python -m unittest discover -s tests` — 941 tests, offline, standard library
 only, about 80 seconds. Several start a real HTTP server on an ephemeral
 port.
 
@@ -774,6 +794,8 @@ port.
 | `test_combine.py` | 23 | `train/algos/combine`: which rows the learned weights may see, and that they are kept only when they beat the hand-picked ones |
 | `test_trace.py` | 13 | `train/trace`: the cursor under concurrent appends |
 | `test_simulate.py` | 36 | `simulate/`: layout, effort constants, runs, savings, sweeps, the stylesheet, the CLI |
+| `test_realdata.py` | 22 | `realdata`: readers, mapping, each fix on and off, dropped rows, the round trip of every example, a form from columns |
+| `test_web_realdata.py` | 10 | `/api/data/*` and `/api/evaluate`: preview saves nothing, a saved real dataset and its lineage, training on it, testing on it, the learned-from flag |
 | `test_store.py` | 29 | `store`: lineage, cascading delete, prune, unsafe ids |
 | `test_db.py` | 20 | `db`: parameter translation, idempotent migrations, rollback |
 | `test_dbstore.py` | 25 | `dbstore`: the `test_store` lineage tests against the database, owners, atomic writes, `import_store` |
@@ -853,7 +875,7 @@ fillerai/
   sampleapp/           app.py, __main__.py, static/ (index.html, app.js,
                        style.css); imports nothing from AIrForms
 examples/              one HTML form and four field specs
-tests/                 868 tests, offline, no dependencies
+tests/                 941 tests, offline, no dependencies
   fixtures/llm/        recorded LLM exchanges
 livetests/             the LLM acceptance gate and the fixture recorder
 docs/                  the documentation; reference/ holds this file

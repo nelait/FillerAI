@@ -256,7 +256,7 @@ class TestDocsWithoutAccounts(ServerCase):
     def test_the_help_panel_answers(self):
         status, body = self.post("/api/help", {})
         self.assertEqual(status, 200)
-        self.assertIn("Generate", body["sections"]["generate"]["title"])
+        self.assertIn("Data", body["sections"]["generate"]["title"])
 
 
 if __name__ == "__main__":

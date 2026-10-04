@@ -31,7 +31,7 @@
       <span class="num">2</span> Schema
     </button>
     <button class="step" role="tab" data-panel="generate" aria-selected="false" disabled>
-      <span class="num">3</span> Generate
+      <span class="num">3</span> Data
     </button>
     <button class="step" role="tab" data-panel="train" aria-selected="false">
       <span class="num">4</span> Train
@@ -105,6 +105,7 @@
         <div class="seg" role="group" aria-label="Source kind">
           <button class="seg-btn is-on" data-kind="html">HTML form</button>
           <button class="seg-btn" data-kind="spec">Field spec (JSON)</button>
+          <button class="seg-btn" data-kind="data" title="No form? Read one off a file of records, one field per column">Records (CSV)</button>
         </div>
 
         <div class="drop" id="drop">
@@ -115,7 +116,7 @@
 
         <div class="actions">
           <label class="btn btn-ghost">
-            Choose file<input type="file" id="file" accept=".html,.htm,.json" hidden>
+            Choose file<input type="file" id="file" accept=".html,.htm,.json,.csv,.tsv,.ndjson,.jsonl" hidden>
           </label>
           <button class="btn btn-ghost" id="clear">Clear</button>
           <span class="spacer"></span>
@@ -189,12 +190,79 @@
   <!-- =========================== Generate =========================== -->
   <section class="panel" id="panel-generate" role="tabpanel">
     <div class="panel-head">
-      <h2>Generate sample records</h2>
-      <p class="sub">Every record is one coherent imaginary person. Values respect
-         the constraints the form declares, and are checked before you see them.</p>
+      <h2>Records to learn from</h2>
+      <p class="sub" id="dataSub">Every generated record is one coherent imaginary
+         person. Values respect the constraints the form declares, and are
+         checked before you see them.</p>
     </div>
 
-    <div class="controls">
+    <div class="seg data-mode" role="group" aria-label="Where the records come from">
+      <button class="seg-btn is-on" data-mode="generate">Generate sample records</button>
+      <button class="seg-btn" data-mode="real">Upload real records</button>
+    </div>
+
+    <!-- What to do with the records, where they are, whichever way they came. -->
+    <div class="next-step" id="nextGenerate" hidden></div>
+
+    <!-- Real records: a file, its columns put on the form's fields, then
+         cleaned in the open - every fix named, counted and switchable -
+         before anything is kept. -->
+    <div id="realMode" hidden>
+      <div class="drop real-drop" id="realDrop">
+        <div class="real-pick">
+          <label class="btn btn-ghost">
+            Choose file<input type="file" id="realFile"
+              accept=".csv,.tsv,.txt,.json,.ndjson,.jsonl" hidden>
+          </label>
+          <span class="muted" id="realFileLine">A CSV, JSON or NDJSON export of
+            past submissions. Drop it here. It stays on this server.</span>
+        </div>
+        <div class="drop-hint">Drop to load</div>
+      </div>
+
+      <div id="realWork" hidden>
+        <div class="real-grid">
+          <div class="card">
+            <h3>Which field is each column?</h3>
+            <p class="sub">Matched by name and label. Check the guesses; a column
+               left out is simply not used.</p>
+            <div class="table-wrap">
+              <table class="grid dense" id="realMapTable">
+                <thead><tr><th>Column</th><th>Looks like</th><th>Field on the form</th></tr></thead>
+                <tbody id="realMapBody"></tbody>
+              </table>
+            </div>
+            <p class="muted" id="realMissing" hidden></p>
+          </div>
+
+          <div class="card">
+            <h3>Cleaning</h3>
+            <p class="sub">Each fix says what it changed. The last two throw
+               information away, so they wait for you to tick them.</p>
+            <ul class="fixes" id="realFixes"></ul>
+            <div id="realProblems" hidden></div>
+            <div class="actions">
+              <span class="muted" id="realHeadline"></span>
+              <span class="spacer"></span>
+              <button class="btn btn-primary" id="realSave" disabled>Save cleaned records</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-head">
+          <h3>After cleaning</h3>
+          <p class="sub" id="realPreviewLine"></p>
+        </div>
+        <div class="table-wrap">
+          <table class="grid dense" id="realTable">
+            <thead id="realHead"></thead>
+            <tbody id="realBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls" id="genControls">
       <label class="field">
         <span>Records</span>
         <input type="number" id="count" value="20" min="1" max="5000">
@@ -215,9 +283,7 @@
     </div>
 
     <div id="genStatus" class="status" hidden></div>
-
-    <!-- What to do with the records, where they are. -->
-    <div class="next-step" id="nextGenerate" hidden></div>
+    <div id="genResult">
 
     <div class="toolbar" id="exportBar" hidden>
       <span class="muted" id="resultCount"></span>
@@ -234,6 +300,7 @@
       </table>
     </div>
     <p class="muted" id="truncated" hidden></p>
+    </div>
   </section>
 
   <!-- ============================= Train ============================ -->
@@ -436,6 +503,30 @@
           <div id="simSweepOut" hidden>
             <div class="stats tight" id="simSweepStats"></div>
             <p class="muted" id="simSweepLine"></p>
+          </div>
+        </div>
+
+        <!-- The test that matters once real records exist: this model,
+             filling forms that really were filled in. -->
+        <div class="card" id="testCard">
+          <h3>Test on real records</h3>
+          <p class="sub">Fill records that were really submitted, from their own
+             first few fields, and score every answer against what was there.</p>
+          <div class="controls tight">
+            <label class="field wide">
+              <span>Records</span>
+              <select id="testData"></select>
+            </label>
+            <button class="btn btn-ghost" id="testRun">Test</button>
+          </div>
+          <p class="muted small" id="testNone" hidden>No real records yet.
+            <button class="link" type="button" id="testUpload">Upload some</button>
+            on the Data step.</p>
+          <div id="testOut" hidden>
+            <p class="note" id="testWarn" hidden></p>
+            <div class="stats tight" id="testStats"></div>
+            <p class="muted" id="testLine"></p>
+            <ul class="weak" id="testWeak"></ul>
           </div>
         </div>
 

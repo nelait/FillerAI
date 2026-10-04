@@ -16,6 +16,7 @@ in `examples/`.
   - [extract](#extract)
   - [inspect](#inspect)
   - [generate](#generate)
+  - [clean](#clean)
   - [check](#check)
   - [train](#train)
   - [algorithms](#algorithms)
@@ -104,7 +105,7 @@ python -m fillerai extract [-o OUT] [--review-below REVIEW_BELOW] [--save] [--li
 
 | Option | Default | Meaning |
 |---|---|---|
-| `source` | required | An `.html`/`.htm` page, or a `.json` field spec. |
+| `source` | required | An `.html`/`.htm` page, a `.json` field spec, or a `.csv`/`.tsv`/`.ndjson`/`.jsonl` file of records, read as a form with one field per column. |
 | `-o`, `--out` | stdout | Where to write the schema JSON; `-` for stdout. |
 | `--review-below` | `0.7` | Confidence below which a field counts as needing review. Only used for the summary line. |
 | `--save` | off | Also store the source and the schema in the library, the schema recorded as made from the source. Prints `library: <schema id>  (from <source id>)` on stderr. |
@@ -187,6 +188,38 @@ exits 1. A clean check prints `checked N records: no problems`.
 
 ```bash
 python -m fillerai generate claims.schema.json -n 500 --seed 42 --check -o claims.data.json
+```
+
+### clean
+
+Map a file of real records onto a form and clean it. See
+[real-data.md](../real-data.md).
+
+```
+python -m fillerai clean [--map COLUMN=FIELD] [--skip FIX] [--also FIX] [-o OUT] [-f {json,ndjson,csv}] [--save] [--library PATH] [--from-schema ID] schema records
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `schema` | required | The form: a schema `.json`, field spec, or `.html` page. |
+| `records` | required | A `.csv`, `.tsv`, `.json` or `.ndjson` file. |
+| `--map` | none | Put a column on a field the guess missed, or `COLUMN=` to leave it out. Repeatable. |
+| `--skip` | none | Turn a fix off: `trim`, `blanks`, `case`, `options`, `types`, `duplicates`. Repeatable. |
+| `--also` | none | Turn on a fix that is off by default: `invalid`, `incomplete`. Repeatable. |
+| `-o`, `--out` | stdout | Where to write the cleaned records. |
+| `-f`, `--format` | `json` | `json`, `ndjson` or `csv`. |
+| `--save` | off | Keep the cleaned records in the library, marked as real. |
+| `--from-schema` | none | The library schema they belong to (otherwise the schema is saved too). |
+
+**Output.** On stderr: each column and the field it went to, the fields no
+column fed, each fix that found something and whether it was applied, what is
+still wrong, and a headline. Exits 0.
+
+**Example.**
+
+```bash
+python -m fillerai clean claims.schema.json export.csv --also invalid -o cleaned.json
+python -m fillerai evaluate claims.model.json cleaned.json
 ```
 
 ### check

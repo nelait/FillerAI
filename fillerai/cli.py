@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, extract_html, extract_spec
+from . import __version__, extract_html, extract_spec, realdata
 from .auth import ADMIN, ROLES, USER, Auth, AuthError, suggest_password
 from .db import (
     DEFAULT_FILENAME as DB_FILENAME,
@@ -20,7 +20,9 @@ from .db import (
     connect as connect_database,
 )
 from .dbstore import DatabaseStore, import_store
-from .generate.dataset import Options, coherence_report, generate, validate
+from .generate.dataset import Dataset, Options, coherence_report, generate, validate
+from .extract import spec as spec_loader
+from .infer import infer
 from .schema import FormSchema
 from .simulate.effort import DEFAULT_EFFORT, spell_out
 from .simulate.run import run as simulate_form, sweep as simulate_forms
@@ -38,10 +40,32 @@ from .train.model import (
 from .train.trace import Trace
 
 
+# Files that are records rather than a form. Handed to ``extract`` they are
+# read as a form anyway - one field per column - for data with no form.
+DATA_SUFFIXES = (".csv", ".tsv", ".ndjson", ".jsonl")
+
+
 def _load_schema(path: Path) -> FormSchema:
     if path.suffix.lower() in (".html", ".htm"):
         return extract_html(path)
+    if path.suffix.lower() in DATA_SUFFIXES:
+        return _schema_from_data(path)[0]
     return extract_spec(path)
+
+
+def _schema_from_data(path: Path) -> tuple[FormSchema, str]:
+    """A form read off a data file's columns, and the field spec it came from."""
+    table = _read_table(path)
+    spec = realdata.spec_from_table(table, path.stem)
+    schema = infer(spec_loader.load(spec, source={"kind": "spec", "from": str(path)}))
+    return schema, json.dumps(spec, indent=2, ensure_ascii=False)
+
+
+def _read_table(path: Path) -> realdata.Table:
+    try:
+        return realdata.read_table(path.read_text(encoding="utf-8-sig"), path.name)
+    except realdata.DataError as error:
+        raise SystemExit(f"{path}: {error}") from None
 
 
 def _load_records(path: Path) -> list[dict]:
@@ -115,8 +139,12 @@ def cmd_extract(args: argparse.Namespace) -> int:
     if args.save:
         store = _library(args)
         kind = "html" if source.suffix.lower() in (".html", ".htm") else "spec"
-        parent = store.save_source(
-            source.read_text(encoding="utf-8"), kind=kind, name=source.name)
+        content = source.read_text(encoding="utf-8")
+        if source.suffix.lower() in DATA_SUFFIXES:
+            # The spec is kept, not the records: a source is the form, and
+            # the records go in through `clean`, cleaned and on purpose.
+            content = _schema_from_data(source)[1]
+        parent = store.save_source(content, kind=kind, name=source.name)
         entry = store.save_schema(schema, parent=parent.id)
         print(f"library: {entry.id}  (from {parent.id})", file=sys.stderr)
     _write(schema.to_json(), args.out)
@@ -162,6 +190,54 @@ def cmd_generate(args: argparse.Namespace) -> int:
         print(f"library: {entry.id}  (from {parent})", file=sys.stderr)
 
     _write(dataset.render(args.format), args.out)
+    return 0
+
+
+def cmd_clean(args: argparse.Namespace) -> int:
+    schema = _load_schema(Path(args.schema))
+    table = _read_table(Path(args.records))
+    mapping = realdata.suggest_mapping(schema, table.columns)
+    for pair in args.map or []:
+        if "=" not in pair:
+            raise SystemExit(f"--map wants COLUMN=FIELD, not {pair!r}")
+        column, target = (part.strip() for part in pair.split("=", 1))
+        if column not in mapping:
+            raise SystemExit(f"the file has no column called {column!r}")
+        mapping[column] = target
+    fixes = (set(realdata.DEFAULT_FIXES) | set(args.also or [])) - set(args.skip or [])
+    try:
+        cleaned = realdata.clean(schema, table, mapping, fixes)
+    except realdata.DataError as error:
+        raise SystemExit(str(error)) from None
+
+    report = cleaned.report()
+    for row in report["mapping"]:
+        target = row["field"] or "(not used)"
+        print(f"  {row['column']:<28} -> {target}", file=sys.stderr)
+    if report["missing"]:
+        print(f"  not in the file: {', '.join(report['missing'])}", file=sys.stderr)
+    for fix in report["fixes"]:
+        if fix["count"]:
+            state = "fixed" if fix["on"] else "found, not fixed"
+            print(f"  {fix['label']}: {fix['count']} {fix['unit']} {state}",
+                  file=sys.stderr)
+    for issue in report["problems"][:12]:
+        print(f"  still wrong: {issue['field']} {issue['kind']} "
+              f"x{issue['count']} (e.g. {', '.join(issue['examples'][:2])})",
+              file=sys.stderr)
+    print(f"  {report['headline']}", file=sys.stderr)
+
+    if args.save:
+        store = _library(args)
+        parent = args.from_schema or store.save_schema(schema).id
+        entry = store.save_dataset(
+            cleaned.records, parent=parent,
+            name=f"{schema.name or 'form'}: {cleaned.rows_out} real records",
+            meta={"origin": "real", "file": Path(args.records).name,
+                  "rows": f"{cleaned.rows_out} of {report['rows_in']}"},
+        )
+        print(f"library: {entry.id}  (from {parent})", file=sys.stderr)
+    _write(Dataset(schema=schema, records=cleaned.records).render(args.format), args.out)
     return 0
 
 
@@ -1151,7 +1227,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     extract = subparsers.add_parser(
         "extract", help="read a form and write its field schema")
-    extract.add_argument("source", help="an .html page or a .json field spec")
+    extract.add_argument("source", help="an .html page, a .json field spec, or a "
+                                        ".csv of records to read one field per column")
     extract.add_argument("-o", "--out", help="output path, '-' for stdout")
     extract.add_argument("--review-below", **common_review)
     _add_library_flags(extract, "keep the source and the schema in the library")
@@ -1176,6 +1253,25 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--from-schema", metavar="ID",
                      help="the library schema these records are for")
     gen.set_defaults(func=cmd_generate)
+
+    cleaner = subparsers.add_parser(
+        "clean", help="map a file of real records onto a form and clean it")
+    cleaner.add_argument("schema", help="the form: a schema .json, field spec, or .html page")
+    cleaner.add_argument("records", help="a .csv, .tsv, .json or .ndjson file of records")
+    cleaner.add_argument("--map", action="append", metavar="COLUMN=FIELD",
+                         help="put a column on a field the guess missed, or "
+                              "COLUMN= to leave it out; repeatable")
+    cleaner.add_argument("--skip", action="append", choices=realdata.FIX_NAMES,
+                         metavar="FIX", help="turn a fix off; repeatable")
+    cleaner.add_argument("--also", action="append", choices=realdata.FIX_NAMES,
+                         metavar="FIX", help="turn on a fix that is off by default "
+                                             "(invalid, incomplete); repeatable")
+    cleaner.add_argument("-o", "--out", help="output path, '-' for stdout")
+    cleaner.add_argument("-f", "--format", choices=("json", "ndjson", "csv"), default="json")
+    _add_library_flags(cleaner, "keep the cleaned records in the library")
+    cleaner.add_argument("--from-schema", metavar="ID",
+                         help="the library schema these records are for")
+    cleaner.set_defaults(func=cmd_clean)
 
     inspect = subparsers.add_parser(
         "inspect", help="show what was inferred, screen by screen")

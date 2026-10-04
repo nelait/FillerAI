@@ -45,6 +45,13 @@ effort constants behind every "X% less work" are §4.
 what was deliberately not built, each with its evidence and what it would take
 to resolve. Read this before picking up work.
 
+## Real data
+
+**[real-data.md](real-data.md)** — once real past submissions arrive: reading
+a CSV or JSON export, mapping its columns onto the form, the seven named
+cleaning fixes and what each changes, testing a model trained on generated
+records against the real ones, and training on them instead.
+
 ## How it thinks
 
 **[algorithms.md](algorithms.md)** — how AIrForms learns to fill a form, in

@@ -86,7 +86,12 @@ _DATE_HINTS = (
 )
 
 
-def _date_format(field: Field) -> str:
+def date_format(field: Field) -> str:
+    """The strftime format this field's dates are written in.
+
+    Shared with :mod:`fillerai.realdata`, so a real date is rewritten into
+    exactly the shape a generated one has and the two compare equal.
+    """
     if field.control in ("date", "datetime-local", "month", "time"):
         # A native date control always submits ISO, whatever it displays.
         return {"date": "%Y-%m-%d", "datetime-local": "%Y-%m-%dT%H:%M",
@@ -195,7 +200,7 @@ def render(field: Field, persona: Persona, rng: random.Random) -> object:
     elif semantic == "age":
         value = str(persona.age)
     elif semantic == "date_of_birth":
-        value = persona.date_of_birth.strftime(_date_format(field))
+        value = persona.date_of_birth.strftime(date_format(field))
     elif semantic == "ssn":
         raw = persona.identifier("ssn")
         value = re.sub(r"\D", "", raw) if field.constraints.max_length == 9 else raw
@@ -361,10 +366,10 @@ def _render_date_like(field: Field, persona: Persona, rng: random.Random) -> str
     chosen = start + dt.timedelta(days=rng.randint(0, max((end - start).days, 0)))
     if field.semantic_type == "datetime" or field.control == "datetime-local":
         moment = dt.datetime.combine(chosen, dt.time(rng.randint(8, 18), rng.choice([0, 15, 30, 45])))
-        return moment.strftime(_date_format(field))
+        return moment.strftime(date_format(field))
     if field.semantic_type == "time" or field.control == "time":
         return f"{rng.randint(8, 18):02d}:{rng.choice([0, 15, 30, 45]):02d}"
-    return chosen.strftime(_date_format(field))
+    return chosen.strftime(date_format(field))
 
 
 def _parse_iso(value: str | None) -> dt.date | None:

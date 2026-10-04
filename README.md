@@ -697,6 +697,20 @@ submission history carries these same rules, because the business enforced
 them — but it does not measure the habits only real history has, which is
 still the thing that moves the number furthest.
 
+### Real records: test on them, or train from them
+
+When real past submissions arrive, upload them on the **Data** step
+(**Upload real records**). Columns are matched to the form's fields, and the
+file is cleaned in the open: trimming, reading `N/A` as empty, evening out
+ALL-CAPS, matching option labels, writing numbers, dates and yes/no the
+form's way, and dropping duplicates, with every fix counted and switchable
+and whatever is still wrong listed. Saved, they are a library dataset marked
+real. From there, **Train** learns from them instead of from generated
+records, and the Simulate step's **Test on real records** scores any model on
+them. No form at all? The Source step reads one off the file's columns. The
+same steps from the command line are `fillerai clean` and `fillerai extract
+export.csv`. See [docs/real-data.md](docs/real-data.md).
+
 ## The UI
 
 ```bash
@@ -1401,7 +1415,7 @@ docs/
 python -m unittest discover -s tests -v
 ```
 
-868 tests, no dependencies. They cover malformed markup, each inference rule,
+941 tests, no dependencies. They cover malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real

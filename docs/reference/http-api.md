@@ -606,6 +606,61 @@ Records already in hand, rendered as a file.
 Returns `{format, text, filename}`. Errors: 400 for a bad schema, `records`
 that is not a list, or an unknown format.
 
+### Real records
+
+Uploading, mapping and cleaning a file of real submissions, and the form read
+off one when there is no form. See [real-data.md](../real-data.md). These are
+stateless: the browser sends the file's text with each call, and nothing is
+kept until `save`.
+
+### `POST /api/data/read`
+
+| Body | |
+|---|---|
+| `text` | required: the file's contents |
+| `filename` | optional: its extension picks the reader (`.csv`, `.tsv`, `.json`, `.ndjson`, `.jsonl`); otherwise the first character does |
+| `schema` | optional: when given, a suggested mapping comes back |
+
+Returns `{format, columns, rows, preview, fixes}`, where `preview` is the
+first 20 raw rows and `fixes` is `[{key, label, on}]` with the defaults, plus
+`mapping` (column to field name, `""` for none) and `fields` (`[{name,
+label}]`, the fillable ones) when a schema was sent.
+
+### `POST /api/data/clean`
+
+| Body | |
+|---|---|
+| `schema`, `text` | required |
+| `filename` | optional, as above; also kept on the saved dataset |
+| `mapping` | optional: column to field name, `""` to leave a column out. Columns it does not name take the suggested mapping |
+| `fixes` | optional: the fix names to apply; default `trim`, `blanks`, `case`, `options`, `types`, `duplicates`. Also `invalid`, `incomplete` |
+| `save` | default `false` |
+| `schema_id` | optional: the library schema these belong to |
+
+Returns `{report, columns, count, records, max_records}`. Without `save`,
+`records` is the first 100 cleaned rows; with it, all of them, plus
+`schema_id` and `dataset_id`. The dataset is named `<form>: N real records`
+with `meta` `{origin: "real", file, rows, fixed, rejected}`. At most 5,000
+records are kept; `report.truncated` says how many more there were.
+
+`report` is `{rows_in, rows_out, empty_rows, truncated, fixes, mapping,
+missing, problems, headline}`: `fixes` is `[{key, label, on, count, unit,
+examples}]` (a fix that is off still counts), `mapping` is one row per column
+with its field and a sample of values, `missing` is the fields no column fed,
+and `problems` is `[{field, kind, count, examples}]` for what the form would
+still reject.
+
+Errors: 400 for a file that cannot be read, a field mapped twice or one the
+form lacks, no column mapped at all, an unknown fix, or saving with no rows
+left.
+
+### `POST /api/data/schema`
+
+A form read off a file's columns. Body `{text, filename?, name?, save?}`.
+Returns what `/api/extract` returns, `{schema, summary}` plus `source_id` and
+`schema_id` when saved (default), and also `spec` (the field spec written,
+which is what the source holds) and `mapping`.
+
 ---
 
 ## 7. Train
@@ -814,6 +869,29 @@ seconds_saved, keystrokes_saved, per_case, headline, seed, assumptions}`.
 
 Errors: 400 for a bad `count`, `seed` or threshold.
 
+
+### `POST /api/evaluate`
+
+Test a model on records it was not trained on, usually real ones.
+
+| Body | |
+|---|---|
+| `model_id` | required: a loaded model |
+| `dataset_id` | a library dataset to test on, or |
+| `records` | the records themselves |
+| `seeds` | optional: the fields typed from each record; default the model's suggestion |
+| `ask` | 1-8, default 3: how many seeds to suggest |
+| `threshold` | 0-1, default 0.7 |
+
+Each record (the first 1,000) is filled from its own seed fields and scored.
+Returns `{evaluation, sweep, seeds, records, total, fields_present,
+fields_total, learned_from}`, plus `dataset` (the library entry) when one was
+named. `evaluation` is the report `fillerai evaluate` writes; `sweep` is the
+`/api/simulate/sweep` result over these records. `learned_from` is true when
+the dataset is in the model's own lineage, so the score measures memory.
+
+Errors: 400 when none of the records' fields are on the model's form, 404 for
+an unknown model or dataset.
 ---
 
 ## 10. LLM settings and rules
