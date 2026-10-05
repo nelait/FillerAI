@@ -4,14 +4,15 @@ What the pieces are, which way they point, and the boundaries that are not
 allowed to move. The README is the tour; this is the map you want open when
 you are changing something and need to know what else it touches.
 
-Everything here was checked against the code at version 0.15.1.
+Everything here was checked against the code at version 0.19.0.
 
 ---
 
 ## 1. The shape of it
 
 AIrForms is four stages over one shared contract, with a library underneath
-and two HTTP surfaces on top.
+and two HTTP surfaces on top. Real records, when there are any, come in beside
+`generate` (§3, realdata) and leave every stage after it unchanged.
 
 ```
       a form                                              an agent
@@ -42,14 +43,17 @@ backwards. `generate` never sees the training code, `train` never sees the
 markup, `simulate` never sees the generator. Each stage knows only the schema
 and the artefact the stage before it produced. That is what lets a dataset of
 real past submissions be dropped into `train` with no change anywhere — a
-dataset is a dataset, whoever made it.
+dataset is a dataset, whoever made it. Since 0.19.0 there is a way in for one:
+`fillerai/realdata.py` turns an export into records of exactly the shape
+`generate` writes.
 
 ### The stages, in one line each
 
 | Stage | Input | Output | Where |
 |---|---|---|---|
-| **extract** | an HTML page or a JSON field spec | a `FormSchema` | `fillerai/extract/`, `fillerai/infer.py` |
+| **extract** | an HTML page, a JSON field spec, or a file of records | a `FormSchema` | `fillerai/extract/`, `fillerai/infer.py` (`realdata.spec_from_table` for a file) |
 | **generate** | a `FormSchema` | coherent synthetic records | `fillerai/generate/` |
+| *or* **realdata** | a `FormSchema` + an export (CSV, JSON, NDJSON) | cleaned real records, same shape | `fillerai/realdata.py` |
 | **train** | a schema + records | an `AutofillModel` | `fillerai/train/` |
 | **simulate** | a model + forms it has not seen | a costed run | `fillerai/simulate/` |
 
@@ -117,6 +121,12 @@ and `aria-describedby` all need.
 anything it omits is inferred exactly as it would be from HTML. `follows` /
 `when` / `otherwise` in a spec become a `Derived` on the field.
 
+A third, for when there is no form at all, only a file of records:
+`realdata.spec_from_table` writes a field spec from the columns (a name per
+column, and only what the values can prove about type and options), and the
+spec reader and inference take it from there. `fillerai extract export.csv`
+and the Source step's **Records (CSV)** tab both go this way.
+
 `infer.py` then decides what each field *means*, from signals ranked by how
 much they can be trusted:
 
@@ -163,6 +173,23 @@ fiction, email domains are the RFC 2606 documentation domains, card numbers
 are Luhn-valid but from the published test IIN ranges.
 `--realistic-identifiers` turns that off for a downstream validator that needs
 real shapes, and the output should then not leave a controlled environment.
+
+### realdata — `fillerai/realdata.py`
+
+Real records, sitting on the same side of the schema as `generate` and
+standing in for it. Three steps, shared by the UI (`/api/data/read`,
+`/api/data/clean`, `/api/data/schema`), the CLI (`fillerai clean`) and the
+tests: **read** a CSV, JSON list or NDJSON with every cell as text; **map**
+each column to a field by name or label, which the person checks; **clean**
+with eight named fixes (`FIXES`), each switchable and each reporting what it
+changed. The output has one key per fillable field, in the form's order,
+written the way the generator writes it — it borrows `generate.render`'s date
+format to make sure — so `train`, `evaluate` and `simulate` take it without
+knowing where it came from. The server holds nothing between calls: the
+browser sends the file each time. A saved set is an ordinary `dataset` entry
+with `origin: real` in its metadata. `/api/evaluate` (the Simulate step's
+**Test on real records**) scores a model against any dataset. Details and
+limits: [real-data.md](real-data.md).
 
 ### train — `fillerai/train/`
 
@@ -261,7 +288,8 @@ links read in either direction.
 
 Six kinds, with id prefixes: `source` (`src-`), `schema` (`sch-`), `dataset`
 (`dat-`), `model` (`mdl-`), `script` (`scr-`) and the bot's `template`
-(`tpl-`). The formats of each are in
+(`tpl-`). A dataset of real records is still a `dataset`; it says so with
+`origin: real` in its metadata. The formats of each are in
 [reference/data-formats.md](reference/data-formats.md).
 
 There are **two implementations of the same interface**, and a caller holding
@@ -287,12 +315,17 @@ intact.
 
 ## 5. Storage — `db.py`
 
-SQLite, in the standard library, so "nothing to install, nothing that leaves
-the machine" survives having a database. One file you can open with `sqlite3`.
+SQLite by default, in the standard library, so "nothing to install, nothing
+that leaves the machine" survives having a database. One file you can open
+with `sqlite3`.
 
-Everything goes through `Database` so that swapping in Postgres does not mean
-touching every caller. What is actually backend-specific is small enough to
-name, and that is the whole justification for the class:
+Everything goes through `Database`, and since 0.18.0 there are two
+implementations: `SQLiteDatabase` and `PostgresDatabase`. `connect()` picks
+one from the URL (`--database`, or `FILLERAI_DATABASE_URL`): `sqlite://…` or a
+plain path, or `postgresql://…`. Postgres goes through psycopg 3, the optional
+extra `fillerai[postgres]`, imported only when such a URL is opened; without
+it the error says how to install it. What is actually backend-specific is
+small enough to name, and that is the whole justification for the class:
 
 - **the parameter style** — callers write `?`; a backend wanting `%s` rewrites
   the statement on the way through;
@@ -312,6 +345,13 @@ connection is not safe to share. Each thread opens its own and keeps it; WAL
 lets readers run while a write is in flight, and a busy timeout covers a
 collision. (The in-memory backend used by tests takes a different path and has
 a known race — see [pending.md](pending.md) §2.1.)
+
+`PostgresDatabase` differs in two places, both inside the subclass: a query
+outside `transaction()` commits (or rolls back) straight away, so no idle
+transaction holds a snapshot; and a finished request hands its connection
+back to a small pool (`POOL = 8`) rather than dropping it.
+`tests/test_postgres.py` reruns the database-backed suites against a real
+server when `FILLERAI_TEST_POSTGRES_URL` is set.
 
 ---
 
@@ -351,8 +391,27 @@ a secret belongs.
 
 ## 7. The two HTTP surfaces — `web/server.py`, `web/rest.py`
 
-They are routed by the same handler and share nothing but the library
-underneath. Conflating them would undo the reason the second one exists.
+One port, one handler (`Handler` in `web/server.py`), and these paths:
+
+| Path | What | Who |
+|---|---|---|
+| `/` | the product page (`static/product.html`) | anyone |
+| `/app` | the app itself (`static/index.html`); `/index.html` answers `302 /app` for old bookmarks | signed in, else `302 /login` |
+| `/login` | the sign-in page | anyone |
+| `/docs`, `/docs/<slug>` | the user guide (`web/guide.md`), the README and every Markdown file in `docs/`, rendered by `web/docs.py` | an access code an administrator sets in Settings; none set, and the page says so |
+| `/static/…`, `/client/…` | the UI's assets; the browser client and its demo pages | anyone (they are inert) |
+| `/sample/…` | the sample application, proxied in-process to the port it also listens on | signed in, unless `--sample-public` / `FILLERAI_SAMPLE_PUBLIC=1` |
+| `/api/…` | the UI's own endpoints, one POST each | session cookie + CSRF header |
+| `/v1/…` | the integration API | bearer token |
+
+The help panel on the right edge of every screen is the same `guide.md`, cut
+into one section per screen and served by `/api/help`, so the in-app help and
+`/docs` cannot drift apart. The docs access code is hashed like a password
+and its cookie is separate from the session's.
+
+The last two are the surfaces that matter here. They are routed by the same
+handler and share nothing but the library underneath. Conflating them would
+undo the reason the second one exists.
 
 | | `/api` | `/v1` |
 |---|---|---|
@@ -390,8 +449,15 @@ application fetches it from the service it talks to rather than vendoring a
 copy that drifts. There is no npm package on purpose. Full reference:
 [integration.md](integration.md).
 
-The UI itself is `static/index.html`, `app.js`, `styles.css` — **no build
-step**, which is the same promise as everything else here.
+The UI itself is `static/index.html`, `app.js`, `styles.css` (and
+`product.*`, `login.*`, `docs-gate.js`, `docs.css` for the pages around it) —
+**no build step**, which is the same promise as everything else here.
+
+**The `/sample/` proxy** is the one place outside the LLM fence where the
+server makes a request of its own: `Handler._sample` forwards to the sample application on `127.0.0.1` with
+`http.client`, so a host that exposes one port (Railway) still shows it. The
+sample application itself reaches AIrForms over `/v1` with `urllib`, as any
+host application would.
 
 ---
 
@@ -468,14 +534,21 @@ turned on by `serve --bot-transcribe`, for the same reason as `--bot-llm`.
 
 These are the things a change should not quietly break. Most have a test.
 
-1. **No runtime dependencies.** `dependencies = []` in `pyproject.toml`,
-   asserted by `tests/test_llm_fence.py`.
+1. **No required runtime dependencies.** `dependencies = []` in
+   `pyproject.toml`, asserted by `tests/test_llm_fence.py`. The one optional
+   extra, `fillerai[postgres]` (psycopg), is imported only when a
+   `postgresql://` URL is opened — by code inspection; no test asserts that.
 2. **No build step.** The UI is files on disk, served as they are.
-3. **Nothing in the core opens a socket.** The one exception is
-   `llm/transport.py`, behind the import fence.
+3. **Nothing in the core opens a socket to the outside.** The one exception
+   is `llm/transport.py`, behind the import fence. Beyond the server's own
+   listening port, the only other connections are on the machine or chosen
+   by whoever runs it: the `/sample/` proxy to `127.0.0.1`, the sample
+   application calling AIrForms' `/v1`, and the Postgres server named by a
+   `postgresql://` URL.
 4. **Nothing leaves the machine unless somebody set a key and ran an `llm`
    command**, or set a key and started the server with `--bot-llm` or
-   `--bot-transcribe`.
+   `--bot-transcribe` (or their variables, `FILLERAI_BOT_LLM` /
+   `FILLERAI_BOT_TRANSCRIBE`), or pointed it at a Postgres server elsewhere.
 5. **The schema is the only cross-stage contract**, and its version rules hold
    (§2).
 6. **A shipped migration is never edited** (§5).
@@ -492,6 +565,11 @@ These are the things a change should not quietly break. Most have a test.
 12. **The bot service keeps no conversation.** A turn is a pure function of
     the input, the state the client sent back and the templates; the state is
     re-checked on every turn because it has been through a browser.
+13. **Real records come out in the generated shape.** Whatever `realdata`
+    cleans has one key per fillable field, written the way the generator
+    writes it, so no stage after it needs to know where a dataset came from.
+    Pinned by `tests/test_realdata.py`, which round-trips every example's
+    generated records through CSV, JSON and NDJSON and back unchanged.
 
 ---
 
@@ -502,8 +580,9 @@ fillerai/
   schema.py            the versioned field-schema contract
   infer.py             semantic type from ranked evidence
   cli.py               every command
+  realdata.py          real records: read, map onto a form, clean
   store.py             the library in a directory
-  db.py                the database, and the interface a backend meets
+  db.py                the database: the interface, SQLite and Postgres
   dbstore.py           the same library in the database, with an owner
   auth.py              users, passwords, roles and sessions
   tokens.py            bearer credentials for an application
@@ -518,17 +597,25 @@ fillerai/
                        cost, rules, understand, transcribe (behind the
                        import fence)
   web/
-    server.py          the UI's /api, and the routing for both surfaces
+    server.py          the UI's /api, the pages, the /sample/ proxy, and
+                       the routing for both surfaces
     rest.py            the /v1 integration API
     botrest.py         the bot service on /v1
     keyring.py         API keys typed into the UI, in memory only
-    static/            index.html, app.js, styles.css, login.*
+    docs.py            /docs: the Markdown renderer, and the help panel's
+                       sections
+    guide.md           the user guide, for /docs and the help panel
+    static/            index.html, app.js, styles.css, login.*,
+                       product.*, docs-gate.js, docs.css
     static/client/     fillerai.js, demo.html, chat.html,
                        fillerai-chat.css - the browser client
   sampleapp/           the sample application serve starts next to the UI;
                        imports nothing from AIrForms, reaches it over /v1
-examples/              one HTML form and four field specs
-tests/                 868 tests, offline, no dependencies
+examples/              one HTML form and four field specs (sample output
+                       in out/)
+tests/                 941 tests, offline, no dependencies
+Dockerfile,            the Railway deploy; see deploy-railway.md
+  railway.json
 livetests/             the LLM acceptance gate; needs a key and an opt-in
 docs/                  this directory
 ```
@@ -541,5 +628,7 @@ docs/                  this directory
 - [assumptions.md](assumptions.md) — what all of this takes as given.
 - [pending.md](pending.md) — what is known to be missing or wrong.
 - [integration.md](integration.md) — the `/v1` API and the browser client.
+- [real-data.md](real-data.md) — reading, mapping and cleaning real records.
+- [deploy-railway.md](deploy-railway.md) — the hosted deployment.
 - [training-and-scale.md](training-and-scale.md) — what a run costs, and
   behaviour at 20,000 records.

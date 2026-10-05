@@ -239,15 +239,20 @@ import { FillerAI } from "./fillerai.js";
 // <script type="module">import { FillerAI } from "/client/fillerai.js";</script>
 
 // A page that also has classic scripts: loading the module puts
-// window.AIrForms in place on the way past.
+// window.AIrForms (and window.FillerAI) in place on the way past.
 ```
+
+The class is exported both as `FillerAI`, its original name, and as
+`AIrForms`; they are the same class, as are `FillerAIError` and
+`AIrFormsError`. The examples here use `FillerAI`.
 
 There is no npm package and no build step, on purpose. The stack rule for
 this project is no dependencies and nothing to install, and it applies to the
 client as much as to the server; an npm package would mean a registry, a
 publish step and a version to keep in step with the server's, to save one
 `curl`. The cost is that you copy a file or point at a URL instead of typing
-`npm install`. The file is 400 lines and has no transitive anything, and it
+`npm install`. The file is about 1,100 lines, most of it the chat widget
+([bot-builder.md](bot-builder.md) §7), and has no transitive anything, and it
 ships inside the Python package, so the copy at `/client/fillerai.js` is
 always the one that matches the service answering you.
 
@@ -338,9 +343,11 @@ every route is in [reference/http-api.md](reference/http-api.md).
   same one repeatedly, and re-reading a few hundred kilobytes of JSON each
   time would make that unusable. Library entries are immutable once written,
   so a cached model cannot go stale; deleting one evicts it.
-- **Nothing here trains.** `/v1` is read-only against the library: it asks
-  models questions and never writes. Building and training stay in the UI and
-  the CLI, where somebody is watching.
+- **Nothing here trains.** The model endpoints are read-only against the
+  library: they ask models questions and never write. The only writes under
+  `/v1` are bot templates (`POST /v1/templates`, with a token not pinned to a
+  model; [bot-builder.md](bot-builder.md)). Building and training stay in the
+  UI and the CLI, where somebody is watching.
 - **The token has no rate limit.** This is a tool on somebody's machine or
   their network, not a public service. If that changes, that is where to
   start.

@@ -6,8 +6,10 @@ server, and exactly how the phrase is read. The API contract itself (request
 and reply shapes, endpoints, error codes) is in
 [bot-builder.md](bot-builder.md) and is linked rather than repeated here.
 
-Checked against the code at version 0.15.1. Every example output on this page
-was produced by running that code with the two starter templates.
+Checked against the code at version 0.19.0. Every example output on this page
+was produced by running the code with the two starter templates (first at
+0.15.1; the bot's code has not changed since, and §9's session reproduces
+unchanged).
 
 **Contents**
 

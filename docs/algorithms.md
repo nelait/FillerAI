@@ -5,9 +5,10 @@ differ from better-known ones such as K-means, and which others could be
 used instead. Part 1 is for anyone and assumes no maths. Part 2 is for
 engineers and says exactly what the code does.
 
-Checked against the code at version 0.15.1. The measurements were taken on
-the `auto_insurance_quote` example (500 generated records, seed 42, trained
-with seed 1).
+Checked against the code at version 0.19.0; the training code has not
+changed in behaviour since 0.15.1, when the measurements were taken on the
+`auto_insurance_quote` example (500 generated records, seed 42, trained with
+seed 1).
 
 **Contents**
 

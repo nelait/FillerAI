@@ -6,7 +6,7 @@ reader can rely on. Why each format looks the way it does is in
 [architecture.md](../architecture.md) and, for the bot, in
 [bot-builder.md](../bot-builder.md). This page is the list of fields.
 
-Everything here was read off the code at version 0.15.0. Each example is
+Everything here was read off the code at version 0.19.0. Each example is
 real output: produced by running the CLI on the files in `examples/`, then
 trimmed to a few fields where marked.
 
@@ -14,7 +14,7 @@ trimmed to a few fields where marked.
 
 1. [The field schema](#1-the-field-schema) — `fillerai/schema.py`
 2. [The field spec](#2-the-field-spec) — `fillerai/extract/spec.py`
-3. [Datasets](#3-datasets) — `fillerai/generate/dataset.py`, `render.py`
+3. [Datasets](#3-datasets) — `fillerai/generate/dataset.py`, `render.py`, `fillerai/realdata.py`
 4. [The trained model](#4-the-trained-model) — `fillerai/train/model.py`, `train/algos/`
 5. [The library](#5-the-library) — `fillerai/store.py`, `fillerai/dbstore.py`
 6. [The database](#6-the-database) — `fillerai/db.py`
@@ -42,7 +42,7 @@ that takes a `schema` argument reads it.
 |---|---|---|---|
 | `schema_version` | string | yes | `SCHEMA_VERSION`, currently `"1.0"`. |
 | `name` | string | yes | The form's name. Defaults to `"form"` when read without one. |
-| `source` | object | yes | Where the schema came from. `{"kind": "html" \| "spec"}`, plus `"path"` when it was read from a file. Free-form; nothing downstream depends on it. |
+| `source` | object | yes | Where the schema came from. `{"kind": "html" \| "spec"}`, plus `"path"` when it was read from a file, or `"from"` when the spec was written from a data file's columns (the file's path from the CLI, `"data"` from the UI). Free-form; nothing downstream depends on it. |
 | `screens` | array of Screen | yes (may be empty) | The form's pages or steps, in order. |
 | `fields` | array of Field | yes | The fields, in the form's own order. |
 
@@ -370,6 +370,29 @@ JSON:
 `insured_company` was left empty by the blank rate, and shows as `""` and as
 an empty cell.
 
+### 3.4 Real records
+
+A file of real submissions goes through `fillerai/realdata.py` (the UI's
+Data step in Upload mode, `/api/data/*`, and `fillerai clean`); the workflow
+is in [real-data.md](../real-data.md). What it reads and writes:
+
+| | |
+|---|---|
+| Read | A CSV (delimiter sniffed), a `.tsv`, a JSON array of objects (or an object with a `records` or `rows` list), or NDJSON / `.jsonl`. The extension decides when there is one; otherwise the first character. Every cell is read as text; a byte-order mark is dropped. At most 500 columns. |
+| Written | The same record shape as generated data (§3.1): one key per fillable field of the form, in the form's order, with dates, numbers, yes/no values and options written the generator's way. A field no column fed holds `""`. |
+| Fixes | `trim`, `blanks`, `case`, `options`, `types`, `duplicates` (on by default), `invalid`, `incomplete` (off by default). |
+
+Saved, the cleaned records are an ordinary `dataset` entry under the form's
+schema, named `<form>: N real records`, with `meta.origin` `"real"` (§5.2).
+In the UI at most 5,000 records are kept per upload.
+
+When there is no form, `realdata.spec_from_table` writes a field spec (§2)
+from the columns: `{"name": <slug>, "fields": [...]}`, each field `{"name":
+<column slugged>, "label": <column>}` plus whatever the values prove (a
+`control` and `data_type` for yes/no, date or number columns, `textarea` for
+long text, `select` with `options` for a short list of choices). That spec, not the records, is what a library `source` made from a
+data file holds.
+
 ---
 
 ## 4. The trained model
@@ -509,7 +532,7 @@ reasons are in [architecture.md §4](../architecture.md#4-the-library--storepy-d
 
 | Kind | Id prefix | Folder | Payload |
 |---|---|---|---|
-| `source` | `src-` | `sources/` | `{"content": <the HTML or spec text>, "kind": "html" \| "spec"}` |
+| `source` | `src-` | `sources/` | `{"content": <the HTML or spec text>, "kind": "html" \| "spec"}`. A source made from a data file is a `spec` holding the spec written from its columns (§3.4). |
 | `schema` | `sch-` | `schemas/` | A field schema (§1). |
 | `dataset` | `dat-` | `datasets/` | An array of records (§3), without the JSON wrapper. |
 | `model` | `mdl-` | `models/` | A trained model (§4). |
@@ -544,7 +567,7 @@ What the writers put in `meta`:
 |---|---|
 | `source` | `kind` (`html`/`spec`), `characters` |
 | `schema` | `fields`, `screens` |
-| `dataset` | `records`; `fillerai generate --save` adds `seed`, `blank_rate` |
+| `dataset` | `records`; `fillerai generate --save` adds `seed`, `blank_rate`. Cleaned real records add `origin` (`"real"`), `file` (the uploaded file's name) and `rows` (`"<kept> of <read>"`); the UI also adds `fixed` (cells changed) and `rejected` (values the form would still reject). A dataset without `origin` was generated. |
 | `model` | `algorithm`, `trained_on`, `held_out`, `rules`; the CLI adds `seeds`, the server adds `seeds` and its scores |
 | `script` | `lines`; the server adds `algorithm` |
 | `template` | `key`, `fields`, `model_id` |
@@ -597,7 +620,15 @@ files per entry, both JSON indented 1:
   scripts/   (written by the server's training run)
   templates/ tpl-20260927-143454658-36ed.json …
   fillerai.db                                           the default database (§6)
+  docs-access.json                                      the /docs access code, with --no-auth only (§6.3)
+  sample-app/portal-<username>.json                     the sample application's demo customer
 ```
+
+The last three are not library entries and a listing never reads them.
+`docs-access.json` is written only by a server with no database; it holds
+the same JSON as the `docs_access` setting (§6.3), mode `0600`.
+`sample-app/` is where `serve` keeps the sample application's customer
+record (`portal.json` with `--no-auth`).
 
 A listing reads only the small `<id>.json` files. A file that cannot be read
 is skipped, so an interrupted write costs one entry, not the library. There is
@@ -642,8 +673,12 @@ becomes `null` rather than a dangling id.
 
 ## 6. The database
 
-`fillerai/db.py`. SQLite from the standard library. Why it is shaped this way
-is in [architecture.md §5](../architecture.md#5-storage--dbpy).
+`fillerai/db.py`. SQLite from the standard library by default
+(`SQLiteDatabase`), or Postgres through the optional psycopg 3 driver
+(`PostgresDatabase`, `pip install 'fillerai[postgres]'`). Both run the same
+DDL and hold the same tables. Why it is shaped this way is in
+[architecture.md §5](../architecture.md#5-storage--dbpy); hosting it on
+Railway is in [deploy-railway.md](../deploy-railway.md).
 
 ### 6.1 Where it is
 
@@ -652,7 +687,8 @@ is in [architecture.md §5](../architecture.md#5-storage--dbpy).
 | URL variable | `FILLERAI_DATABASE_URL` |
 | Default | `sqlite://<library root>/fillerai.db`, the library root being `./.fillerai` unless given |
 | Accepted URLs | `sqlite://<path>`, `sqlite://:memory:`, or a bare filesystem path. `postgres://` and `postgresql://` with the optional psycopg driver (`fillerai[postgres]`); without it, refused with how to install it. |
-| Connection pragmas | `foreign_keys = ON`, `busy_timeout = 10000`, `journal_mode = WAL` (files only), `synchronous = NORMAL` |
+| Connection pragmas (SQLite) | `foreign_keys = ON`, `busy_timeout = 10000`, `journal_mode = WAL` (files only), `synchronous = NORMAL` |
+| Postgres | One connection per thread, returned to a pool of up to 8 when a request ends; a 10-second connect timeout; a query outside a transaction commits (or rolls back) straight away. A password in the URL is masked wherever the URL is shown. |
 
 Every column is `TEXT` or `INTEGER`. Times are ISO 8601 strings. Booleans are
 `INTEGER` 0 or 1. There are no triggers, views, foreign keys or defaults
@@ -753,9 +789,12 @@ do with the field schema's `schema_version` key (§1).
 | `name` | TEXT, primary key | |
 | `value` | TEXT not null | |
 
-The one setting written today is `session_secret`: 32 random bytes, base64,
-made on first use and used to sign session cookies (§7.2). Deleting the
-database therefore signs everybody out.
+Two settings are written today:
+
+| `name` | `value` |
+|---|---|
+| `session_secret` | 32 random bytes, base64, made on first use and used to sign session cookies (§7.2). Deleting the database therefore signs everybody out. |
+| `docs_access` | The `/docs` access code, as JSON `{"hash", "set_at", "set_by"}`: `hash` is a password hash of the code (§7.1), `set_at` the UTC time it was set (`2026-10-05T09:12:00Z`), `set_by` the administrator's username. Written by `POST /api/admin/docs/passcode`; an empty value means no code is set and the docs are closed. |
 
 **`api_tokens`** (step 2), index `tokens_by_user (user_id)`
 

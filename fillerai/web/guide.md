@@ -2,8 +2,9 @@
 
 AIrForms turns a form your agents fill by hand into one that mostly fills
 itself. You give it the form, it works out what each field means, invents
-realistic records for it, learns from those records, and then completes the
-rest of the form from the first few answers an agent types.
+realistic records for it (or cleans real ones you upload), learns from those
+records, and then completes the rest of the form from the first few answers
+an agent types.
 
 The app walks through that in five stages, plus a library of everything you
 have made and a Bot Builder for chat. Each stage ends with a link to the next,
@@ -108,10 +109,11 @@ here instead, to train on them or to test a model with them.
 
 ### When it is done
 
-A bar appears with **Train a model on these records**. It takes the records
-straight to Train. With real records and a model already loaded, it also
-offers **Test the current model**, which scores that model on them on the
-Simulate step. You can export generated records as CSV, JSON or NDJSON.
+A **Next step** bar appears: **Train now** trains on these records straight
+away, and **Go to Train** takes them there to choose how first. With real
+records and a model already loaded, it also offers **Test the current
+model**, which scores that model on them on the Simulate step. You can export
+generated records as CSV, JSON or NDJSON.
 
 **Next:** Train, to learn the form from these records.
 
@@ -170,8 +172,9 @@ counts what the model saved.
 - The seconds are modelled from keystrokes and fixed assumptions, listed at
   the bottom. They are an estimate, not a stopwatch.
 - **Test on real records** scores the model on records that were really
-  submitted: pick a dataset, press **Test**. Upload real records on the Data
-  step first. It warns you if the model learned from those same records.
+  submitted: pick a dataset under **Records**, press **Test**. No real
+  records yet? **Upload some** takes you to the Data step. It warns you if
+  the model learned from those same records.
 
 **Next:** back to Train to try another engine, or Bots to put the model
 behind a chat.
@@ -238,8 +241,10 @@ administrators, everybody's accounts.
 2. **API tokens**: issue one per application that will call `/v1`. The
    secret is shown once.
 3. **Documentation access**: an administrator sets the code people need to
-   open the documentation at `/docs`. Until one is set, the docs are closed.
-   Changing it signs every browser out of the docs.
+   open the documentation at `/docs`, by typing one and pressing **Set code**
+   or with **Make one up** (shown once). Until one is set, the docs are
+   closed; **Close the docs** closes them again. Changing the code signs
+   every browser out of the docs.
 4. **Change your password** signs out your other browsers.
 
 ### Tips

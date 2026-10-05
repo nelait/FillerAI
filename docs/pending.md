@@ -4,7 +4,8 @@ What is missing, what is known to be broken, and what was deliberately not
 built. Each entry says what it is, what the evidence is, and what it would
 take — so that picking one up does not start with a re-investigation.
 
-Verified against version 0.11.0 on 2026-09-22; the bot items and §2.4 against 0.15.0 on 2026-09-27. Where something was measured
+Verified against version 0.11.0 on 2026-09-22; the bot items and §2.4 against 0.15.0 on 2026-09-27;
+§1.2, §2.1, §2.2, §2.6 and §3 against 0.19.0 on 2026-10-05. Where something was measured
 for this document, the command is given.
 
 **Status key:** 🔴 blocking a claim this project makes · 🟠 a real defect with
@@ -41,8 +42,9 @@ recording one never clobbers the other.
 This is the top of the list because it is the one open item that could
 invalidate a shipped feature.
 
-### 1.2 🔴 Nothing has been trained on real past submissions
+### 1.2 🔴 Nothing has been trained on real past submissions yet
 
+The way in now exists (0.19.0, below); real data has not been through it.
 Every number this project reports was measured on data it invented, and
 [assumptions.md](assumptions.md) §3.3 is why that caps the result. Measured on
 five example forms (reproduce with [process.md](process.md) §0):
@@ -67,6 +69,13 @@ clean`), and it is mapped, cleaned and kept as a real dataset; Train learns
 from it, and the Simulate step's **Test on real records** scores any model on
 it. See [real-data.md](real-data.md). What is still missing is the data
 itself and somebody running it inside the environment that holds it.
+
+To be precise about what has been exercised: the read, map and clean code
+is tested on generated records written out as CSV, JSON and NDJSON and read
+back (`tests/test_realdata.py`), and on hand-made messy tables in the same
+file. **No real customer submission has been uploaded, cleaned, trained on
+or tested against**, so nothing yet says how the fixes cope with a real
+export, or what a real dataset does to the numbers below.
 
 Until that happens, the honest claim for this project is "3–32% on synthetic
 data, depending entirely on how much of the form's business logic was written
@@ -161,9 +170,13 @@ that asks for two things is not split; see §2.5 for what actually happens and
 ### 2.1 🟠 The test suite races on the in-memory SQLite backend
 
 `tests/test_web_auth.TestSeparateLibraries.test_a_model_trained_on_the_worker_lands_in_the_trainer_s_library`
-fails intermittently with `database table is locked`.
+fails intermittently with `database table is locked`. The error is raised in
+the server thread, so the test sees it as `RemoteDisconnected` (an error) or
+as a training run that reports one (a failure).
 
-**Measured for this document: 4 failures in 15 runs.** Reproduce with
+**Measured for this document: 4 failures in 15 runs** (2026-09-22); **2 in
+15** on 2026-10-05 at 0.19.0, and once in 4 full-suite runs that day.
+Reproduce with
 
 ```bash
 for i in $(seq 1 15); do python -m unittest tests.test_web_auth.TestSeparateLibraries 2>&1 | tail -1; done | sort | uniq -c
@@ -174,7 +187,7 @@ running the same loop in a worktree at `main` commit `1ca0f50`.
 
 **Cause.** `SQLiteDatabase.__init__` gives the `:memory:` backend a
 `cache=shared` URI so thread-local connections see one database
-(`fillerai/db.py:361`). Shared cache raises `SQLITE_LOCKED` where a file
+(`fillerai/db.py:377`). Shared cache raises `SQLITE_LOCKED` where a file
 raises `SQLITE_BUSY`, and **`busy_timeout` does not apply to
 `SQLITE_LOCKED`** — the loser fails immediately instead of waiting. The
 training worker thread writing the model and the request thread polling
@@ -199,19 +212,23 @@ reader's table lock, and the failure rate got worse (6 of 25).
 The second is probably the better trade: it makes the test backend behave like
 the real one, which is what a test backend is for.
 
-**Offered as a separate change on 2026-09-22; not yet picked up.**
+**Offered as a separate change on 2026-09-22; not yet picked up** — the
+in-memory path in `SQLiteDatabase` is unchanged at 0.19.0.
 
 ### 2.2 🟠 There is no CI
 
-No `.github/workflows`, so no pull request in this repository will ever show a
-green check, and `python -m unittest discover -s tests -q` run locally is the
-only signal that anything works. 868 tests, about 70 seconds.
+No `.github/` directory at all (checked 2026-10-05), so no pull request in
+this repository will ever show a green check, and
+`python -m unittest discover -s tests -q` run locally is the only signal that
+anything works. 941 tests, about 90 seconds.
 
-Combined with §2.1, a contributor who runs the suite once and sees a failure
-has no way to tell a real regression from the known race without re-running.
+Combined with §2.1 and §2.6, a contributor who runs the suite once and sees a
+failure has no way to tell a real regression from a known flake without
+re-running.
 
 **What it takes:** a workflow that runs the suite on 3.10 through 3.13. It
-would need §2.1 fixed first, or it will be red about a quarter of the time.
+would need §2.1 and §2.6 fixed first, or it will go red on a good share of
+runs for no reason.
 
 ### 2.3 🟡 A wrong semantic type fails silently
 
@@ -256,6 +273,20 @@ for [reference/http-api.md](reference/http-api.md) and
   matched nothing, and the kind `template` runs into the date column.
 - **A missing input file, or a port already in use for `serve`,** ends in a
   Python traceback rather than a one-line message.
+- **`--database` help on `serve`, `users`, `tokens` and `db` names only
+  `sqlite://<path>`**, and `connect()`'s error for an unknown scheme says
+  "use sqlite://<path> or a plain file path", although `postgresql://` has
+  worked since 0.18.0 (with the `fillerai[postgres]` extra). Found
+  2026-10-05.
+- **POSTs to `/sample/` skip the 8 MB body cap.** `Handler._sample` in
+  `fillerai/web/server.py` reads `Content-Length` bytes without checking
+  `MAX_BODY_BYTES`, and `do_POST` hands `/sample/` paths to it before the
+  normal check. Only signed-in people reach it (unless `--sample-public`).
+  Found 2026-10-05.
+- **`/docs` files `real-data` and `deploy-railway` under "More"**, because
+  the `GROUPS` list in `fillerai/web/docs.py` predates them.
+- **`fillerai/db.py`'s module docstring** still calls Postgres "the stated
+  plan"; it has existed since 0.18.0.
 
 ### 2.5 🟠 The chat's local reader: defects found while documenting it
 
@@ -283,6 +314,28 @@ is shown before anything is submitted, but the first is visible to users.
 The first two are small code changes with tests; the rest are listed with
 options in [nlp-and-chatbot.md](nlp-and-chatbot.md) §10.
 
+### 2.6 🟠 A token test fails by chance about one run in fifty
+
+`tests/test_tokens.py` `TestIssuing.test_the_secret_is_not_stored_anywhere`
+failed once in a full run on `main` on 2026-10-05, with
+`AssertionError: '4' unexpectedly found in 'usr-…'`.
+
+**It is the test, not a leak.** The test takes `secret.split("_")[-1]` as
+the secret and asserts it appears in no column of the `api_tokens` row. But
+the secret comes from `secrets.token_urlsafe`, which can itself contain `_`,
+so the split sometimes yields only the last one or two characters of it, and
+a one-character string turns up in a user id, a timestamp or the 64-hex-digit
+hash by chance. The stored row holds the SHA-256 of the secret, never the
+secret.
+
+**Measured for this document: 60 of 3,000** issues hit it, reproducing the
+test's check in a loop against an in-memory database — about 2%.
+
+**What it takes:** take the secret as `secret.split("_", 2)[2]`, the way
+`test_a_secret_with_underscores_in_it_still_verifies` in the same file
+already does, so the whole 32-character secret is what is searched for. A
+one-line test change.
+
 ---
 
 ## 3. What is deliberately not there
@@ -292,17 +345,25 @@ argued rather than assumed.
 
 - ⚪ **No dependencies, no build step.** `dependencies = []` is asserted by a
   test, because it is a promise about where this can run
-  ([assumptions.md](assumptions.md) §1.2).
-- ⚪ **No network in the core.** One module opens a socket, behind an import
-  fence with a test that checks it three ways.
+  ([assumptions.md](assumptions.md) §1.2). The one exception is optional:
+  `fillerai[postgres]`, for a `postgresql://` database.
+- ⚪ **No network in the core.** One module talks to an outside service,
+  behind an import fence with a test that checks it three ways. The other
+  connections are local or chosen by whoever runs it: the `/sample/` proxy to
+  `127.0.0.1`, the sample application calling `/v1`, and a Postgres server
+  named in a URL ([architecture.md](architecture.md) §9).
 - ⚪ **No npm package.** One dependency-free ES module shipped inside the
   Python package, so an application fetches it from the service it talks to
   rather than vendoring a copy that drifts.
 - ⚪ **No audit log.** Accounts exist; a record of who did what does not. The
   schema has room for it and nothing needs it yet.
-- ⚪ **No rate limiting, and no hardening for a public deployment.** `serve`
-  binds to loopback and says so loudly if asked otherwise; `--no-auth` is
-  localhost-only because anyone who can reach the port is then signed in.
+- ⚪ **No general rate limiting.** Sign-in pauses an account for 15 minutes
+  after 6 failed attempts, and the `/docs` access code allows 8 wrong tries per
+  address in 15 minutes; nothing else is throttled. `serve` binds to
+  loopback by default, and `--no-auth` refuses any other address because
+  anyone who can reach the port is then signed in. A public deployment now
+  exists as a recipe ([deploy-railway.md](deploy-railway.md)): accounts on,
+  behind Railway's HTTPS proxy with `--trust-proxy`, one replica.
 - ⚪ **No drift detection and no retraining trigger.** The model assumes the
   form's relationships are stable over the period being modelled
   ([assumptions.md](assumptions.md) §2.6).
@@ -312,7 +373,9 @@ argued rather than assumed.
   ([assumptions.md](assumptions.md) §2.1).
 - ⚪ **The sample application has no sign-in of its own.** It is a demo;
   whoever reaches its port is the demo customer
-  ([security.md](security.md) §9).
+  ([security.md](security.md) §9). At `/sample/` on AIrForms' port it is
+  behind the AIrForms sign-in unless `--sample-public` opens it; its own port
+  (8100 by default, bound to the same address as AIrForms) is not.
 - ⚪ **The file library has no owners, search, tags, concurrent writers or
   garbage collection** beyond `prune`. Each would be a good idea in a shared
   service, which is what the database store is for.
