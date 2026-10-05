@@ -5,7 +5,7 @@ For what each command does in the modelling process see
 [process.md](process.md); for every option of every command see
 [reference/cli.md](reference/cli.md).
 
-Checked against the code at version 0.15.0.
+Checked against the code at version 0.19.0.
 
 **Contents**
 
@@ -24,6 +24,9 @@ Checked against the code at version 0.15.0.
 ## 1. Requirements
 
 - **Python 3.10 or later.** Nothing else: `dependencies = []`.
+- Optional: a PostgreSQL database instead of the default SQLite file, with
+  `pip install 'fillerai[postgres]'` (the psycopg 3 driver, the one optional
+  dependency). Nothing imports it unless a `postgresql://` URL is opened.
 - A modern browser for the UI and the chat (the microphone needs `https://`
   or `http://localhost`).
 - Optional: an Anthropic or OpenAI API key for the language-model features.
@@ -72,6 +75,7 @@ AIrForms on http://localhost:8000/  (app: http://localhost:8000/app, docs: http:
   JavaScript client: http://localhost:8000/client/fillerai.js
   chat demo: http://localhost:8000/client/chat.html  (bot reads phrases on this machine)
   sample application: http://localhost:8100/  (its forms are the bot templates, as admin)
+  sample application here too: http://localhost:8000/sample/  (for signed-in people)
   press Ctrl-C to stop
 ```
 
@@ -95,6 +99,10 @@ Common variations:
 | log every request | `serve -v` |
 | open a browser | `serve --open` |
 | keep the data elsewhere | `serve --library /srv/fillerai` or `--database sqlite:///srv/fillerai.db` |
+| keep the data in Postgres | `serve --database postgresql://user:pass@host/db` (needs `fillerai[postgres]`) |
+| listen on every interface | `serve --host 0.0.0.0` (accounts stay on) |
+| behind an HTTPS proxy | `serve --trust-proxy` (§4, [security.md](security.md) §10) |
+| `/sample/` open to anyone | `serve --sample-public` |
 | no sample application | `serve --no-sample-app` |
 | a model reads chat phrases | `serve --bot-llm` with a key set |
 | record and transcribe speech on the server | `serve --bot-transcribe` with an OpenAI key |
@@ -119,7 +127,7 @@ defaults.
 | `FILLERAI_HOME` | CLI, `serve` | The library directory. Default `./.fillerai`. |
 | `FILLERAI_DATABASE_URL` | `serve`, `users`, `tokens`, `db` | `sqlite://<path>`, or `postgresql://user:pass@host/db` with `pip install 'fillerai[postgres]'`. Default `fillerai.db` in the library directory. |
 | `FILLERAI_ADMIN_PASSWORD` | first `serve` | The first administrator's password instead of a generated one. |
-| `PORT` | `serve` | The port, as hosting platforms set it. Default 8000. |
+| `PORT` | `serve`, the sample application run on its own | The port, as hosting platforms set it. Default 8000 (8100 for the sample application). |
 | `FILLERAI_TRUST_PROXY` | `serve` | `1` is the same as `--trust-proxy`: take the visitor's address and https from the proxy's headers. Only behind such a proxy. |
 | `FILLERAI_SAMPLE_PUBLIC` | `serve` | `1` is the same as `--sample-public`: `/sample/` open to visitors who are not signed in. |
 | `FILLERAI_BOT_LLM` | `serve` | `1` is the same as `--bot-llm`. |
@@ -130,7 +138,8 @@ defaults.
 | `FILLERAI_LLM_MODEL` | LLM features | A model name other than the per-task default. |
 | `FILLERAI_LLM_BASE_URL` | LLM features | A different endpoint, such as an approved gateway. |
 | `FILLERAI_TRANSCRIBE_BASE_URL`, `FILLERAI_TRANSCRIBE_MODEL` | `--bot-transcribe` | Where and with what model speech is transcribed. |
-| `FILLERAI_URL`, `FILLERAI_TOKEN` | `bot chat`, the sample application run on its own | Which AIrForms to talk to, and the API token. |
+| `FILLERAI_URL`, `FILLERAI_TOKEN` | the sample application run on its own | Which AIrForms to talk to, and the API token. |
+| `RAILWAY_PUBLIC_DOMAIN`, `RAILWAY_ENVIRONMENT`, `RAILWAY_VOLUME_MOUNT_PATH` | `serve`, read only | Set by Railway. Used to print the public address, and to warn at start when a SQLite database has no volume under it. |
 | `FILLERAI_LLM_LIVE` | `livetests/` only | `1` lets the live acceptance tests spend money. |
 
 `python -m fillerai llm status` prints which provider, model and key the
@@ -146,12 +155,20 @@ With the defaults, everything is under one directory:
 
 ```
 .fillerai/
-  fillerai.db          accounts, sessions, API tokens, every library entry
+  fillerai.db          accounts, sessions, API tokens, the docs access code
+                       (hashed), every library entry
   fillerai.db-wal      SQLite's write-ahead log (part of the database)
   fillerai.db-shm      and its index
   sample-app/          the sample application's demo customer
+  docs-access.json     the docs access code (hashed), only under --no-auth
   schema/ dataset/ …   a file library, if the CLI has written one here
 ```
+
+With `--database postgresql://…` (or `FILLERAI_DATABASE_URL`) everything that
+would be in `fillerai.db` is in that database instead; the directory still
+holds the sample application's customer. Uploaded real records are not kept
+as a file: only the cleaned dataset is, as a library entry, when somebody
+presses **Save cleaned records** ([real-data.md](real-data.md)).
 
 The CLI's own commands (`extract`, `generate`, `train`, `library …`) write
 to the **file library** unless told otherwise; the server writes to the
@@ -171,6 +188,12 @@ folded in on a clean close). Restore by stopping the server and putting the
 copy back as `fillerai.db`, removing any stale `-wal` and `-shm` files.
 
 The file library is plain files; copy the directory.
+
+**Backing up Postgres** is the database's own business: `pg_dump` (or the
+hosting platform's database backups) covers accounts, tokens and the
+library alike. Restore into an empty database and point
+`FILLERAI_DATABASE_URL` at it; migrations bring an older dump up to date on
+the first start.
 
 **Keys typed into Settings are not in any backup**, by design; they are
 forgotten on restart.
@@ -221,7 +244,7 @@ shows another user's templates, `--sample-port` moves it and
 
 It is also served by AIrForms itself at `/sample/` (for example
 `http://localhost:8000/sample/`), which is what the "Sample app" link in the
-header opens. That is how it is demoed on a host that exposes one port, such
+app's left rail opens. That is how it is demoed on a host that exposes one port, such
 as Railway. There it is for signed-in people only, since its chat talks to
 the bot with an administrator's token; `--sample-public` (or
 `FILLERAI_SAMPLE_PUBLIC=1`) opens it to anyone, for a public demo.
@@ -248,6 +271,12 @@ Its own documentation is `fillerai/sampleapp/README.md`.
 | `sample application: not started, there is no administrator` / `no user` | `--sample-user` names nobody, or the database has no admin | Create the user, or drop `--sample-user`. |
 | The sample application shows no forms | The token's user has no bot templates | Add the starters on the Bots tab, then reload. |
 | The sample application shows no form, only "What can we help with?" | None is open yet; that is the start | Ask for one in the chat, or pick one from the menu at the top. |
+| `/docs` says "The documentation has no access code yet" | Closed until an administrator sets one | **Settings → Documentation access** in the app. |
+| "too many wrong codes; try again in a few minutes" on `/docs` | 8 wrong codes from one address in 15 minutes | Wait. Behind a proxy without `--trust-proxy` every visitor shares the proxy's address, and so the limit. |
+| `/sample/` sends you to the sign-in page | It is for signed-in people unless opened | Sign in, or `serve --sample-public` for a public demo. |
+| `/sample/` answers "the sample application is not running here" | `--no-sample-app`, or it could not start | Read the `sample application:` line printed at start. |
+| "a postgresql:// database needs the psycopg driver" | Postgres URL without the optional driver | `pip install 'fillerai[postgres]'`. |
+| `WARNING: no Railway volume is attached` | SQLite on Railway with nothing mounted at `/data` | Attach a volume, or use Postgres ([deploy-railway.md](deploy-railway.md)). |
 | Nobody can sign in | Lost password | `fillerai users passwd admin` from a shell on the server. |
 | "too many failed attempts; try again in N minute(s)" | 6 wrong passwords | Wait 15 minutes, or set a new password with `users passwd`. |
 | A browser app gets a CORS error from `/v1` | Running `--no-auth`, where no origin is allowed | `--cors-origin https://your-app`, or turn accounts on. |

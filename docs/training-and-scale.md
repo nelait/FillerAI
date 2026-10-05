@@ -126,6 +126,11 @@ library only. A 248 KB model loads in 3 ms and answers in 0.5 ms.
 
 ### What exists today
 
+> **Since superseded.** This section describes the code before 0.11.0. The
+> `/v1` service, API tokens and the JavaScript client now let another system
+> ask a saved model for answers; see [integration.md](integration.md). The
+> line references below point at that older code.
+
 There is an HTTP endpoint, `/api/predict`
 ([`fillerai/web/server.py:714`](../fillerai/web/server.py)), but it is built
 for the UI on the same machine and cannot currently serve another system:

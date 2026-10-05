@@ -17,7 +17,10 @@ would. It lives inside the package only so that `fillerai serve` can start it.
 fillerai serve          # UI on http://localhost:8000, sample app on http://localhost:8100
 ```
 
-The UI's header has a **Sample app** link to it. With accounts on, `serve`
+It is also passed through at `/sample/` on the UI's own port, for signed-in
+people only unless `--sample-public` is given, which is how a hosted AIrForms
+shows it. The UI's navigation rail has a **Sample app** link to it. With
+accounts on, `serve`
 issues it an API token called "Sample application" for the first
 administrator (or `--sample-user <name>`), replacing the last one, so its
 forms are that account's bot templates. `--sample-port` moves it and
@@ -28,6 +31,8 @@ It can also be run on its own against any AIrForms:
 ```sh
 python -m fillerai.sampleapp --fillerai http://localhost:8000 --token flr_...
 ```
+
+Run alone it listens on `$PORT` when that is set, else 8100.
 
 The token can also come from `$FILLERAI_TOKEN`; an AIrForms started with
 `--no-auth` needs none. Open it as `localhost`: browsers only allow the

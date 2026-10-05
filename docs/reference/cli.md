@@ -5,7 +5,7 @@ default, the environment variables it reads and the refusals worth knowing
 about. It is a reference to look things up in; for the walkthrough of a full
 pass from a form to a costed simulation, read [../process.md](../process.md).
 
-Everything here was checked against version 0.15.0 by running
+Everything here was checked against version 0.19.0 by running
 `python -m fillerai <command> --help` and the commands themselves on the files
 in `examples/`.
 
@@ -54,8 +54,10 @@ means `python -m fillerai extract`. `python -m fillerai --version` prints the
 version and `--help` works at every level.
 
 **Inputs.** Wherever a command takes a form (`source` or `schema`), a file
-ending in `.html` or `.htm` is read as markup and anything else is read as
-JSON: either a hand-written field spec or a schema that `extract` wrote. Record
+ending in `.html` or `.htm` is read as markup; a file ending in `.csv`,
+`.tsv`, `.ndjson` or `.jsonl` is read as records, and the form is made from
+its columns, one field per column; anything else is read as JSON: either a
+hand-written field spec or a schema that `extract` wrote. Record
 files for `train`, `evaluate` and `simulate --records` may be `.json` (a list,
 or an object with a `records` list), `.ndjson` or `.csv`. `check` is the
 exception and reads JSON only.
@@ -209,7 +211,10 @@ python -m fillerai clean [--map COLUMN=FIELD] [--skip FIX] [--also FIX] [-o OUT]
 | `-o`, `--out` | stdout | Where to write the cleaned records. |
 | `-f`, `--format` | `json` | `json`, `ndjson` or `csv`. |
 | `--save` | off | Keep the cleaned records in the library, marked as real. |
-| `--from-schema` | none | The library schema they belong to (otherwise the schema is saved too). |
+| `--library PATH` | `$FILLERAI_HOME` or `./.fillerai` | The library `--save` writes to. |
+| `--from-schema ID` | none | The library schema they belong to (otherwise the schema is saved too). |
+
+**Environment.** `FILLERAI_HOME` (with `--save`).
 
 **Output.** On stderr: each column and the field it went to, the fields no
 column fed, each fix that found something and whether it was applied, what is
@@ -756,16 +761,18 @@ Start the web UI, the `/v1` integration API and, by default, the sample
 application next to it. It runs until Ctrl-C.
 
 ```
-python -m fillerai serve [-p PORT] [--host HOST] [--open] [-v] [--library PATH]
-                         [--database URL] [--cors-origin ORIGIN] [--no-auth]
-                         [--bot-llm] [--bot-transcribe] [--no-sample-app]
-                         [--sample-port SAMPLE_PORT] [--sample-user USERNAME]
+python -m fillerai serve [-p PORT] [--host HOST] [--trust-proxy] [--open] [-v]
+                         [--library PATH] [--database URL] [--cors-origin ORIGIN]
+                         [--no-auth] [--bot-llm] [--bot-transcribe] [--no-sample-app]
+                         [--sample-port SAMPLE_PORT] [--sample-public]
+                         [--sample-user USERNAME]
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
-| `-p`, `--port` | `8000` | Port for the UI and API. |
+| `-p`, `--port` | `$PORT` if set, else `8000` | Port for the UI and API. `$PORT` is how hosting platforms such as Railway say which port to use. |
 | `--host` | `127.0.0.1` | Bind address. The default keeps the UI on this machine. |
+| `--trust-proxy` | off (`$FILLERAI_TRUST_PROXY`) | Believe `X-Forwarded-For` and `X-Forwarded-Proto` from the proxy in front (Railway and the like). Only behind such a proxy: otherwise a visitor could claim any address. The variable counts when it is `1`, `true` or `yes`. |
 | `--open` | off | Open a browser window. |
 | `-v`, `--verbose` | off | Log each request. |
 | `--library PATH` | `$FILLERAI_HOME` or `./.fillerai` | The directory library. With accounts on, it also locates the default database. |
@@ -776,11 +783,13 @@ python -m fillerai serve [-p PORT] [--host HOST] [--open] [-v] [--library PATH]
 | `--bot-transcribe` | off | Let the chat record audio in the browser and transcribe it here with an OpenAI key. Sends voices to OpenAI. |
 | `--no-sample-app` | off | Do not start the sample application (Northwind Mutual). |
 | `--sample-port` | `8100` | The sample application's port. |
+| `--sample-public` | off (`$FILLERAI_SAMPLE_PUBLIC`) | Let visitors who are not signed in use the sample application at `/sample/`. Off by default because its chat uses an administrator's token. |
 | `--sample-user USERNAME` | first active administrator | Whose bot templates the sample application shows. |
-| `--sample-public` | off (`$FILLERAI_SAMPLE_PUBLIC`) | Let visitors who are not signed in use the sample application at `/sample/`. |
 
-**Environment.** `FILLERAI_HOME`, `FILLERAI_DATABASE_URL`,
-`FILLERAI_ADMIN_PASSWORD`, `FILLERAI_BOT_LLM`, `FILLERAI_BOT_TRANSCRIBE`, and
+**Environment.** `PORT`, `FILLERAI_HOME`, `FILLERAI_DATABASE_URL`,
+`FILLERAI_ADMIN_PASSWORD`, `FILLERAI_TRUST_PROXY`, `FILLERAI_BOT_LLM`,
+`FILLERAI_BOT_TRANSCRIBE`, `FILLERAI_SAMPLE_PUBLIC`, the Railway variables
+in the [table below](#environment-variables), and
 all the language-model and transcription variables in the
 [table below](#environment-variables). Keys typed into the UI's Settings are
 laid over the environment for that user and are not written to disk.
@@ -800,10 +809,15 @@ laid over the environment for that user and are not written to disk.
   previous one is removed) and keeps its demo data under
   `<library>/sample-app/`. If there is no such user, or no administrator, or
   its port is taken, the server still starts and says why the sample
-  application did not.
-- The banner lists the URL, the database or library, the accounts state, the
-  `/v1` address and allowed browser origins, the JavaScript client and chat
-  demo pages, and the sample application.
+  application did not. When it starts, it is also served at `/sample/` on
+  the UI's own port, through an in-process proxy: to signed-in people only,
+  unless `--sample-public` is given or accounts are off.
+- The banner lists the URL with the app (`/app`) and docs (`/docs`)
+  addresses, the public address on Railway (and a warning when a SQLite
+  database there has no volume attached), the database or library, the
+  accounts state, the `/v1` address and allowed browser origins, the
+  JavaScript client and chat demo pages, and the sample application on its
+  own port and at `/sample/`. `--open` opens `/app`.
 
 **Refusals.** `--no-auth` with a non-loopback `--host` (such as `0.0.0.0`)
 exits 1 before binding. A `--port` already in use ends in an `OSError`
@@ -817,8 +831,9 @@ python -m fillerai serve --no-auth --no-sample-app -p 8000
 python -m fillerai serve --host 0.0.0.0 --cors-origin https://claims.example.com
 ```
 
-See [../process.md §9](../process.md#9-running-it-for-other-people) and
-[../integration.md](../integration.md).
+See [../process.md §9](../process.md#9-running-it-for-other-people),
+[../integration.md](../integration.md) and, for hosting it,
+[../deploy-railway.md](../deploy-railway.md).
 
 ### users
 
@@ -1020,7 +1035,8 @@ python -m fillerai tokens revoke "claims portal"
 
 Report on the database and move a directory library into it. The group
 options `--database URL` and `--library PATH` go before the subcommand. A
-database that cannot be opened (including a `postgresql://` URL) exits 1.
+database that cannot be opened exits 1, as does a `postgresql://` URL when the
+optional driver is not installed.
 
 **Environment.** `FILLERAI_DATABASE_URL`, `FILLERAI_HOME`, for every
 subcommand.
@@ -1033,7 +1049,8 @@ Say where the database is and what is in it.
 python -m fillerai db [--database URL] [--library PATH] status
 ```
 
-Prints the backend and URL, the schema version and table count, the number of
+Prints the backend (`SQLiteDatabase` or `PostgresDatabase`) and URL, with
+any password in it masked, the schema version and table count, the number of
 users and administrators, and the number of library entries and owners.
 Exits 0.
 
@@ -1075,9 +1092,13 @@ Nothing is read from any other configuration file.
 
 | Variable | Read by | Meaning | Default |
 |---|---|---|---|
+| `PORT` | `cli.py`, `sampleapp/app.py`; `serve`, and `python -m fillerai.sampleapp` run on its own | The default `--port`, as hosting platforms set it. | `8000` (`8100` for the sample application) |
 | `FILLERAI_HOME` | `store.py`; every command with `--library` or `--save`, and the default database location | The directory library. `--library` overrides it. | `./.fillerai` |
 | `FILLERAI_DATABASE_URL` | `db.py`; `serve`, `users`, `tokens`, `db` | The database URL. `--database` overrides it. | `sqlite://<library>/fillerai.db` |
 | `FILLERAI_ADMIN_PASSWORD` | `auth.py`; `serve` on an empty database | The first administrator's password, instead of a generated one. | generated and printed once |
+| `FILLERAI_TRUST_PROXY` | `cli.py`; `serve` | Same as `--trust-proxy`. On when `1`, `true` or `yes`. | off |
+| `FILLERAI_SAMPLE_PUBLIC` | `web/server.py`; `serve` | Same as `--sample-public`. On unless empty, `0`, `false` or `no`. | off |
+| `RAILWAY_PUBLIC_DOMAIN`, `RAILWAY_ENVIRONMENT`, `RAILWAY_VOLUME_MOUNT_PATH` | `web/server.py`; `serve` | Set by Railway, read only for the start-up banner: the public address, and a warning when a SQLite database has no volume. | not set |
 | `FILLERAI_BOT_LLM` | `web/server.py`; `serve` | Same as `--bot-llm`. On unless empty, `0`, `false` or `no`. | off |
 | `FILLERAI_BOT_TRANSCRIBE` | `web/server.py`; `serve` | Same as `--bot-transcribe`, read the same way. | off |
 | `FILLERAI_LLM_KEY` | `llm/config.py`; `llm status`, `propose-rules`, `serve` | The API key for whichever provider is chosen. Takes precedence over the provider's own variable. Its prefix is a last-resort hint for the provider. For transcription it is used only if it looks like an OpenAI key. | none |

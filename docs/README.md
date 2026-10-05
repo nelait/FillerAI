@@ -3,7 +3,9 @@
 The [top-level README](../README.md) is the tour: what this is, and what each
 stage looks like when you run it. These are the documents you want open when
 you are changing something, deciding something, or trying to find out what is
-already known.
+already known. How to use the app itself, screen by screen, is the
+[user guide](../fillerai/web/guide.md): the same text the app's **Help** panel
+shows, and the first entry on `/docs` on a running server.
 
 ## Reading paths
 
@@ -12,8 +14,9 @@ already known.
 | new to AIrForms | [overview.md](overview.md), then the [README](../README.md) tour, then [process.md](process.md) |
 | explaining it to stakeholders | [algorithms.md](algorithms.md) Part 1, [nlp-and-chatbot.md](nlp-and-chatbot.md), [overview.md](overview.md) |
 | about to change the code | [overview.md](overview.md), [architecture.md](architecture.md), [reference/modules.md](reference/modules.md), [pending.md](pending.md) |
+| bringing in real past submissions | [real-data.md](real-data.md), then `clean` in [reference/cli.md](reference/cli.md) and the `/api/data/*` routes in [reference/http-api.md](reference/http-api.md) |
 | connecting another application | [integration.md](integration.md), [bot-builder.md](bot-builder.md), [reference/http-api.md](reference/http-api.md) |
-| running it for other people | [operations.md](operations.md), [security.md](security.md), [reference/cli.md](reference/cli.md) |
+| running it for other people | [operations.md](operations.md), [security.md](security.md), [deploy-railway.md](deploy-railway.md) if it goes on Railway or another container host, [reference/cli.md](reference/cli.md) |
 | deciding what to build next | [pending.md](pending.md), [assumptions.md](assumptions.md), the analyses below |
 
 ## Start here
@@ -75,7 +78,10 @@ how to back it up, upgrading, the sample application, and a troubleshooting
 table of the problems actually met so far.
 
 **[deploy-railway.md](deploy-railway.md)** — putting it on Railway: the
-Dockerfile, the volume that keeps the database, and the variables to set.
+Dockerfile and `railway.json`, `$PORT` and `--trust-proxy`, the volume that
+keeps the SQLite database or a Postgres database instead, the first
+administrator, the sample application at `/sample/`, and the variables to
+set.
 
 **[security.md](security.md)** — what is protected and how, exactly what can
 leave the machine and under which switch, passwords, sessions, tokens and
@@ -84,8 +90,8 @@ beyond localhost.
 
 ## Reference
 
-Looked up rather than read through. Each is checked against the code at
-0.15.0.
+Looked up rather than read through. Each says at the top which version of the
+code it was checked against.
 
 **[reference/cli.md](reference/cli.md)** — every command and subcommand, every
 option with its default, and every environment variable.

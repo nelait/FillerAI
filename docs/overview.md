@@ -5,7 +5,7 @@ the first time: what problem it solves, what the parts are, how a request
 travels through them, and where to read next. Every other document in this
 directory goes deeper into one of the boxes drawn here.
 
-Checked against the code at version 0.15.0.
+Checked against the code at version 0.19.0.
 
 **Contents**
 
@@ -33,12 +33,14 @@ Two constraints shape everything else:
 - **The companies with the forms will not hand over real data to train on.**
   So AIrForms reads the form itself (its HTML, or a short field spec),
   generates coherent synthetic records the form would accept, and trains on
-  those. Real past submissions, where they exist, drop into the same training
-  step with no change.
+  those. Real past submissions, where they exist, are mapped onto the form,
+  cleaned in the open, and then drop into the same training step with no
+  change ([real-data.md](real-data.md)).
 - **It runs where the forms live**, which is often a locked-down machine. It
   is Python 3 and the standard library only: no dependencies, no build step,
   no network unless somebody deliberately turns on one of the optional
-  language-model features.
+  language-model features. The one optional extra, `fillerai[postgres]`, is
+  only for keeping the shared data in Postgres instead of SQLite.
 
 On top of the modelling there is a **bot service**: a chat window inside
 another application that understands "please change my address to 1429
@@ -55,12 +57,12 @@ flowchart LR
     end
 
     subgraph fillerai[AIrForms process: python -m fillerai serve]
-        ui[Web UI<br/>static/index.html + app.js]
+        ui[Web UI at /app<br/>static/index.html + app.js]
         api["/api<br/>cookie + CSRF"]
         v1["/v1<br/>bearer token"]
-        core[Core pipeline<br/>extract, generate, train, simulate]
+        core[Core pipeline<br/>extract, generate, clean, train, simulate]
         bot[Bot service<br/>fillerai/bot]
-        lib[(Library<br/>SQLite or a directory)]
+        lib[(Library<br/>SQLite, Postgres or a directory)]
         llm[Optional LLM package<br/>fillerai/llm]
     end
 
@@ -69,7 +71,7 @@ flowchart LR
         chat[Chat window<br/>fillerai.js]
     end
 
-    sample[Sample application<br/>Northwind Mutual, port 8100]
+    sample[Sample application<br/>Northwind Mutual, port 8100<br/>and /sample/]
     provider[(Anthropic or OpenAI<br/>only when turned on)]
 
     analyst --> ui --> api
@@ -87,22 +89,29 @@ flowchart LR
 ```
 
 One process serves everything. `python -m fillerai serve` starts it on
-`127.0.0.1:8000`, and by default also starts the sample application on
-port 8100 as a second, independent program that reaches AIrForms only over
-`/v1`, exactly as a customer's own application would.
+`127.0.0.1:8000` (or `$PORT`), and by default also starts the sample
+application on port 8100 as a second, independent program that reaches
+AIrForms only over `/v1`, exactly as a customer's own application would. The
+same server passes `/sample/` through to it, so a host that exposes one port
+can still show it. Beside the app at `/app`, the server has a public product
+page at `/` and a documentation site at `/docs` (the user guide and this
+directory, rendered as HTML, behind an access code an administrator sets).
+How it runs in a container on Railway is [deploy-railway.md](deploy-railway.md).
 
 | Part | Code | What it does |
 |---|---|---|
-| Web UI | `fillerai/web/static/` | Five steps (Source, Schema, Generate, Train, Simulate), the Library and Bots tabs, and Settings, which holds the admin cards for an administrator. Plain files, no build. |
+| Web UI | `fillerai/web/static/` | Five steps (Source, Schema, Data, Train, Simulate), the Library and Bots tabs, and Settings, which holds the admin cards for an administrator. A help panel on every screen. Plain files, no build. |
+| Product page and docs | `web/static/product.*`, `web/docs.py`, `web/guide.md` | The public page at `/`; `/docs` and the in-app help panel, both rendered from Markdown. |
 | `/api` | `fillerai/web/server.py` | The UI's own endpoints. A session cookie and a CSRF header. May change with the UI. |
 | `/v1` | `fillerai/web/rest.py`, `web/botrest.py` | The stable service for other applications: model suggestions and the bot. Bearer token only. |
 | Core pipeline | `extract/`, `generate/`, `train/`, `simulate/` | The four modelling stages, over one shared schema contract. |
+| Real records | `fillerai/realdata.py` | Reading an export, mapping its columns to the form's fields, and the named cleaning fixes. |
 | Bot service | `fillerai/bot/` | Templates, reading a phrase, and a stateless conversation turn. |
-| Library | `store.py`, `dbstore.py`, `db.py` | Everything a run produces, each entry pointing at what it came from. |
+| Library | `store.py`, `dbstore.py`, `db.py` | Everything a run produces, each entry pointing at what it came from. SQLite by default, Postgres with the optional extra. |
 | Accounts | `auth.py`, `tokens.py` | People sign in with passwords; applications use API tokens. |
 | LLM package | `fillerai/llm/` | Optional. Behind an import fence, off unless deliberately turned on. |
 | JavaScript client | `web/static/client/fillerai.js` | One dependency-free ES module: form binding, `BotChat`, `ChatWidget`, `SpeechInput`. |
-| Sample application | `fillerai/sampleapp/` | A made-up insurer's portal showing the chat and forms working in a separate app; the chat, or its menu, opens one form at a time. |
+| Sample application | `fillerai/sampleapp/` | A made-up insurer's portal showing the chat and forms working in a separate app; the chat, or its menu, opens one form at a time. On port 8100, and at `/sample/` for signed-in people (anyone with `--sample-public`). |
 
 ## 3. The modelling pipeline
 
@@ -112,7 +121,9 @@ flowchart LR
     extract --> schema[(schema<br/>sch-)]
     schema --> generate
     generate --> dataset[(dataset<br/>dat-)]
-    real[/real past<br/>submissions/] -.-> train
+    real[/real past<br/>submissions/] -.-> clean
+    schema --> clean
+    clean --> dataset
     dataset --> train
     schema --> train
     train --> model[(model<br/>mdl-)]
@@ -139,6 +150,14 @@ flowchart LR
 4. **Simulate** plays the model against forms it has never seen, the way an
    agent would type into them, and costs the result in keystrokes and time
    including the cost of correcting wrong suggestions.
+
+Real past submissions come in beside step 2 rather than after it: `clean`
+(the Data step's **Upload real records**) matches an export's columns to the
+schema's fields and cleans it with named fixes, each counted and switchable,
+into a dataset of exactly the shape generated records have, marked real.
+Training takes it unchanged, and **Test on real records** on the Simulate step
+scores any model against it. With no form at all, `extract` reads a schema off
+the file's columns. [real-data.md](real-data.md) has the details.
 
 Each stage writes a library entry that points at its input, so any model can
 be traced back to the markup it came from. [process.md](process.md) walks
@@ -192,9 +211,10 @@ The full contract, with real replies, is [bot-builder.md](bot-builder.md).
 
 | Who | Credential | Reaches | Can |
 |---|---|---|---|
-| Anyone | none | the sign-in page, `/v1/health`, the static client | nothing else |
+| Anyone | none | the product page at `/`, the sign-in page, `/v1/health`, the static client | nothing else |
+| Anyone with the docs code | the access code, then a docs cookie | `/docs` | read the user guide and these documents |
 | A user | password, then a session cookie | the UI and `/api` | work with their own library, issue their own API tokens, add a language-model key for their session |
-| An administrator | same | the admin cards in Settings | everything a user can, plus manage accounts and see the database |
+| An administrator | same | the admin cards in Settings | everything a user can, plus manage accounts, see the database and set the docs access code |
 | An application | `Authorization: Bearer flr_…` | `/v1` | read the token owner's models and templates, ask for suggestions, run bot turns |
 | Everyone, with `--no-auth` | none | all of it, localhost only | one library for one person on one machine |
 
@@ -207,7 +227,8 @@ These are the ones that explain most decisions. The full list of twelve, each
 with the test that holds it, is in [architecture.md](architecture.md) §9.
 
 - **No dependencies and no build step.** `dependencies = []` in
-  `pyproject.toml` is asserted by a test.
+  `pyproject.toml` is asserted by a test; the Postgres driver is an optional
+  extra that nothing imports until a `postgresql://` URL is opened.
 - **Nothing leaves the machine by default.** Only `fillerai/llm/transport.py`
   opens a socket, and nothing outside that package imports it at module
   scope.
@@ -226,12 +247,13 @@ with the test that holds it, is in [architecture.md](architecture.md) §9.
 |---|---|---|
 | Language | Python 3.10+, standard library only | Installs anywhere the form lives. |
 | Web server | `http.server.ThreadingHTTPServer` | No framework to install. |
-| Storage | SQLite (WAL, one connection per thread); a directory of JSON for the CLI | In the standard library; Postgres is a subclass of `Database`, not a rewrite. |
+| Storage | SQLite (WAL, one connection per thread); a directory of JSON for the CLI; Postgres optionally | SQLite is in the standard library; Postgres (`PostgresDatabase`, psycopg 3, `fillerai[postgres]`) is a subclass of `Database`, not a rewrite. |
 | Passwords | `hashlib.scrypt`, PBKDF2 fallback | Slow on purpose. |
 | API tokens | 24 random bytes, SHA-256 at rest | Checked on every call, so fast on purpose. |
 | Browser code | Plain ES modules, no bundler | Same promise as the server. |
 | Language models | Anthropic or OpenAI over `urllib`, optional | Inferred from the keys present; off unless asked for. |
-| Tests | `unittest`, offline, about 870 tests | The only gate; there is no CI. |
+| Tests | `unittest`, offline, 941 tests | The only gate; there is no CI. |
+| Deployment | `Dockerfile`, `railway.json` | Runs the same `serve` in a container behind a platform's proxy. |
 
 ## 8. Where to read next
 
@@ -243,7 +265,9 @@ with the test that holds it, is in [architecture.md](architecture.md) §9.
 | look up an endpoint | [reference/http-api.md](reference/http-api.md) |
 | read or write a file AIrForms produces | [reference/data-formats.md](reference/data-formats.md) |
 | call it from another application | [integration.md](integration.md), [bot-builder.md](bot-builder.md) |
+| bring in real past submissions | [real-data.md](real-data.md) |
 | install, run, back up or troubleshoot it | [operations.md](operations.md) |
+| put it on Railway or another container host | [deploy-railway.md](deploy-railway.md) |
 | know what could go wrong with data and credentials | [security.md](security.md) |
 | know what is assumed, or what is still open | [assumptions.md](assumptions.md), [pending.md](pending.md) |
 | understand or justify the learning methods | [algorithms.md](algorithms.md) |

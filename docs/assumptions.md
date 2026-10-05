@@ -27,34 +27,51 @@ one that touches a network is a single method.
 
 **If it is false** — if someone *can* share their records — most of this is
 still useful and the generate stage becomes optional. That is the good case,
-and §8 of [process.md](process.md) is the argument for chasing it.
+and §8 of [process.md](process.md) is the argument for chasing it. Since
+0.19.0 the Data step's **Upload real records** and `fillerai clean` are the
+way in (§9 below).
+
+**Where the records go when they are uploaded.** The file goes to whichever
+server is running AIrForms. On `serve` at a desk that is the same machine;
+on a hosted deployment ([deploy-railway.md](deploy-railway.md)) it is that
+host, and a saved dataset sits in its library or database. Real records
+belong on an instance running inside the environment that holds them.
 
 ### 1.2 Nothing can be installed where this runs
 
 Locked-down environments do not get `pip install`. So: `dependencies = []` in
 `pyproject.toml`, asserted by `tests/test_llm_fence.py`; no build step for the
-UI; SQLite rather than a server; `http.server` rather than a framework; every
-algorithm in plain Python, including the decision trees and the softmax
-regression.
+UI; SQLite rather than a server by default; `http.server` rather than a
+framework; every algorithm in plain Python, including the decision trees and
+the softmax regression.
 
 **What it costs**, plainly: there is no scikit-learn, no numpy, no Postgres
-driver, and no npm package for the browser client. The engines are slower than
+driver in a default install, and no npm package for the browser client. The engines are slower than
 a compiled one by a wide margin, and [weight-based-training.md](weight-based-training.md)
 §2 measures exactly how much.
 
 **If it is false** for a given deployment, the interfaces are already in the
 right places — `Database` for Postgres, `Transport` for a first-party SDK —
-but the rule does not get relaxed by default.
+but the rule does not get relaxed by default. Postgres is the case where it
+was used: `fillerai[postgres]` (0.18.0) is an optional extra, imported only
+when a `postgresql://` URL is opened, and the Railway image installs it. A
+default install still needs nothing.
 
-### 1.3 It is a local working tool, not a public service
+### 1.3 It is a local working tool first, and a hosted one only behind a proxy
 
-`serve` binds to loopback and says so loudly if asked to do otherwise.
-`--no-auth` is localhost-only, since anyone who can reach the port is then
-signed in. There is no rate limiting, no audit log, and no multi-tenancy
-beyond an owner column.
+`serve` binds to loopback by default. `--no-auth` refuses any other address,
+since anyone who can reach the port is then signed in. There is no general
+rate limiting (sign-in pauses after 6 failures, the docs access code after
+8), no audit log, and no multi-tenancy beyond an owner column.
 
-**If it is false** — if this is put on a network — the honest list of what is
-missing is in [pending.md](pending.md) §3.
+Since 0.17.1 there is one supported way onto a network: the Railway deploy
+([deploy-railway.md](deploy-railway.md)). It assumes accounts stay on, a
+platform proxy terminates HTTPS in front (`--trust-proxy` then believes its
+`X-Forwarded-For`/`-Proto`, which is safe only behind such a proxy), and
+exactly one replica (§7.8).
+
+**If it is false** — if this is put on a network some other way — the honest
+list of what is missing is in [pending.md](pending.md) §3.
 
 ### 1.4 Python 3.10 or later
 
@@ -172,7 +189,8 @@ the data, not the quality of the model.
 **Two things follow, and both are in [pending.md](pending.md) §1:** declaring
 rules is worth more than any modelling change, and training on real past
 submissions is the thing that would actually move this — needing no change to
-the pipeline, because a dataset is a dataset.
+the pipeline, because a dataset is a dataset. The way in for real records
+exists since 0.19.0 (§9); none have been through it yet.
 
 ### 3.4 A declared rule is true
 
@@ -324,8 +342,8 @@ than assumed impossible.
 ### 7.1 Two kinds of credential, with different threat models
 
 A **password** is a short string a person chose, so the hashing cost is the
-defence: scrypt at interactive parameters, ~45ms. A **token secret** is 32
-bytes from `secrets`, beyond guessing, and is verified on every API call, where
+defence: scrypt at interactive parameters, ~45ms. A **token secret** is 24
+random bytes from `secrets` (32 URL-safe characters), beyond guessing, and is verified on every API call, where
 45ms would make the surface useless — so SHA-256. This difference is
 deliberate and documented in `fillerai/tokens.py`; a reviewer reading it as an
 oversight is the failure mode it is written against.
@@ -357,7 +375,7 @@ directory get the same ids — the ids carry their lineage — and neither can
 reach the other's copy. Entries do not change after they are written, which is
 what lets `/v1` cache a loaded model without it going stale.
 
-### 7.6 The database is one file, and Postgres is a subclass
+### 7.6 The database is one file by default, and Postgres is a subclass
 
 Backend-specific surface is exactly two things: the parameter style and
 connecting. The DDL is in the SQL both accept, times are ISO 8601 strings
@@ -373,15 +391,27 @@ transaction at once, and connections are pooled per request.
 Steps are applied in order, once, and recorded, so an older database catches up
 on start rather than being recreated.
 
+### 7.8 A hosted instance is one process
+
+Several things live only in the server process: a training run and its live
+log, the cache of loaded models, API keys typed into the UI, and the count
+of wrong docs access codes. So the Railway deploy runs **one replica**
+(`numReplicas: 1` in `railway.json`), and a restart forgets those — a
+running training run included. Everything that has to survive is in the
+library or the database, which on Railway means a volume at
+`FILLERAI_HOME=/data` or `FILLERAI_DATABASE_URL` pointing at Postgres;
+without either, every deploy starts empty, and the server says so in its log.
+
 ---
 
 ## 8. About the test suite
 
 ### 8.1 The suite is the only signal
 
-There is no CI in this repository. 868 tests run offline in about 70 seconds,
+There is no CI in this repository. 941 tests run offline in about 90 seconds,
 and running them before pushing is the whole of the quality gate. See
-[pending.md](pending.md) §2.2.
+[pending.md](pending.md) §2.2, and §2.1 and §2.6 for the two tests that fail
+now and then without a change to blame.
 
 ### 8.2 A non-deterministic feature is tested against a recording
 
@@ -395,6 +425,63 @@ current fixtures are hand-written, say so in a `_note`, and exercise every
 branch of the validation gate. What they cannot tell you is whether a real
 model proposes good rules. That is what `livetests/` is for, and it has never
 been run — [pending.md](pending.md) §1.1.
+
+---
+
+## 9. About real records — `fillerai/realdata.py`
+
+What the read, map and clean steps take as given. The details are in
+[real-data.md](real-data.md); these are the places they can be wrong.
+
+### 9.1 A real record can stand in for a generated one
+
+The cleaned output has one key per fillable field, in the form's order, with
+dates, numbers, options and yes/no written the way the generator writes them.
+Everything after it relies on that: `train`, `evaluate` and `simulate` do not
+know where a dataset came from. A dataset saved from an upload says so
+(`origin: real`), and the UI labels and lists real sets first, but no stage
+reads it to behave differently.
+
+### 9.2 A column is a field when their names say so
+
+Columns are matched to fields by name or label, exactly first and then by
+near match (`MATCH_CUTOFF = 0.82`), one column per field, and a column that
+matches nothing is left out. An export whose headers are internal codes
+(`F_0417`) maps to nothing until a person maps it, and the guess is shown for
+exactly that reason. A field with no column is blank in every record.
+
+### 9.3 Dates are month-first
+
+`03/04/2024` is March 4th. Day-first is tried only when month-first cannot be
+right, or when the field's own format is day-first (`DATE_FORMATS`). An
+export written day-first where every day is 12 or less is read wrongly and
+nothing notices.
+
+### 9.4 Every repair is safe, and the two that are not wait to be asked
+
+Six fixes are on by default: trimming, reading `N/A`/`null`/`-` and friends
+as empty, evening out ALL-CAPS names and addresses (word by word, so
+`MCDONALD` becomes `Mcdonald`), matching values to options, writing numbers,
+dates and yes/no the form's way, and dropping identical rows. The two that
+throw information away — emptying values the form would still reject, and
+dropping rows missing a required field — are off until asked, and every fix
+counts what it did or would do. A word in `BLANK_WORDS` is kept when the field
+offers it as an option.
+
+### 9.5 Testing on real records is the honest measure
+
+A model trained on generated records and scored on real ones is the number
+worth quoting; the Simulate sweep only measures a model on the world it was
+taught. A test on the very records a model learned from is allowed and
+flagged, because it measures memory rather than the form. The UI caps a save
+at 5,000 records and a test at 1,000; the CLI has no cap.
+
+### 9.6 Training on real records carries their privacy with it
+
+Every engine's model is built from the records, and the `nearest` engine's
+model file contains a bounded sample of them verbatim
+([process.md](process.md) §3). On generated data that is nobody's business;
+on real data the model file is as sensitive as the export.
 
 ---
 

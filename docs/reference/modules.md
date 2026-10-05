@@ -6,7 +6,7 @@ changing it needs to know first. [architecture.md](../architecture.md) says
 why the pieces are shaped the way they are; this is the index you want open
 beside the code.
 
-This reflects version 0.15.0. The import lists were taken from the source
+This reflects version 0.19.0. The import lists were taken from the source
 with `ast`, not written from memory: "imports" means a module-scope relative
 import, and "imports lazily" means one inside a function body. Signatures are
 abridged where the full one adds nothing; keyword-only markers are kept.
@@ -45,6 +45,7 @@ flowchart TD
     main["__main__"] --> cli
     cli --> pkg["fillerai (__init__)"]
     cli --> auth & tokens & db & dbstore & store & schema
+    cli --> extract & infer & realdata
     cli --> generate & train & simulate
     cli -.-> bot
     cli -.-> llm
@@ -52,7 +53,7 @@ flowchart TD
 
     web --> pkg
     web --> auth & tokens & db & dbstore & store & schema & infer
-    web --> extract & generate & train & simulate & bot
+    web --> extract & generate & train & simulate & bot & realdata
     web -.-> llm
     web -.-> sampleapp
 
@@ -70,6 +71,7 @@ flowchart TD
     tokens --> db
 
     simulate --> schema & train
+    realdata --> schema & generate
     train --> schema
     generate --> schema
     extract --> schema
@@ -124,7 +126,7 @@ convenience wrappers. Everything in `__all__`:
 
 | Name | From | What it is |
 |---|---|---|
-| `__version__` | here | `"0.15.1"`; must match `pyproject.toml` |
+| `__version__` | here | `"0.19.0"`; must match `pyproject.toml` |
 | `SCHEMA_VERSION` | `schema` | `"1.0"`, the schema format version |
 | `FormSchema`, `Screen`, `Field`, `Option`, `Constraints` | `schema` | the schema dataclasses |
 | `extract_html(path, name=None) -> FormSchema` | here | `html_form.extract_file` then `infer` |
@@ -155,7 +157,7 @@ Not exported from the root, though public in their own modules: `layout`,
 everything in `fillerai.bot`, and anything in `fillerai.llm` (which must stay
 that way — see §13).
 
-A worked example, run from the repository root against 0.15.0 with the
+A worked example, run from the repository root against 0.19.0 with the
 output it printed:
 
 ```python
@@ -206,7 +208,7 @@ the repository on `PYTHONPATH` (or after `pip install -e .`).
 The versioned dataclass tree every stage reads: `FormSchema` → `Screen`,
 `Field` → `Option`, `Constraints`, `Derived`. Serialised as JSON.
 
-- `SCHEMA_VERSION = "1.0"`; `SEMANTIC_TYPES` (the 50-odd meanings a field
+- `SCHEMA_VERSION = "1.0"`; `SEMANTIC_TYPES` (the 47 meanings a field
   can have); `DATA_TYPES`.
 - `FormSchema.from_dict / from_json / to_dict / to_json`; `.field(name)`,
   `.fields_on(screen_id)`, `.groups()`.
@@ -243,12 +245,15 @@ Reads a CSV/TSV/JSON/NDJSON export, maps its columns onto a form's fields, and
 cleans it into records shaped exactly like generated ones. See
 [real-data.md](../real-data.md).
 
-- `read_table(text, filename) -> Table`; `suggest_mapping(schema, columns)`;
+- `read_table(text, filename) -> Table` (`columns`, `rows`, `format`,
+  `preview()`); `fillable(schema)`; `suggest_mapping(schema, columns)`;
+  `check_mapping`;
   `clean(schema, table, mapping=None, fixes=None, limit=None) -> Cleaned`,
   whose `report()` counts every fix, on or off; `spec_from_table(table, name)`
   for a form read off the columns.
 - `FIXES` is ordered: a value is trimmed before it is compared with anything,
-  and only what survives every repair is judged `invalid`.
+  and only what survives every repair is judged `invalid`. `FIX_NAMES`;
+  `DEFAULT_FIXES` (all but `invalid` and `incomplete`); `DataError`.
 
 **Imports:** `schema`, `generate.render` (for `date_format`, so a cleaned date
 has the generator's shape).
@@ -282,22 +287,34 @@ against `_ID` before they touch a path.
 
 ### `db.py` — the database, and the interface a backend meets
 
-SQLite through a thin `Database` class, so a Postgres backend is a subclass.
+SQLite through a thin `Database` class, and Postgres as a subclass of it.
 
 - `connect(url=None, *, library_root=None, migrate=True) -> Database`;
-  `default_url(library_root=None)`. `URL_VARIABLE = "FILLERAI_DATABASE_URL"`,
-  `DEFAULT_FILENAME = "fillerai.db"`.
+  `default_url(library_root=None)`; `safe_url(url)` (the URL with any
+  password masked, for logs and screens). `URL_VARIABLE =
+  "FILLERAI_DATABASE_URL"`, `DEFAULT_FILENAME = "fillerai.db"`.
 - `Database`: `execute`, `query`, `one`, `count`, `transaction()` (context
   manager), `setting` / `remember`, `migrate`, `version`, `tables`,
-  `describe`, `connection`, `close`. `SQLiteDatabase(path)` adds `dispose()`.
+  `describe`, `connection`, `release`, `close`. `SQLiteDatabase(path)` adds
+  `dispose()`.
+- `PostgresDatabase(url)` — the same tables through psycopg 3, the one
+  optional dependency (`pip install 'fillerai[postgres]'`). The driver is
+  imported only when a `postgresql://` (or `postgres://`) URL is opened, and
+  its absence is a `DatabaseError` that says how to install it. A query
+  outside a transaction commits or rolls back at once; `release()`, which the
+  web server calls when a request ends, hands the thread's connection back to
+  a pool of up to 8.
 - `MIGRATIONS` — list of `(version, [statements])`; steps 1 and 2 exist.
 - `dumps` / `loads` — JSON helpers used by `dbstore`.
 
 **Imports:** nothing from the package.
 
 **Before changing it:** callers write `?` placeholders. Never edit a shipped
-migration step; append one. Connections are one per thread — the web server
-is threaded and a SQLite connection is not shareable.
+migration step; append one, in SQL both SQLite and Postgres accept (`TEXT`,
+`INTEGER`, `CREATE TABLE IF NOT EXISTS`). Connections are one per thread —
+the web server is threaded and a SQLite connection is not shareable.
+`tests/test_postgres.py` re-runs the database tests against a real Postgres
+when `FILLERAI_TEST_POSTGRES_URL` is set and psycopg is installed.
 
 ### `dbstore.py` — the same library, with an owner
 
@@ -353,14 +370,15 @@ token with `model_id` set may only reach that model (`rest.Caller.may_use`).
 
 `main(argv=None)` builds an `argparse` parser (`build_parser()`) and
 dispatches to one `cmd_*` function per command: `extract`, `generate`,
-`inspect`, `serve`, `train`, `algorithms`, `predict`, `evaluate`, `simulate`,
+`clean`, `inspect`, `serve`, `train`, `algorithms`, `predict`, `evaluate`, `simulate`,
 `check`, `bot`, `llm`, `propose-rules`, `apply-rules`, `library`, `users`,
 `tokens`, `db`. `__main__.py` calls `cli.main`, so `python -m fillerai` and the
 `fillerai` script are the same thing.
 
-**Imports:** `fillerai` (root), `auth`, `db`, `dbstore`, `generate.dataset`,
-`schema`, `simulate.effort`, `simulate.run`, `store`, `tokens`, `train`
-(`algos`, `script`), `train.evaluate`, `train.model`, `train.trace`.
+**Imports:** `fillerai` (root, including `realdata`), `auth`, `db`, `dbstore`,
+`extract.spec`, `generate.dataset`, `infer`, `schema`, `simulate.effort`,
+`simulate.run`, `store`, `tokens`, `train` (`algos`, `script`),
+`train.evaluate`, `train.model`, `train.trace`.
 **Imports lazily:** `bot` (in `cmd_bot`, `_bot_chat`), `web` (in `cmd_serve`),
 and `llm.*` (in `cmd_llm_status`, `_rules_client`, `cmd_propose_rules`,
 `cmd_apply_rules`).
@@ -638,27 +656,39 @@ Re-exports `create_server` and `serve` from `server`.
 - `serve(host="127.0.0.1", port=8000, open_browser=False, verbose=False,
   library_path=None, database=None, accounts=True, cors_origins=None,
   bot_llm=None, bot_transcribe=None, sample_app=True, sample_port=8100,
-  sample_user=None) -> int` — what `fillerai serve` calls.
+  sample_user=None, trust_proxy=False, sample_public=None) -> int` — what
+  `fillerai serve` calls (the CLI passes `$PORT` as the default port).
 - `create_server(host, port)`, `open_database(url=None, *, accounts=True)`,
   `close_database()`, `use_bot_llm(on)`, `use_bot_transcribe(on)`,
   `start_sample_app(host, fillerai_port, port=8100, username=None)`.
-- `Handler` — `do_GET`, `do_POST`, `do_OPTIONS`; `/v1/...` goes to
-  `rest_dispatch`, `/api/...` to `ROUTES` (`Route(handler, needs)` where
-  `needs` is `""`, `"user"` or `"admin"`, checked in one place).
+- `Handler` — `do_GET` (and `do_HEAD`), `do_POST`, `do_OPTIONS`; `/v1/...`
+  goes to `rest_dispatch`, `/api/...` to `ROUTES` (`Route(handler, needs)`
+  where `needs` is `""`, `"user"` or `"admin"`, checked in one place),
+  `/sample/...` to `_sample` (an in-process pass-through to the sample
+  application's port), `/docs...` to `_docs` (the access-code gate, then
+  `web.docs`). `/` is the product page and `/app` the UI. `trust_proxy`
+  decides whether `X-Forwarded-For` / `X-Real-IP` / `X-Forwarded-Proto` are
+  believed (visitor address, `Secure` cookies).
+- The docs access code: `api_docs_status`, `api_docs_passcode`,
+  `api_docs_unlock`, `docs_cookie_for`, `docs_unlocked`; stored as the
+  `docs_access` setting, or `docs-access.json` in the library folder without
+  a database. `api_help` serves the help panel from `web.docs`.
+- Real records: `api_data_read`, `api_data_clean`, `api_data_schema` and
+  `api_evaluate`, over `realdata`.
 - One `api_*` function per `/api` endpoint, each taking the JSON payload and
   returning a dict. Request state: `Context` in a `ContextVar`, read with
   `context()`, `current_user()`, `require_user()`; `library()` returns the
   `Store` or the caller's `DatabaseStore`.
 - `Run` — a training run on a worker thread, with its `Trace`.
 - Process-wide state lives in module globals: `LIBRARY`, `DATABASE`, `AUTH`,
-  `KEYRING`, `BOT_LLM`, `BOT_TRANSCRIBE`, `CORS_ALLOW`, and the model and run
-  caches.
+  `KEYRING`, `BOT_LLM`, `BOT_TRANSCRIBE`, `CORS_ALLOW`, `SAMPLE_APP_PORT`,
+  `SAMPLE_PUBLIC`, and the model and run caches.
 
-**Imports:** `fillerai` (root), `auth`, `bot` and `bot.template`, `db`,
-`dbstore`, `extract`, `generate.dataset`, `infer`, `schema`,
-`simulate.effort`, `simulate.form`, `simulate.run`, `store`, `tokens`,
-`train` (`algos`, `script`), `train.evaluate`, `train.model`, `train.trace`,
-`web.rest`, `web.botrest`, `web.keyring`. **Imports lazily:** `llm.providers`,
+**Imports:** `fillerai` (root, including `realdata`), `auth`, `bot` and
+`bot.template`, `db`, `dbstore`, `extract`, `generate.dataset`, `infer`,
+`schema`, `simulate.effort`, `simulate.form`, `simulate.run`, `store`,
+`tokens`, `train` (`algos`, `script`), `train.evaluate`, `train.model`,
+`train.trace`, `web.rest`, `web.botrest`, `web.docs`, `web.keyring`. **Imports lazily:** `llm.providers`,
 `llm.config`, `llm.client`, `llm.cost`, `llm.transport`, `llm.rules`,
 `llm.understand`, `llm.transcribe`, and `sampleapp.app`.
 
@@ -708,6 +738,27 @@ the UI's `/api/bot/turn` and `/api/bot/transcribe`. `READER` and
 **Imports:** `bot`, `bot.template`, `store`, `web.rest`. **Imports lazily:**
 `llm.transcribe` (for `TranscribeError`).
 
+### `web/docs.py` — the `/docs` site and the help panel
+
+A small Markdown renderer for the constructs the documents use (headings,
+paragraphs, lists, tables, fenced code, quotes, links, emphasis). Every byte
+of the source is escaped; Mermaid blocks are shown as source.
+
+- `catalog() -> dict[str, Doc]`: the user guide (`web/guide.md`, slug
+  `user-guide`), the README (`tour`) and every `docs/**/*.md` (slug = path
+  without `.md`, at most one directory deep). `Doc(slug, title, path,
+  blurb)`, `grouped(docs)`.
+- `render(text, doc=None) -> (html, toc)`, `heading_id(text)`, `Renderer`;
+  links between documents are rewritten to `/docs/...` URLs.
+- `help_sections()`: `guide.md` cut at its `<!-- panel: name -->` markers,
+  one `{title, html, anchor}` per screen, for `/api/help`.
+- Pages: `home_page(docs)`, `doc_page(docs, doc)`, `gate_page(configured)`.
+- `DOCS_DIR`, `README`, `GUIDE`; `DOCS_DIR` and `README` exist only in a
+  repository checkout, while `guide.md` ships in the package.
+
+**Imports:** nothing from the package. The access code is the server's
+business, not this module's.
+
 ### `web/keyring.py` — keys typed into the UI
 
 `Keyring`: `set_key(user, provider, key)`, `keys`, `typed`, `preference`,
@@ -722,10 +773,15 @@ Served as files, no build step; shipped through `package-data` in
 
 | File | What it is |
 |---|---|
-| `index.html`, `app.js`, `styles.css` | the UI; every button is one POST to `/api` |
-| `login.html`, `login.js` | the one page a signed-out browser may load |
+| `index.html`, `app.js`, `styles.css` | the UI, served at `/app`; every button is one POST to `/api` |
+| `product.html`, `product.js`, `product.css` | the public product page at `/` |
+| `login.html`, `login.js` | the sign-in page |
+| `docs-gate.js`, `docs.css` | the `/docs` access-code form, and the docs pages' stylesheet |
 | `client/fillerai.js` | the browser client, one ES module: `FillerAI`, `FillerAIError`, `FormBinder`, `BotChat`, `SpeechInput`, `RecordedSpeechInput`, `ChatWidget`, `changeCard`; served at `/client/fillerai.js` |
 | `client/fillerai-chat.css`, `client/chat.html`, `client/demo.html`, `client/README.md` | the chat widget's styles, two demonstration pages, and the client's own readme |
+
+`web/guide.md`, beside `static/`, is the user guide: the help panel and
+`/docs/user-guide` are both made from it, so it ships as package data too.
 
 ---
 
@@ -733,13 +789,18 @@ Served as files, no build step; shipped through `package-data` in
 
 Northwind Mutual, a customer portal that uses the bot service the way an
 outside application would. `fillerai serve` starts it on port 8100 unless
-`--no-sample-app`; it also runs alone with `python -m fillerai.sampleapp
---fillerai http://localhost:8000 --token flr_...`.
+`--no-sample-app`, and also passes `/sample/` on its own port through to it
+(see [http-api.md §16](http-api.md#16-sample-application)); it also runs
+alone with `python -m fillerai.sampleapp --fillerai http://localhost:8000
+--token flr_...` (port `$PORT`, else 8100).
 
 - `app.py`: `Portal` (the application's own record and submit rules),
   `FillerAIService(base, token="", timeout=30.0)` (`templates`, `template`,
-  `turn`, `transcribe`, `client_file`), `make_server(...)`, `main(argv=None)`,
-  `Rejected`.
+  `turn`, `transcribe`, `client_file`, `call`), `make_server(fillerai,
+  portal, host, port, server_speech=False, fillerai_page="")`,
+  `main(argv=None)`, `Rejected`. Reached through `/sample/`, it sees
+  `X-Forwarded-Prefix` and links back to `/app` instead of AIrForms' own
+  address.
 - `static/`: `index.html`, `app.js`, `style.css`.
 - `__main__.py` calls `app.main`; `README.md` describes running it.
 
@@ -764,7 +825,9 @@ The ones that are enforced by a test, and the one that is not:
   core module that nothing there imports should be added to that list.
 - **`sampleapp` imports nothing from AIrForms** (`tests/test_sample_app.py`).
 - **No runtime dependencies.** Standard library only, in the package and in
-  the tests.
+  the tests. The one sanctioned exception is optional: psycopg 3, behind
+  `pip install 'fillerai[postgres]'`, imported only inside `PostgresDatabase`
+  when a `postgresql://` URL is opened; `test_postgres.py` skips without it.
 - **A new subpackage must be added to `packages` in `pyproject.toml`**, which
   is an explicit list, and non-Python files to `package-data`. Nothing tests
   this; a missing entry only shows up in an installed copy.
@@ -797,17 +860,20 @@ port.
 | `test_realdata.py` | 22 | `realdata`: readers, mapping, each fix on and off, dropped rows, the round trip of every example, a form from columns |
 | `test_web_realdata.py` | 10 | `/api/data/*` and `/api/evaluate`: preview saves nothing, a saved real dataset and its lineage, training on it, testing on it, the learned-from flag |
 | `test_store.py` | 29 | `store`: lineage, cascading delete, prune, unsafe ids |
-| `test_db.py` | 20 | `db`: parameter translation, idempotent migrations, rollback |
+| `test_db.py` | 19 | `db`: parameter translation, idempotent migrations, rollback |
 | `test_dbstore.py` | 25 | `dbstore`: the `test_store` lineage tests against the database, owners, atomic writes, `import_store` |
+| `test_postgres.py` | 3 | `db` on Postgres: the missing-driver message, password masking, `%` escaping; with `FILLERAI_TEST_POSTGRES_URL` set and psycopg installed, the database tests again against a real Postgres |
 | `test_auth.py` | 38 | `auth`: hashing, lockout, sessions, forged cookies, the last administrator; the `users` and `db` commands |
 | `test_tokens.py` | 18 | `tokens`: issue, verify, revoke, and revocation with the account |
-| `test_web.py` | 77 | `web/server` `/api` without accounts: static files, extract, generate, export, train (including watched runs), simulate, library, request limits |
-| `test_web_auth.py` | 36 | `web/server` with accounts: login, CSRF, roles, one library per person |
+| `test_web.py` | 78 | `web/server` `/api` without accounts: static files, extract, generate, export, train (including watched runs), simulate, library, request limits |
+| `test_web_auth.py` | 38 | `web/server` with accounts: login, CSRF, roles, one library per person |
+| `test_docs.py` | 27 | `web/docs` and the `/docs` gate: the renderer, the catalog, the access code over a real socket, the help panel |
+| `test_deploy.py` | 8 | running behind a proxy: the port from `$PORT`, `--trust-proxy` and the forwarded headers |
 | `test_web_llm.py` | 29 | `/api/llm/*`: a typed key never comes back in a reply; propose-rules over HTTP against a recording |
 | `test_rest.py` | 50 | `web/rest`: `/v1` over a socket, tokens not cookies, pinned tokens, CORS, ids that survive a restart |
 | `test_bot.py` | 46 | `bot/`: templates, the local reader, turns and state, against `docs/bot-builder.md` |
 | `test_bot_rest.py` | 18 | `web/botrest` and `/api/bot`: token scope, refusal codes, the served client, the UI running the same turn |
-| `test_sample_app.py` | 11 | `sampleapp` against a real AIrForms: the token stays server-side, forms come from templates, submit, and the no-import rule |
+| `test_sample_app.py` | 12 | `sampleapp` against a real AIrForms: the token stays server-side, forms come from templates, submit, and the no-import rule |
 | `test_llm_fence.py` | 4 | the import fence and the empty dependency list (§13) |
 | `test_llm_client.py` | 31 | `llm/client` and `transport`: request building, reply reading, refusals and truncations that arrive as successes, a stubbed opener |
 | `test_llm_providers.py` | 44 | `llm/providers` and `config`: both wire formats, provider inference, the same rules reaching the same verdict through both readers |
@@ -846,9 +912,10 @@ fillerai/
   __main__.py          python -m fillerai -> cli.main
   schema.py            the versioned field-schema contract
   infer.py             semantic type from ranked evidence
+  realdata.py          real records: read, map onto a form, clean
   cli.py               every command
   store.py             the library in a directory
-  db.py                the database, and the interface a backend meets
+  db.py                the database (SQLite, or Postgres if installed)
   dbstore.py           the same library in the database, with an owner
   auth.py              users, passwords, roles and sessions
   tokens.py            bearer credentials for an application
@@ -869,11 +936,14 @@ fillerai/
     rest.py            the /v1 integration API
     botrest.py         the bot service on /v1
     keyring.py         API keys typed into the UI, in memory only
-    static/            index.html, app.js, styles.css, login.*
+    docs.py            the /docs site and the help panel, from Markdown
+    guide.md           the user guide the help panel is cut from
+    static/            index.html, app.js, styles.css (the app), product.*,
+                       login.*, docs-gate.js, docs.css
     static/client/     fillerai.js, fillerai-chat.css, chat.html,
                        demo.html, README.md - the browser client
-  sampleapp/           app.py, __main__.py, static/ (index.html, app.js,
-                       style.css); imports nothing from AIrForms
+  sampleapp/           app.py, __main__.py, README.md, static/ (index.html,
+                       app.js, style.css); imports nothing from AIrForms
 examples/              one HTML form and four field specs
 tests/                 941 tests, offline, no dependencies
   fixtures/llm/        recorded LLM exchanges

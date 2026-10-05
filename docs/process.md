@@ -8,7 +8,9 @@ it, where the output lands, and how the work gets from a branch to `main`.
 This one is arranged by what you do.
 
 Every command below was run against version 0.11.0 while this was written;
-§9 was brought up to 0.15.0. Every option of every command is in
+§9 was brought up to 0.15.0, and the whole walk-through was rerun against
+0.19.0 on 2026-10-05 (the §8 table stays a 0.11.0 measurement, although §0
+still reproduces its first row). Every option of every command is in
 [reference/cli.md](reference/cli.md).
 
 ---
@@ -33,7 +35,10 @@ python -m fillerai train claims.schema.json claims.data.json --seed 42 -o claims
 python -m fillerai simulate claims.model.json -n 50 --ask 3 --seed 7
 ```
 
-Or `python -m fillerai serve` and do all four in a browser.
+Or `python -m fillerai serve` and do all four in a browser, at `/app`. The
+stages there are **Source**, **Schema**, **Data**, **Train** and
+**Simulate**; the Data step is where records are either generated (§2) or
+uploaded from a real export (§2a).
 
 ---
 
@@ -45,6 +50,9 @@ python -m fillerai extract <source> -o form.schema.json
 
 `<source>` is **either** an `.html` page **or** a `.json` field spec. Both
 produce the same `FormSchema`, and nothing downstream can tell which it was.
+A third way in, for when there is no form, only records: a `.csv` export,
+read one field per column (§2a; in the UI, the Source step's **Records
+(CSV)** tab).
 
 **Which way in to use.** Markup if you have it: it carries the labels, the
 option lists, the `maxlength`s and the `autocomplete` tokens, so inference has
@@ -119,6 +127,29 @@ most of what anyone wants to ask of this system is a comparison.
 ```bash
 python -m fillerai check form.schema.json form.data.json
 ```
+
+---
+
+## 2a. Or upload real records
+
+The Data step's other mode, **Upload real records**, and its command:
+
+```bash
+python -m fillerai clean form.schema.json export.csv -o cleaned.json
+python -m fillerai extract export.csv -o export.schema.json   # no form, only the file
+```
+
+`clean` reads a CSV, JSON or NDJSON export, matches its columns to the
+form's fields (`--map "Loss Dt=loss_date"` corrects a guess, `--map "Col="`
+leaves a column out), and runs the named fixes — `--skip FIX` turns one off,
+`--also invalid` / `--also incomplete` turns on the two that throw data away.
+It prints the mapping and what each fix changed. `--save` keeps the result
+in the library as a dataset marked `origin: real`.
+
+The output has the shape a generated dataset has, so everything below takes
+it unchanged: `train` on it instead of generated records, or `evaluate` a
+model trained on generated records against it (§4). Reading, mapping,
+cleaning and the limits are in [real-data.md](real-data.md).
 
 ---
 
@@ -215,6 +246,11 @@ python -m fillerai evaluate form.model.json other.data.json --ask 3
 `--ask N` uses the N fields the model itself suggests; `--seeds a,b,c` names
 them instead; `--threshold` moves the confidence at which a value is offered.
 
+This is the number worth quoting once real records exist: evaluate against
+cleaned real records (§2a). In the UI it is the Simulate step's **Test on
+real records** card, which also costs the saving and warns when the model
+learned from the very records it is being tested on.
+
 ---
 
 ## 5. Simulate — what it actually saved
@@ -293,7 +329,7 @@ sending anything, `--batch` sets how many fields are decided per call (a large
 form is split at 60 by default), `--above` on `apply-rules` filters by
 confidence.
 
-**In the UI:** `Settings`, top right, takes a key for either service and says
+**In the UI:** `Settings`, in the navigation rail, takes a key for either service and says
 which one the next run will use. `Propose rules` on the Schema step asks,
 shows what survived, and applies only the ones you tick. A key typed there
 lives in the server process and is written nowhere.
@@ -327,7 +363,9 @@ the model finds them.
 you declared, not the engine you picked — the six land within a few points of
 each other because there is only so much for any of them to find. The two ways
 past it are to declare the rules (§1) and to train on real past submissions,
-which needs no change to the pipeline at all: a dataset is a dataset.
+which needs no change to the pipeline at all: a dataset is a dataset. Since
+0.19.0 the way in for those exists (§2a); no real submissions have been run
+through it yet ([pending.md](pending.md) §1.2).
 
 ---
 
@@ -337,6 +375,10 @@ which needs no change to the pipeline at all: a dataset is a dataset.
 python -m fillerai serve                # accounts on; makes an admin, prints the password once
 python -m fillerai serve --no-auth      # one person, one machine, no login
 ```
+
+`/` is the public product page and the app is at `/app` (signed in; a
+signed-out browser is sent to `/login`). `/docs` serves the user guide and
+these documents once an administrator has set an access code in Settings.
 
 Accounts are on by default. The first start makes an administrator and prints
 the password once; `FILLERAI_ADMIN_PASSWORD` sets it instead, and
@@ -374,12 +416,23 @@ The Bots tab does the same with an editor and a try-it chat, and
 contract: [bot-builder.md](bot-builder.md).
 
 **To see it inside a separate application**, `serve` also starts the sample
-application, Northwind Mutual, on `http://localhost:8100`, with an API token
-for the first administrator. Its forms are that user's templates, so add the
-starters first; one is open at a time, opened by the chat or from the
+application, Northwind Mutual, on `http://localhost:8100` (`--sample-port`),
+with an API token for the first administrator, and serves it at `/sample/` on
+AIrForms' own port as well — signed-in people only, unless `--sample-public`
+or `FILLERAI_SAMPLE_PUBLIC=1`. Its forms are that user's templates, so add
+the starters first; one is open at a time, opened by the chat or from the
 application's menu. `--no-sample-app` leaves it off. It reaches AIrForms only over
 `/v1`, which makes it the working example of a host application
 (`fillerai/sampleapp/README.md`).
+
+**The database** is SQLite in the library directory unless `--database` or
+`FILLERAI_DATABASE_URL` says otherwise; a `postgresql://` URL needs
+`pip install 'fillerai[postgres]'`.
+
+**Hosted**, the repository deploys to Railway as it is (`Dockerfile`,
+`railway.json`): `serve` takes its port from `$PORT`, binds `0.0.0.0` with
+`--trust-proxy`, and keeps everything in `FILLERAI_HOME=/data` on a volume or
+in a Railway Postgres. Steps in [deploy-railway.md](deploy-railway.md).
 
 Installing, configuring, backing up and troubleshooting a running server are
 in [operations.md](operations.md); what to change before anyone else can reach
@@ -395,15 +448,17 @@ it is in [security.md](security.md) §10.
 python -m unittest discover -s tests -q
 ```
 
-868 tests, no dependencies, entirely offline — the LLM tests replay recorded
+941 tests, no dependencies, entirely offline — the LLM tests replay recorded
 exchanges through `RecordedTransport`, which raises on anything unrecorded, so
 a changed prompt fails loudly rather than reaching for the network.
 
-**There is no CI in this repository** — no `.github/workflows` — so that local
-run is the only signal, and no pull request here will ever show a green check.
-Run it before you push. Expect roughly 70 seconds, and see
-[pending.md](pending.md) §2.1 for the one test that fails about 1 run in 10
-for a reason that is not your change.
+**There is no CI in this repository** — no `.github/` directory at all — so
+that local run is the only signal, and no pull request here will ever show a
+green check. Run it before you push. Expect roughly 90 seconds, and know the
+two tests that fail now and then for a reason that is not your change: the
+in-memory SQLite race in [pending.md](pending.md) §2.1 (1 of 4 full runs on
+2026-10-05) and the token test's chance match in §2.6 (about 1 run in 50).
+Re-run before you believe either.
 
 **The acceptance gate for the LLM features is separate** and costs money, so it
 is outside `tests/` and skips itself unless you opt in:
@@ -423,7 +478,9 @@ it.
 either:
 
 - **No dependency gets added**, and no build step. `dependencies = []` is
-  asserted by a test because it is a promise about where this can run.
+  asserted by a test because it is a promise about where this can run. The
+  one sanctioned exception is the optional `fillerai[postgres]` extra, which
+  a default install never needs.
 - **Nothing in the core imports `fillerai/llm/`** at module scope.
   `tests/test_llm_fence.py` will tell you, three different ways.
 

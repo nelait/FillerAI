@@ -6,7 +6,7 @@ yourself reach it. The reasoning behind each credential is in
 [architecture.md](architecture.md) §6 and §7; this page is the operational
 view of the same decisions.
 
-Checked against the code at version 0.15.0.
+Checked against the code at version 0.19.0.
 
 **Contents**
 
@@ -28,11 +28,13 @@ Checked against the code at version 0.15.0.
 
 | Asset | Where it is | Why it matters |
 |---|---|---|
-| Real form data, if anyone trains on it | datasets and models in the library | The whole design assumes this data may not leave its environment ([assumptions.md](assumptions.md) §1.1). A model trained on real records carries value counts from them. |
-| Each person's library | `entries` / `payloads` in SQLite, one owner per entry | People must not see each other's forms, datasets or models. |
+| Real form data, if anyone uploads or trains on it | uploads in flight; cleaned datasets and models in the library | The whole design assumes this data may not leave its environment ([assumptions.md](assumptions.md) §1.1). A model trained on real records carries value counts from them. |
+| Each person's library | `entries` / `payloads` in the database (SQLite or Postgres), one owner per entry | People must not see each other's forms, datasets or models. |
 | Passwords | `users.password_hash` | Reused elsewhere, as passwords are. |
 | API tokens | `api_tokens.secret_hash`; the secret itself only with the application | A token reads its owner's models and templates and runs bot turns. |
 | Language-model API keys | the environment, or server memory | Spend money on somebody's account. |
+| The database's own credentials, with Postgres | `FILLERAI_DATABASE_URL` or `--database` | Read and write everything above. |
+| The docs access code | the database's settings, as a scrypt hash | Opens `/docs` to whoever has it. |
 | What end users type or say into the chat | in flight only | Personal details such as addresses. |
 
 ## 2. What can leave the machine
@@ -55,6 +57,10 @@ forgotten: Chrome's Web Speech API sends audio to Google. It is documented in
 voices may not leave should use `--bot-transcribe` against an approved
 endpoint (`FILLERAI_TRANSCRIBE_BASE_URL`) or not offer the microphone.
 
+Uploading real records (the Data step, `fillerai clean`) is not on this
+list: reading, mapping and cleaning a file all happen on the server, with no
+model involved.
+
 `FILLERAI_LLM_BASE_URL` and `FILLERAI_TRANSCRIBE_BASE_URL` point the
 language-model features at a different endpoint, such as a proxy or a
 gateway your organisation approves.
@@ -76,8 +82,10 @@ gateway your organisation approves.
   takes effect everywhere at once, and changing a password ends every
   session of that user.
 - **The cookie** is `HttpOnly` and `SameSite=Strict`. It is **not** marked
-  `Secure`, because the server speaks plain HTTP on loopback and a browser
-  would drop a `Secure` cookie there. Behind an HTTPS proxy, see §10.
+  `Secure` by default, because the server speaks plain HTTP on loopback and a
+  browser would drop a `Secure` cookie there. With `--trust-proxy`, a request
+  the proxy says arrived over https (`X-Forwarded-Proto: https`) gets a
+  `Secure` cookie; see §10.
 - **CSRF.** Every `/api` POST must echo the session's token in the
   `X-FillerAI-Token` header, compared in constant time. Another origin cannot
   read that token, so it cannot forge the header.
@@ -128,6 +136,7 @@ gateway your organisation approves.
 | Reads the other's credential | never accepts a bearer token | never reads the cookie (`Handler._rest` installs an empty context first) |
 | Cross-origin | same origin only | `*` by default with accounts, since a token is needed anyway and `Allow-Credentials` is never sent; with `--no-auth`, no origin until `--cors-origin` names one |
 | Body limit | 8 MB | 8 MB |
+| Rate limit | per-account sign-in pause (§3) | none |
 
 The reason `/v1` refuses the cookie: if it honoured it, any web page the user
 has open could drive it with their session.
@@ -138,18 +147,48 @@ has open could drive it with their session.
 guide, rendered on the server with every byte escaped and only `http`,
 `https` and `mailto` links kept. It is opened by an access code rather than
 an account, so it can be shared with people who have none. The code is kept
-as a scrypt hash; the browser gets an HttpOnly cookie scoped to `/docs` whose
-value is an HMAC keyed by that hash, so it cannot be made without the code and
-dies when the code changes. Wrong codes are limited to 8 per address per 15
-minutes. With no code set the docs are closed to everybody, including
-administrators.
+as a scrypt hash (the same `hash_password` as account passwords) in the
+database's settings, or in `docs-access.json` (mode 600) in the library under
+`--no-auth`. An administrator sets it in **Settings → Documentation access**:
+6 to 128 characters, or **Make one up**, which shows a generated code once.
+The browser gets an `airforms_docs` cookie, `HttpOnly`, scoped to `/docs`,
+`SameSite=Lax` (so a link from elsewhere arrives signed in; nothing under
+`/docs` changes anything), lasting 30 days and `Secure` behind a trusted
+https proxy. Its value is an HMAC keyed by the stored hash, so it cannot be
+made without the code and dies when the code changes. Wrong codes are
+limited to 8 per visitor address per 15 minutes, counted in the server's
+memory; behind a proxy that address is only the visitor's with
+`--trust-proxy`. With no code set the docs are closed to everybody,
+including administrators. The in-app help panel (`/api/help`) is made from
+the same user guide but is part of the app, and needs a session.
+
+### Uploaded real records
+
+`/api/data/read`, `/api/data/clean` and `/api/data/schema` are stateless: the
+browser keeps the file and sends its text with each request, and the server
+holds it only for the length of that request. Nothing about an upload is
+written until somebody saves the cleaned records, which become an ordinary
+dataset entry in their own library, marked as real and naming the file it
+came from. The limits are the 8 MB body limit, 500 columns, and 5,000
+records kept (the cap Train has); a preview sends back 100 rows. The CLI's
+`fillerai clean` reads a local file and writes only where it is told to.
+See [real-data.md](real-data.md).
 
 ## 7. Data at rest
 
 - **The database** is one SQLite file, `fillerai.db` in the library
   directory, unless `--database` says otherwise. It is not encrypted; protect
   it with file permissions and disk encryption like any other data file. It
-  holds password hashes, token hashes, session ids and every library entry.
+  holds password hashes, token hashes, session ids, the docs access code's
+  hash and every library entry.
+- **With Postgres** (`postgresql://user:pass@host/db` in
+  `FILLERAI_DATABASE_URL` or `--database`) the same tables are in that
+  database, and its password is in the URL. Keep the URL in the environment
+  or the platform's secret variables rather than on a command line other
+  users can list. AIrForms prints and reports it with the password replaced
+  by `***`. Encryption in transit and at rest are the database server's
+  settings (for example `?sslmode=require` on the URL, which psycopg
+  honours).
 - **The file library** (the CLI's default, `./.fillerai` or
   `$FILLERAI_HOME`) is plain JSON you can read with `cat`.
 - **Library entries are owned, and their contents are never rewritten**
@@ -160,6 +199,8 @@ administrators.
   card test ranges; see the README's "Identifiers cannot belong to a real
   person"), unless `--realistic-identifiers` was passed, so a
   synthetic dataset is safe to share.
+- **Real records** are kept only as the cleaned dataset someone chose to
+  save; the uploaded file itself is not stored.
 - **Trained models** hold value counts and, for the nearest-records engine,
   a bounded sample of the training records themselves. A model trained on real data should be
   treated as that data.
@@ -198,10 +239,19 @@ AIrForms is built as a local working tool ([assumptions.md](assumptions.md)
 
 1. **Keep accounts on.** `--no-auth` is refused off loopback anyway.
 2. **Put it behind an HTTPS reverse proxy** and keep AIrForms itself on
-   `127.0.0.1`. The server speaks plain HTTP only. Have the proxy add
-   `Secure` to the `fillerai_session` cookie if it can, and HSTS.
+   `127.0.0.1` (or on `0.0.0.0` where the platform's proxy is the only way
+   in, as on Railway: [deploy-railway.md](deploy-railway.md)). The server
+   speaks plain HTTP only. Start it with `--trust-proxy`
+   (`FILLERAI_TRUST_PROXY=1`): it then marks the session and docs cookies
+   `Secure` when the proxy says the request came over https, and takes the
+   visitor's address from `X-Real-IP`, else the last `X-Forwarded-For`
+   entry (the one the proxy appended), so the docs access-code limit counts
+   visitors rather than the proxy. **Only** behind such a proxy: reached
+   directly, a visitor could send those headers and claim any address. Have
+   the proxy add HSTS.
 3. **Start with `--no-sample-app`**, or accept that its port is open to
-   whoever can reach it (§9).
+   whoever can reach it (§9). Leave `--sample-public` off unless the demo
+   is meant to be public.
 4. **Narrow CORS** with `--cors-origin https://your-app.example` rather than
    the default `*` if only known applications should call `/v1` from a
    browser.
@@ -210,8 +260,10 @@ AIrForms is built as a local working tool ([assumptions.md](assumptions.md)
 6. **Issue one token per application**, limited to one model where it only
    needs one, with an expiry.
 7. **Decide about the microphone** (§2) before end users see it.
-8. **Back up the database file** ([operations.md](operations.md) §5); it is
+8. **Back up the database** ([operations.md](operations.md) §5); it is
    the only copy of the accounts and the library.
+9. **Set a docs access code only if `/docs` should be open** (§6), and share
+   it with the people who should read them.
 
 ## 11. What is not defended against
 
@@ -219,8 +271,9 @@ AIrForms is built as a local working tool ([assumptions.md](assumptions.md)
   the process's memory has everything in it, including keys typed into
   Settings for the life of the process.
 - **An administrator.** Administrators manage accounts; they are trusted.
-- **Denial of service.** There are body-size limits and a sign-in pause, not
-  rate limiting on `/v1` or the training endpoints. A proxy is the place for
+- **Denial of service.** There are body-size limits, a sign-in pause and a
+  limit on wrong docs codes, not rate limiting on `/v1` or the training
+  endpoints. A proxy is the place for
   that.
 - **What a third-party model provider does with data** sent to it under the
   switches in §2. That is a matter for the agreement with the provider.

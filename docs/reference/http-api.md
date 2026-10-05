@@ -3,18 +3,21 @@
 Every route AIrForms serves over HTTP, in one place. `fillerai serve` answers
 on two surfaces from one port: `/api`, which is the UI talking to its own
 server, and `/v1`, the integration service for other applications. It also
-serves the UI's pages and the JavaScript client. The sample application
-(Northwind Mutual) is a separate server on its own port and is listed at the
-end.
+serves the product page, the UI's pages, the `/docs` site and the
+JavaScript client. The sample application (Northwind Mutual) is a separate
+server on its own port, also passed through at `/sample/` on AIrForms' port,
+and is listed at the end.
 
 `/v1` already has a narrative guide in [integration.md](../integration.md)
 (models) and [bot-builder.md](../bot-builder.md) (templates and the chat), so
 its entries here are a compact table that links there. `/api` has no other
 reference, so the detail is here.
 
-This reflects version 0.15.0. The code is `fillerai/web/server.py` (routing,
-`/api`, static files), `fillerai/web/rest.py` and `fillerai/web/botrest.py`
-(`/v1`), and `fillerai/sampleapp/app.py` (the sample application).
+This reflects version 0.19.0. The code is `fillerai/web/server.py` (routing,
+`/api`, static files, the `/sample/` pass-through), `fillerai/web/rest.py` and
+`fillerai/web/botrest.py` (`/v1`), `fillerai/web/docs.py` (the `/docs` pages
+and the help panel's text), and `fillerai/sampleapp/app.py` (the sample
+application).
 
 ## Contents
 
@@ -30,7 +33,7 @@ This reflects version 0.15.0. The code is `fillerai/web/server.py` (routing,
 10. [LLM settings and rules](#10-llm-settings-and-rules)
 11. [Bots and templates](#11-bots-and-templates)
 12. [API tokens](#12-api-tokens)
-13. [Pages, static files and the client](#13-pages-static-files-and-the-client)
+13. [Pages, docs, static files and the client](#13-pages-docs-static-files-and-the-client)
 14. [`/v1` models](#14-v1-models)
 15. [`/v1` bot](#15-v1-bot)
 16. [Sample application](#16-sample-application)
@@ -46,12 +49,16 @@ The path decides, before anything else:
 | Path | Surface | Methods |
 |---|---|---|
 | `/v1`, `/v1/...` | integration API | `GET`, `POST`, `OPTIONS` (preflight), `HEAD` |
+| `/sample`, `/sample/...` | the sample application, passed through | `GET`, `HEAD`, `POST` (`POST` only under `/sample/`) |
 | `/api/...` | the UI's API | `POST` for every route; `GET` also works for `/api/meta` only |
-| `/`, `/index.html`, `/login` | the UI's pages | `GET`, `HEAD` |
+| `/`, `/app`, `/index.html`, `/login` | the product page and the UI's pages | `GET`, `HEAD` |
+| `/docs`, `/docs/...` | the documentation site | `GET`, `HEAD` |
 | `/static/...`, `/client/...` | files | `GET`, `HEAD` |
 
-Anything else is a plain-text `404 Not found`. A `GET` to any `/api` route
-other than `/api/meta` is also that plain-text 404, not a JSON error.
+Anything else is a plain-text `404 Not found` on `GET`. A `GET` to any
+`/api` route other than `/api/meta` is also that plain-text 404, not a JSON
+error. A `POST` to any path that is not an `/api` route, `/v1` or `/sample/`
+is the JSON `404 {"error": "no endpoint at <path>"}`.
 `OPTIONS` on anything outside `/v1` is a 404 with an empty body.
 
 ### `/api`: session cookie and CSRF header
@@ -59,10 +66,14 @@ other than `/api/meta` is also that plain-text 404, not a JSON error.
 With accounts on (the default), `/api` works like this:
 
 - **Sign in** with `POST /api/auth/login`. The reply sets the cookie
-  `fillerai_session` (`Path=/; HttpOnly; SameSite=Strict`, no `Secure`, since
-  it is served over plain http on loopback) and carries a `csrf` string.
+  `fillerai_session` (`Path=/; HttpOnly; SameSite=Strict`) and carries a
+  `csrf` string. The cookie gets `Secure` only when the server runs with
+  `--trust-proxy` and the proxy says the request came over https
+  (`X-Forwarded-Proto: https`); on plain http on loopback a `Secure` cookie
+  would never be stored.
 - **Every later `/api` call** must send that string back in the header
-  `X-FillerAI-Token`. Only `/api/auth/login` and `/api/meta` are exempt. A
+  `X-FillerAI-Token`. Only `/api/auth/login`, `/api/meta` and
+  `/api/docs/unlock` are exempt. A
   missing or wrong header is `403 {"error": "this page is out of date - reload
   it", "stale": true}`. A browser that has lost the string can get it again
   from `GET /api/meta`, which is exempt and includes `csrf` when signed in.
@@ -80,12 +91,12 @@ runs:
 | user | any signed-in, active account | `401 {"error": "sign in to use AIrForms", "sign_in": true}` |
 | admin | an account with role `admin` | `403 {"error": "that is an administrator's to do"}` |
 
-Only `/api/meta` and `/api/auth/login` are anonymous. Every other `/api`
-route needs at least a signed-in user.
+Only `/api/meta`, `/api/auth/login` and `/api/docs/unlock` are anonymous.
+Every other `/api` route needs at least a signed-in user.
 
 **An account that must change its password** (a new account, or one an
 administrator reset) may call only `/api/auth/me`, `/api/auth/password`,
-`/api/auth/logout` and `/api/meta`. Anything else is
+`/api/auth/logout`, `/api/meta` and `/api/docs/unlock`. Anything else is
 `403 {"error": "choose a new password before carrying on", "must_change":
 true}`. This check comes before the CSRF check.
 
@@ -138,7 +149,8 @@ In this mode:
   are none.
 - `/v1` answers without a token. An `Authorization` header, if sent, is
   ignored.
-- `GET /login` redirects to `/`.
+- `GET /login` redirects to `/app`.
+- `/sample/` is open to anyone who can reach the port.
 
 ### CORS
 
@@ -234,7 +246,7 @@ What the front end needs to draw itself. Signed out, with accounts on, it
 answers only:
 
 ```json
-{"version": "0.15.0", "accounts": true, "signed_in": false}
+{"version": "0.19.0", "accounts": true, "signed_in": false}
 ```
 
 Signed in, or with `--no-auth`, it adds:
@@ -249,6 +261,7 @@ Signed in, or with `--no-auth`, it adds:
 | `library` | where the library is: a directory, or a database URL |
 | `bot_llm`, `bot_transcribe` | whether `--bot-llm` / `--bot-transcribe` are on |
 | `sample_app_port` | the sample application's port, or `null` |
+| `sample_app_path` | `"/sample/"` when the sample application is running, else `null` |
 
 Errors: none of its own.
 
@@ -314,8 +327,11 @@ Returns `{user, csrf, changed: true}` and sets a new cookie; use the new
 
 ## 3. Admin
 
-Every route here is **admin** only, and every one needs accounts on. With
-`--no-auth` they answer 404.
+Every `/api/admin/...` route here is **admin** only. The user routes need
+accounts on and answer 404 with `--no-auth`; the database routes need a
+database (below); the docs access-code routes work in either mode. The last
+two routes in this section, `/api/docs/unlock` and `/api/help`, are not
+admin routes; they sit here beside the access code they belong to.
 
 ### `POST /api/admin/users`
 
@@ -407,21 +423,11 @@ library folder with `--no-auth`).
 ### `POST /api/admin/docs/passcode`
 
 `{"code": "..."}` sets the code (6-128 characters), `{"generate": true}`
-makes one up, `{"clear": true}` closes the docs. Returns the state above plus
-`code`, the only time it is shown. A new code invalidates every docs cookie
+makes one up, `{"clear": true}` closes the docs. Setting or generating
+returns the state above plus `code`, the only time it is shown; clearing
+returns `{"configured": false, "code": ""}`. Errors: 400 for a code shorter
+than 6 or longer than 128 characters. A new code invalidates every docs cookie
 issued under the old one.
-
-### `POST /api/docs/unlock` (public)
-
-`{"code": "..."}`. Needs no session and no CSRF header: the docs are for people
-without accounts. On success sets `airforms_docs` (HttpOnly, `Path=/docs`,
-`SameSite=Lax`, 30 days), an HMAC keyed by the stored hash. Errors: 403 wrong
-code or no code set, 429 after 8 wrong codes from one address in 15 minutes.
-
-### `POST /api/help`
-
-The in-app help panel: `{sections: {<panel>: {title, html, anchor}}}`, one per
-screen, cut from `fillerai/web/guide.md`. Needs a session like any stage.
 
 ### `POST /api/admin/import`
 
@@ -433,6 +439,26 @@ Returns `{copied, skipped, failed, from}`: counts for the first two, the
 list of failures, and the directory copied from.
 
 Errors: 404 without a database.
+
+### `POST /api/docs/unlock` (public)
+
+**Access:** anonymous. Not CSRF-checked.
+
+`{"code": "..."}`. Needs no session and no CSRF header: the docs are for people
+without accounts. Returns `{"ok": true, "next": "/docs"}` and sets
+`airforms_docs` (HttpOnly, `Path=/docs`, `SameSite=Lax`, 30 days, `Secure`
+under the same condition as the session cookie), an HMAC keyed by the stored
+hash. Errors: 403 wrong code or no code set, 429 after 8 wrong codes from one
+address in 15 minutes (the address is the connection's, or the proxy's
+`X-Real-IP` / last `X-Forwarded-For` entry with `--trust-proxy`).
+
+### `POST /api/help`
+
+**Access:** user.
+
+The in-app help panel: `{sections: {<panel>: {title, html, anchor}}}`, one per
+screen, cut from `fillerai/web/guide.md` at its `<!-- panel: name -->`
+markers. Needs a session like any stage.
 
 ---
 
@@ -890,8 +916,9 @@ named. `evaluation` is the report `fillerai evaluate` writes; `sweep` is the
 `/api/simulate/sweep` result over these records. `learned_from` is true when
 the dataset is in the model's own lineage, so the score measures memory.
 
-Errors: 400 when none of the records' fields are on the model's form, 404 for
-an unknown model or dataset.
+Errors: 400 when there are no records or none of the records' fields are on
+the model's form, 404 for an unknown model or dataset.
+
 ---
 
 ## 10. LLM settings and rules
@@ -1140,22 +1167,43 @@ Administrators may revoke anybody's token.
 
 ---
 
-## 13. Pages, static files and the client
+## 13. Pages, docs, static files and the client
 
 All `GET` (and `HEAD`). Files are served from inside the named directory
 only; a path that resolves outside it is a plain-text 404.
 
 | Path | Access | Serves |
 |---|---|---|
-| `/`, `/index.html` | user | the UI. Signed out, redirects `302` to `/login` |
-| `/login` | anonymous | the sign-in page. Redirects to `/` when already signed in (and not due a password change), and always with `--no-auth` |
-| `/static/<file>` | anonymous | `fillerai/web/static/`: the UI's script, stylesheet and login page assets |
+| `/` | anonymous | the public product page (`static/product.html`), which links to the sign-in and the docs |
+| `/app`, `/app/` | user | the UI (`static/index.html`). Signed out, redirects `302` to `/login` |
+| `/index.html` | anonymous | redirects `302` to `/app`, for bookmarks made before the app moved there |
+| `/login` | anonymous | the sign-in page. Redirects to `/app` when already signed in (and not due a password change), and always with `--no-auth` |
+| `/docs`, `/docs/<slug>` | access code | the documentation site; see below |
+| `/static/<file>` | anonymous | `fillerai/web/static/`: the UI's, product page's, login page's and docs gate's scripts and stylesheets |
 | `/client`, `/client/` | anonymous | `fillerai/web/static/client/demo.html` |
 | `/client/<file>` | anonymous | `fillerai/web/static/client/`: `fillerai.js`, `fillerai-chat.css`, `chat.html`, `demo.html` |
 
 `/static/` can also reach the client files; `/client/` is the documented
 path. Everything under `/client/` needs a token to do anything, which is why
 it is served signed out.
+
+### The `/docs` site
+
+`/docs` renders the user guide (`fillerai/web/guide.md`, slug `user-guide`),
+the README (slug `tour`) and every Markdown file under `docs/` (slug: the
+path without `.md`, lowercased, at most one directory deep, such as
+`reference/http-api`) as HTML, on the server, on each request. A trailing
+`.md` on the slug is accepted. It is gated by an access code an administrator
+sets with `POST /api/admin/docs/passcode`, not by accounts:
+
+| State | `GET /docs...` answers |
+|---|---|
+| no code set | `403` with a page saying the docs are closed |
+| code set, no valid `airforms_docs` cookie | `200` with the gate page, whose form (`static/docs-gate.js`) posts to `/api/docs/unlock` |
+| unlocked, `/docs` | the docs home page, grouped |
+| unlocked, `/docs/<slug>` | that document; an unknown slug is a plain-text 404 |
+
+A signed-in session does not open the docs by itself; the cookie does.
 
 ---
 
@@ -1205,10 +1253,24 @@ Northwind Mutual, the sample customer portal. It is a separate server
 `fillerai serve` starts it on port 8100 (`--sample-port`, `--sample-user`,
 `--no-sample-app`), issuing it a token named `Sample application` for the
 first administrator or the named user. It can also run alone:
-`python -m fillerai.sampleapp --fillerai URL --token flr_...`.
+`python -m fillerai.sampleapp --fillerai URL --token flr_...` (its port
+defaults to `$PORT`, else 8100).
 
-This section reflects version 0.15.1. The sample application is being
-changed, so check the code before relying on the detail.
+### Through AIrForms at `/sample/`
+
+When `serve` started it, AIrForms also passes `GET`, `HEAD` and `POST`
+requests under `/sample/` through to it in-process, so it is reachable on
+the one port a hosting platform exposes. `/sample` redirects to `/sample/`;
+the path after `/sample` is forwarded with `Content-Type`, `Accept` and
+`X-Forwarded-Prefix: /sample`, and a `Location` the sample application
+sends back is prefixed with `/sample`. Only signed-in people get through
+unless `serve` ran with `--sample-public` (or `$FILLERAI_SAMPLE_PUBLIC`) or
+`--no-auth`: signed out, a `GET` redirects to `/login` and a `POST` is
+`401 {"error": "sign in to AIrForms first"}`. When the sample application is
+not running the answer is a plain-text 404; when it does not answer, `502`.
+Seeing `X-Forwarded-Prefix`, its `/api/me` gives `fillerai_page` as `/app`.
+
+### Its routes
 
 The page draws one form per template from `/api/templates` when it loads and
 shows one at a time: the one the chat conversation is about, or the one
@@ -1225,7 +1287,7 @@ the reply is `502` with `code: unreachable`.
 | Method | Path | Does |
 |---|---|---|
 | `GET` | `/` | the portal page (`static/index.html`, one form open at a time, `#form-<template>`); other files under `static/` by name |
-| `GET` | `/api/me` | the customer record and past requests, plus `server_speech` and `fillerai_page` |
+| `GET` | `/api/me` | the customer record and past requests, plus `server_speech` and `fillerai_page` (where to add templates: AIrForms' page, or `/app` when reached through `/sample/`) |
 | `GET` | `/api/templates` | every AIrForms template in full, as `{templates}`, fetched from `/v1/templates` on each call |
 | `GET` | `/fillerai.js`, `/fillerai-chat.css` | AIrForms's client files, fetched through this server; 502 when AIrForms is down |
 | `GET` | `/favicon.ico` | `204`, empty |

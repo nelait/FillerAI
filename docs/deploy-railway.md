@@ -23,9 +23,9 @@ python -m fillerai serve --host 0.0.0.0 --trust-proxy
   from Railway's proxy headers, so the session cookie is marked `Secure` and
   the docs access-code limit counts each visitor rather than the proxy.
 - **The sample application is at `/sample/`** on the same address (the
-  "Sample app" link in the header). It runs inside the same service, and
-  only signed-in people can open it, since its chat uses an administrator's
-  token. For a public demo, add the variable `FILLERAI_SAMPLE_PUBLIC` = `1`.
+  "Sample app" link in the app's left rail). It runs inside the same
+  service, and only signed-in people can open it, since its chat uses an
+  administrator's token. For a public demo, add the variable `FILLERAI_SAMPLE_PUBLIC` = `1`.
   Its forms are the admin's bot templates, so add the starters on the Bots
   tab first.
 - **One replica.** SQLite on a volume is one process's database, and even with
@@ -48,8 +48,8 @@ python -m fillerai serve --host 0.0.0.0 --trust-proxy
 4. **Settings → Networking → Generate Domain**. Railway asks for the port only
    if it cannot tell; the app listens on whatever `$PORT` it was given.
 5. Open the domain, choose **Sign in**, and use `admin` with the password
-   from step 3. Then set the docs access code in **Settings** if you want
-   `/docs` open.
+   from step 3. Then set the docs access code in **Settings →
+   Documentation access** if you want `/docs` open.
 
 The variables must be set before the first start that creates the
 administrator. If it started without one, the generated password is in the

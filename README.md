@@ -11,7 +11,9 @@ types.
 Nothing here talks to a network, and there are no dependencies. Python 3.10
 or newer and the standard library is the whole requirement, which is the
 point — it has to run inside the locked-down environment where the real form
-lives.
+lives. (The one optional extra, the Postgres driver, is only for keeping the
+shared data in Postgres instead of the default SQLite file; see
+[The database](#the-database).)
 
 > **Formerly FillerAI.** The product is now called AIrForms. The code names
 > did not change, so nothing that already uses it breaks: the Python package
@@ -32,6 +34,9 @@ python -m fillerai extract examples/claims_intake.html -o schema.json
 
 # 500 records, reproducible, checked before they are written.
 python -m fillerai generate schema.json -n 500 --seed 42 --check -f csv -o data.csv
+
+# Or real past submissions: line their columns up with the form and clean them.
+python -m fillerai clean schema.json export.csv -o real.json
 
 # Learn to finish the form, and say how well it can. Watch it work.
 python -m fillerai train schema.json data.csv --seed 1 -o model.json -a forest -v
@@ -725,7 +730,8 @@ and gives back the single-user tool — and only works on localhost, because
 that is the only place it is the right thing.
 
 `/` is the product page, public, with a **Sign in** link; the app is at
-`/app`. Every screen has a **Help** tab on its right edge (or press `?`) that
+`/app` (which is where `--open` goes, and where an old `/index.html` bookmark
+is sent). Every screen has a **Help** tab on its right edge (or press `?`) that
 pulls out how-to steps for that screen, taken from the
 [user guide](fillerai/web/guide.md). Each stage ends with a **next step** bar
 where its result is - **Go to Train** under freshly generated records,
@@ -735,17 +741,24 @@ stage that made it. **Docs** in the menu opens `/docs`: the user guide and
 everything in `docs/`, rendered as HTML, behind an access code an
 administrator sets in Settings.
 
-Five stages across the top, and a library beside them:
+Five stages down a navigation rail on the left (a top bar on a narrow
+screen), and the library and the bots beside them:
 
 1. **Source** — paste markup, drop a file, or start from a bundled example.
-   A field spec works here too.
+   A field spec works here too, and so does a file of past submissions
+   (**Records (CSV)**), which is read one field per column when there is no
+   form at all.
 2. **Schema** — every field with what it means, its group, its constraints and
    how sure inference was. Anything below 0.7 is highlighted. **Correcting a
    field here is taken as final** — the edit sets confidence to 1.0, which
    inference treats as authoritative and will not overrule.
-3. **Generate** — count, seed, blank rate and the identifier safety switch,
-   then a live preview and CSV/JSON/NDJSON export. Records are checked before
-   you see them, and any problem is listed rather than hidden.
+3. **Data** — two ways to get records. **Generate sample records**: count,
+   seed, blank rate and the identifier safety switch, then a live preview and
+   CSV/JSON/NDJSON export; records are checked before you see them, and any
+   problem is listed rather than hidden. **Upload real records**: a CSV, JSON
+   or NDJSON export, its columns matched to the form's fields and cleaned
+   by named, switchable fixes, then saved to the library as real records
+   ([Real records](#real-records-test-on-them-or-train-from-them)).
 4. **Train** — pick how it learns from the six algorithms, with that
    algorithm's own settings and its own account of what it is about to do
    beside the picker. **Show the script** prints the Python that would
@@ -759,16 +772,21 @@ Five stages across the top, and a library beside them:
 5. **Simulate** — the form itself, drawn from its own schema. Type the first
    few boxes and the rest fill in underneath as you go, each with its
    confidence and its reason, while the panel beside it counts what that
-   saved against filling the same form by hand.
+   saved against filling the same form by hand. **Test on real records**
+   scores the loaded model on any dataset in the library, and says so when
+   it is the one the model learned from.
 6. **Library** — every source, schema, dataset and model these runs have
    produced, newest first, each with the chain it came from spelled out
    underneath. Open one and the whole chain behind it is restored. Download
    or delete any of it; deleting takes what was made from it too, and says
    so first.
+7. **Bots** — chat templates, built and tried here;
+   [Bot Builder](#bot-builder-a-chat-that-fills-a-request) below.
 
-Beside them sits whoever is signed in. That opens **Your account**: change
-your own password, and, if you are an administrator, everybody else's
-accounts and the database they are kept in.
+Below them sit **Sample app**, **Docs**, **Settings** and whoever is signed
+in, which opens Settings too: the language-model key, API tokens, your own
+password, and, if you are an administrator, the documentation access code,
+everybody else's accounts and the database they are kept in.
 
 The server holds the trained model and answers as you type, rather than
 shipping a few hundred kilobytes to the browser and taking it back on every
@@ -1030,6 +1048,21 @@ accounts off; everybody else does the work. Deleting an account takes its
 library with it, which the panel says — with the number of entries — before
 it asks.
 
+### Putting it on a server
+
+The repository deploys to Railway as it is, and the same `Dockerfile` runs
+anywhere that runs a container. It starts `serve --host 0.0.0.0
+--trust-proxy`: `serve` reads the port from `$PORT`, accounts stay on (a
+public address is not localhost, so `--no-auth` is refused), and
+`--trust-proxy` (or `FILLERAI_TRUST_PROXY=1`) takes the visitor's address and
+the https scheme from the platform's proxy, so the session cookie is
+`Secure`. The image sets `FILLERAI_HOME=/data`, so with the default SQLite
+database a volume belongs there; or set `FILLERAI_DATABASE_URL` to a Postgres
+database, whose driver the image carries. The sample application runs inside
+the same service and is reached at `/sample/`. The steps are in
+[docs/deploy-railway.md](docs/deploy-railway.md); running, backing up and
+upgrading it are in [docs/operations.md](docs/operations.md).
+
 ## Calling it from another application
 
 A trained model that can only be reached by clicking through the UI is a
@@ -1142,7 +1175,9 @@ VPN, a corporate proxy), `serve --bot-transcribe` has the microphone record in
 the page and AIrForms transcribe it with an OpenAI key instead.
 `/client/chat.html` is a working host page to try it
 against, and the [sample application](fillerai/sampleapp/README.md), which
-`serve` starts next to the UI on port 8100 and links from its header, is a
+`serve` starts next to the UI on port 8100 and also passes through at
+`/sample/` on AIrForms' own port (signed-in people only, unless `--sample-public`),
+linked from the menu as **Sample app**, is a
 separate application - its own server, records and submit rules, and a form
 for every bot template, one open at a time, opened by the chat or from its
 menu - that uses the chat service the way a real one would. The contract is
@@ -1184,13 +1219,23 @@ fine, because every value is normalised the same way before it is counted.
 
 `algorithms` lists what can be selected, with `--recipe` for each one's
 steps in order. `library` has `list`, `show`, `export`, `delete` and
-`prune`; `extract`, `generate` and `train` take `--save` to put what they
-produced into it, and every command that touches it takes `--library PATH`.
+`prune`; `extract`, `generate`, `clean` and `train` take `--save` to put what
+they produced into it, and every command that touches it takes `--library PATH`.
+
+`clean SCHEMA RECORDS` reads a `.csv`, `.tsv`, `.json` or `.ndjson` file of
+real records, matches its columns to the form's fields (`--map COLUMN=FIELD`
+corrects a guess, `COLUMN=` leaves one out) and cleans it with the eight
+named fixes, printing what each changed; `--skip FIX` turns one off and
+`--also FIX` turns on `invalid` or `incomplete`, the two that are off by
+default. `extract` given a
+`.csv` of records instead of a form writes a schema read off its columns.
+[docs/real-data.md](docs/real-data.md) has the fixes one by one.
 
 `users` has `list`, `add`, `passwd`, `role`, `disable`, `enable` and
 `delete`; `tokens` has `list`, `add` and `revoke`; `db` has `status` and
 `import`. All three take `--database URL`
-(`sqlite://<path>`, or `$FILLERAI_DATABASE_URL`) and `--library PATH` for
+(`sqlite://<path>`, `postgresql://...` with the optional extra, or
+`$FILLERAI_DATABASE_URL`) and `--library PATH` for
 the directory the default database sits in. `add` and `passwd` generate a
 password and show it once when none is given, and that password has to be
 changed at first sign-in. `delete` refuses an account with a library behind
@@ -1211,15 +1256,19 @@ field, and `-o` for the full report as JSON.
 `tokens add <user>` prints the credential once and never again; `--days`
 expires it, `--model` pins it to one model in that account's library.
 
-`serve` takes `--port` (default 8000), `--host` (default `127.0.0.1`),
-`--open` to launch a browser, `-v` to log each request, `--library PATH` for
+`serve` takes `--port` (default `$PORT` if set, else 8000), `--host` (default
+`127.0.0.1`), `--trust-proxy` to believe the forwarded address and scheme from
+a hosting platform's proxy, `--open` to launch a browser, `-v` to log each
+request, `--library PATH` for
 where the UI keeps what it produces, `--database URL` for where the shared
 data lives, `--cors-origin ORIGIN` (repeatable) to let a browser application
 on another origin call `/v1`, and `--no-auth` for no login and no accounts — one library, for
 one person on one machine. `--no-auth` is refused anywhere but localhost:
 without accounts everyone who can reach the port is signed in, and a printed
 warning is the wrong answer to that, because the person who needs to read it
-is already not reading the console.
+is already not reading the console. The sample application has
+`--no-sample-app`, `--sample-port` (default 8100), `--sample-public` and
+`--sample-user`; the chat has `--bot-llm` and `--bot-transcribe`, both off.
 
 Read-only and disabled controls are skipped — those are the form's to fill,
 not ours.
@@ -1297,10 +1346,14 @@ into that engine.
 fillerai/
   schema.py            the versioned field-schema contract
   infer.py             semantic type from ranked evidence
-  cli.py               extract / generate / train / predict / simulate / serve
-                       / algorithms / library / users / db / bot
+  cli.py               extract / generate / clean / inspect / train / predict
+                       / evaluate / simulate / check / serve / algorithms
+                       / library / users / tokens / db / bot / llm
+                       / propose-rules / apply-rules
+  realdata.py          real records: read a file, map its columns, clean it
   store.py             the library in a directory: what each run produced
-  db.py                the database, and the interface a backend meets
+  db.py                the database, and the interface a backend meets:
+                       SQLite, and Postgres with the optional extra
   dbstore.py           the same library in the database, with an owner
   auth.py              users, passwords, roles and sessions
   tokens.py            bearer credentials for an application, as opposed to a person
@@ -1355,16 +1408,17 @@ fillerai/
     rest.py            the /v1 integration API: bearer tokens, no cookies
     botrest.py         /v1/templates and /v1/bot/turn
     keyring.py         API keys typed into the UI, held in memory and nowhere else
-    static/            index.html, app.js, styles.css - no build step;
-                       product.html/.css/.js - the public page at /;
-                       docs.css, docs-gate.js - the /docs site
     docs.py            Markdown -> HTML for /docs and the help panel
     guide.md           the user guide, one section per screen
-                       login.html, login.js - the one page served signed out
+    static/            index.html, app.js, styles.css - the app at /app, no build step;
+                       product.html/.css/.js - the public page at /;
+                       docs.css, docs-gate.js - the /docs site;
+                       login.html, login.js - the sign-in page
     static/client/     fillerai.js, demo.html - the dependency-free browser client;
                        chat.html, fillerai-chat.css - the chat window and a host to try it
   sampleapp/           Northwind Mutual, the sample application serve starts on
-                       :8100 - a form per bot template (one open at a time), stdlib only, /v1 only
+                       :8100 and passes through at /sample/ - a form per bot
+                       template (one open at a time), stdlib only, /v1 only
 examples/
   claims_intake.html                  45 fields, 4 screens
   patient_registration.fields.json    21 fields, written as a spec
@@ -1398,15 +1452,29 @@ tests/
   test_bot.py          templates, reading a phrase, and every kind of turn
   test_bot_rest.py     the bot's endpoints, token scope, and the UI's try-it chat
   test_llm_understand.py a model's reading of a phrase, believed only as far as it checks out
+  test_llm_transcribe.py transcribing the chat's recording with an OpenAI key, offline
+  test_sample_app.py   the sample application against a real server, and /sample/
+  test_docs.py         the /docs renderer, its access code, and the help panel
+  test_deploy.py       behind a hosting platform's proxy: $PORT, forwarded headers
+  test_postgres.py     the database suites again on a real Postgres; skipped unless set up
+  test_realdata.py     reading, mapping and cleaning real records
+  test_web_realdata.py the real-records endpoints: upload, clean, save, train, test
 livetests/
   test_rules_acceptance.py  the gate that costs money; skipped unless opted in
-docs/
+docs/                  indexed, with reading paths, in docs/README.md
   README.md            an index of everything below
+  overview.md          the whole system on a few pages, with diagrams
   architecture.md      the components, the boundaries, and the invariants
   process.md           the same system as a sequence of things you do
+  real-data.md         reading, mapping and cleaning real records; testing on them
+  operations.md        installing, configuring, backing up, troubleshooting
+  deploy-railway.md    the container on Railway: port, proxy, data, Postgres
+  security.md          what can leave the machine, and what to change first
   assumptions.md       everything taken as given, and what breaks if it is not
   pending.md           what is missing, what is broken, what is deliberate
   bot-builder.md       the contract between a chat window and the bot service
+  reference/           commands, HTTP routes, file formats, modules
+Dockerfile, railway.json  the container, and how Railway runs it
 ```
 
 ## Tests
@@ -1415,7 +1483,9 @@ docs/
 python -m unittest discover -s tests -v
 ```
 
-941 tests, no dependencies. They cover malformed markup, each inference rule,
+941 tests, no dependencies (the Postgres reruns in `tests/test_postgres.py`
+skip unless `FILLERAI_TEST_POSTGRES_URL` names a database). They cover
+malformed markup, each inference rule,
 the checksum algorithms, constraint compliance, the coherence guarantees
 above, the model's rules and its scoring, the library's lineage, the log's
 cursor under concurrent writes, and the web API end to end over a real
@@ -1515,7 +1585,10 @@ not a better model; it is pointing `train` at a directory of real past
 submissions inside the environment that holds them, and running `simulate`
 against the same forms to see what moves. Nothing in the pipeline needs
 changing for that — a dataset is a dataset — which was the point of keeping
-generation and training on opposite sides of the schema.
+generation and training on opposite sides of the schema. The door for them is
+now there: `fillerai clean`, or **Upload real records** on the Data step, and
+the Simulate step's **Test on real records** to read off what moved
+([docs/real-data.md](docs/real-data.md)).
 
 **Two things the simulation would then be worth extending with.** Per-agent
 models, since two people filling the same queue develop different habits and
@@ -1548,7 +1621,7 @@ reads a form's field list and proposes the business rules it declares about
 itself, because [writing those by hand](#learning-to-fill-the-form) is what
 27 rules on the quote form and 31 on onboarding cost somebody.
 
-**Or do it in the UI.** `Settings`, top right, takes a key for either service
+**Or do it in the UI.** `Settings`, in the menu, takes a key for either service
 and says which one the next run will use; `Propose rules` on the Schema step
 asks, shows what survived the checks with its reasoning, and applies only the
 ones you tick. A key typed there is held in the server's memory and written
@@ -1668,10 +1741,17 @@ travels through them, who can do what, and where to read next.
 plain-language part for stakeholders (including why K-means is not the tool)
 and a precise part for engineers.
 
-[**Operations**](docs/operations.md) and [**Security**](docs/security.md)
+[**Real records**](docs/real-data.md)
+— once real past submissions arrive: reading an export, mapping its columns
+onto the form, the eight cleaning fixes and what each changes, and testing a
+model on them or training one from them.
+
+[**Operations**](docs/operations.md), [**Deploying to Railway**](docs/deploy-railway.md)
+and [**Security**](docs/security.md)
 — installing, configuring, backing up, upgrading and troubleshooting a running
-server; what can leave the machine and under which switch, and what to change
-before anybody else can reach it.
+server; running it in a container behind a hosting platform's proxy, with its
+data on a volume or in Postgres; what can leave the machine and under which
+switch, and what to change before anybody else can reach it.
 
 **Reference** — [commands](docs/reference/cli.md),
 [HTTP routes](docs/reference/http-api.md),

@@ -117,6 +117,7 @@ python -m fillerai extract export.csv -o export.schema.json
   Reading, previewing and saving are three stateless requests carrying the
   same text, so an abandoned upload leaves nothing behind. The cost is that
   the file travels on every preview, within the 8 MB request limit.
+- **500 columns** at most: a wider file is refused as not a form export.
 - **5,000 records** per save from the UI, the same cap Train has, reported in
   the preview when it bites. The CLI has no cap.
 - **1,000 records** per test from the UI: each one is a full form filled
